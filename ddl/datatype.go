@@ -98,8 +98,8 @@ var ALLFieldType = map[int]string{
 	KindSet:  "SET",
 }
 
-// TestFieldType is use to control what kind of data types to test,
-// if we just want to test timestamp, we can annotation the another data types.
+// TestFieldType is use to control what kind of data types to test.
+// If we just want to test timestamp, we can annotate the another data types.
 var TestFieldType = []int{
 	KindTINYINT,
 	KindSMALLINT,
@@ -128,7 +128,7 @@ var TestFieldType = []int{
 	KindTIMESTAMP,
 	KindYEAR,
 
-	//KindJSON, // have `admin check table when index is virtual generated column` bug unfix
+	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
 	KindEnum,
 	KindSet,
 }
@@ -173,7 +173,7 @@ const (
 	MINDATETIME = "1000-01-01 00:00:00"
 	MAXDATETIME = "9999-12-31 23:59:59"
 
-	//MINTIMESTAMP = "1970-01-01 08:00:01" // TiDB have DST time problem
+	// MINTIMESTAMP = "1970-01-01 08:00:01" // TiDB have DST time problem
 	MINTIMESTAMP = "2000-01-01 00:00:01"
 	MAXTIMESTAMP = "2038-01-19 03:14:07"
 

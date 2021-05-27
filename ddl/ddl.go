@@ -92,7 +92,8 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 							disableTiKVGC(db)
 						}
 					}
-					log.Fatalf("[ddl] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					// os.Exit(-1)
+					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
 				}
 			}
 		}(i)
@@ -279,6 +280,7 @@ func SerialExecuteOperations(c *testCase, ops []ddlTestOpExecutor, postOp func()
 			return nil
 		}
 		op := ops[idx]
+		// Test case weight.
 		if rand.Float64() > mapOfDDLKindProbability[op.ddlKind] {
 			continue
 		}
@@ -375,27 +377,27 @@ func (c *testCase) execute(executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc)
 	)
 
 	err := parallel(func() error {
-		var err error
+		var err1 error
 		for {
-			err = executeDDL(c, c.ddlOps, nil)
+			err1 = executeDDL(c, c.ddlOps, nil)
 			atomic.StoreInt32(&ddlAllComplete, 1)
-			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err != nil {
+			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err1 != nil {
 				break
 			}
 		}
-		return errors.Trace(err)
+		return errors.Trace(err1)
 	}, func() error {
-		var err error
+		var err2 error
 		for {
-			err = exeDMLFunc(c, c.dmlOps, func() error {
+			err2 = exeDMLFunc(c, c.dmlOps, func() error {
 				return c.executeVerifyIntegrity()
 			})
 			atomic.StoreInt32(&dmlAllComplete, 1)
-			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err != nil {
+			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err2 != nil {
 				break
 			}
 		}
-		return errors.Trace(err)
+		return errors.Trace(err2)
 	})
 
 	if err != nil {

@@ -71,6 +71,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateModifyColumn2(); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -97,6 +100,8 @@ const (
 	ddlModifyColumn
 	ddlModifyTableComment
 	ddlModifyTableCharsetAndCollate
+	// ddlModifyColumn2 is used to test column type change.
+	ddlModifyColumn2
 
 	ddlKindNil
 )
@@ -124,6 +129,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify table charset and collate": ddlModifyTableCharsetAndCollate,
 
 	"modify column": ddlModifyColumn,
+	"modify column2": ddlModifyColumn2,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -148,6 +154,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyTableComment:           "modify table comment",
 	ddlModifyTableCharsetAndCollate: "modify table charset and collate",
 	ddlModifyColumn:                 "modify column",
+	ddlModifyColumn2:                "modify column2",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -160,6 +167,7 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 
 	ddlAddColumn:    0.8,
 	ddlModifyColumn: 0.5,
+	ddlModifyColumn2: 0.5,
 	ddlDropColumn:   0.5,
 
 	ddlCreateView: 0.30,
@@ -199,6 +207,7 @@ type ddlJobTask struct {
 	err        error // err is an error executed by the remote TiDB.
 }
 
+// Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
 func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 	switch task.k {
 	case ddlCreateSchema:
@@ -237,6 +246,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.dropColumnJob(task)
 	case ddlSetDefaultValue:
 		return c.setDefaultValueJob(task)
+	case ddlModifyColumn2:
+		return c.modifyColumnJob(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -1132,6 +1143,77 @@ func (c *testCase) addColumnJob(task *ddlJobTask) error {
 		}
 		table.columns.Insert(insertAfterPosition+1, newColumn)
 	}
+	return nil
+}
+
+func (c *testCase) generateModifyColumn2() error {
+	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyColumn2, nil, ddlModifyColumn2})
+	return nil
+}
+
+func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	table.lock.Lock()
+	defer table.lock.Unlock()
+	origColIndex, origColumn := table.pickupRandomColumn()
+	if origColumn == nil {
+		return nil
+	}
+	var (
+		sql string
+		modifiedColumn *ddlTestColumn
+	)
+	if rand.Float64() > 0.5 {
+		// If a column has dependency, it cannot be renamed.
+		if origColumn.hasGenerateCol() {
+			return nil
+		}
+		// for change column
+		modifiedColumn = generateRandModifiedColumn2(origColumn, true)
+		origColumn.setRenamed()
+		sql = fmt.Sprintf("alter table `%s` change column `%s` `%s` %s", table.name,
+			origColumn.name, modifiedColumn.name, modifiedColumn.getDefinition())
+	} else {
+		// for modify column
+		modifiedColumn = generateRandModifiedColumn2(origColumn, false)
+		sql = fmt.Sprintf("alter table `%s` modify column `%s` %s", table.name,
+			origColumn.name, modifiedColumn.getDefinition())
+	}
+	// Inject the new offset for the new column.
+	strategy := rand.Intn(ddlTestAddDropColumnStrategyAtRandom) + ddlTestAddDropColumnStrategyAtBeginning
+	var insertAfterColumn *ddlTestColumn = nil
+	switch strategy {
+	case ddlTestAddDropColumnStrategyAtBeginning:
+		sql += " FIRST"
+	case ddlTestAddDropColumnStrategyAtEnd:
+		endColumn := getColumnFromArrayList(table.columns, table.columns.Size()-1)
+		if endColumn.name != origColumn.name {
+			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
+		}
+	case ddlTestAddDropColumnStrategyAtRandom:
+		insertPosition := rand.Intn(table.columns.Size())
+		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
+		if insertPosition != origColIndex {
+			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
+		}
+	}
+	task := &ddlJobTask{
+		// Column Type Change.
+		k:       ddlModifyColumn2,
+		tblInfo: table,
+		sql:     sql,
+		arg: ddlJobArg(&ddlColumnJobArg{
+			origColumnIndex:   origColIndex,
+			origColumn:        origColumn,
+			column:            modifiedColumn,
+			strategy:          strategy,
+			insertAfterColumn: insertAfterColumn,
+		}),
+	}
+	taskCh <- task
 	return nil
 }
 
