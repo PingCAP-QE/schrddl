@@ -580,6 +580,17 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 	return &modifiedColumn
 }
 
+// generateRandModifiedColumn2 returns a totally new column, may with the old name.
+func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestColumn {
+	newColumn := getRandDDLTestColumn()
+	if renameCol {
+		newColumn.name = uuid.NewV4().String()
+	} else {
+		newColumn.name = col.name
+	}
+	return newColumn
+}
+
 func getRandDDLTestColumnForJson() *ddlTestColumn {
 	var n int
 	for {
@@ -596,6 +607,9 @@ func getRandDDLTestColumns() []*ddlTestColumn {
 	cols := make([]*ddlTestColumn, 0)
 
 	if n == KindJSON {
+		// Json column itself doesn't mean a lot, it's value is in generated column.
+		// eg: create table t(a json, b int as(json_extract(`a`, '$.haha'))).
+		// for this instance: a is the target column, b is depending on column a.
 		cols = getRandJsonCol()
 	} else {
 		column := getDDLTestColumn(n)

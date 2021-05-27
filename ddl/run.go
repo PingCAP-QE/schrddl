@@ -120,7 +120,16 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data Truncated") || strings.Contains(errStr, "no rows in result set") {
+		strings.Contains(errStr, "Data Truncated") || strings.Contains(errStr, "no rows in result set") ||
+		strings.Contains(errStr, "Truncated incorrect") || strings.Contains(errStr, "Data truncated for column") ||
+		// eg: For Incorrect tinyint value, Incorrect data value...
+		strings.Contains(errStr, "Incorrect") ||
+		// eg: For constant 20030522161944 overflows tinyint
+		strings.Contains(errStr, "overflows") ||
+		strings.Contains(errStr, "Bad Number") ||
+		strings.Contains(errStr, "invalid year") ||
+		strings.Contains(errStr, "value is out of range in") ||
+		strings.Contains(errStr, "Data Too Long"){
 		return true
 	}
 	return false
@@ -143,7 +152,21 @@ func ddlIgnoreError(err error) bool {
 	if strings.Contains(errStr, "invalid connection") {
 		return true
 	}
-	if strings.Contains(errStr, "unsupported shard_row_id_bits for table with primary key as row id") {
+	if strings.Contains(errStr, "Unsupported shard_row_id_bits for table with primary key as row id") {
+		return true
+	}
+	// Ignore Column Type Change error.
+	if strings.Contains(errStr, "Unsupported modify column") ||
+		strings.Contains(errStr, "Truncated incorrect") ||
+		strings.Contains(errStr, "overflows") ||
+		strings.Contains(errStr, "Invalid year value") ||
+		strings.Contains(errStr, "Incorrect time value") ||
+		strings.Contains(errStr, "Incorrect timestamp value") ||
+		strings.Contains(errStr, "All parts of a PRIMARY KEY must be NOT NULL") ||
+		strings.Contains(errStr, "value is out of range") ||
+		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
+		strings.Contains(errStr, "used in key specification without a key length") {
+		fmt.Println(errStr)
 		return true
 	}
 	if strings.Contains(errStr, "table doesn't exist") ||
