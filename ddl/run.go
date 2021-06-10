@@ -164,7 +164,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Incorrect timestamp value") ||
 		strings.Contains(errStr, "All parts of a PRIMARY KEY must be NOT NULL") ||
 		strings.Contains(errStr, "value is out of range") ||
-		strings.Contains(errStr, "Unsupported modify charset from")||
+		strings.Contains(errStr, "Unsupported modify charset from") ||
 		strings.Contains(errStr, "Unsupported modifying collation of column") ||
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
 		strings.Contains(errStr, "used in key specification without a key length") {
