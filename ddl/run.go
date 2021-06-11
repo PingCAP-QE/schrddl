@@ -120,7 +120,7 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data Truncated") || strings.Contains(errStr, "no rows in result set") ||
+		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
 		strings.Contains(errStr, "Truncated incorrect") || strings.Contains(errStr, "Data truncated for column") ||
 		// eg: For Incorrect tinyint value, Incorrect data value...
 		strings.Contains(errStr, "Incorrect") ||
@@ -182,7 +182,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data Truncated") || strings.Contains(errStr, "no rows in result set") {
+		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") {
 		return true
 	}
 	return false
