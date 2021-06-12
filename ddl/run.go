@@ -161,6 +161,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "overflows") ||
 		strings.Contains(errStr, "Invalid year value") ||
 		strings.Contains(errStr, "Incorrect time value") ||
+		strings.Contains(errStr, "Incorrect datetime value") ||
 		strings.Contains(errStr, "Incorrect timestamp value") ||
 		strings.Contains(errStr, "All parts of a PRIMARY KEY must be NOT NULL") ||
 		strings.Contains(errStr, "value is out of range") ||
