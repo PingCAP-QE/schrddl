@@ -169,6 +169,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Unsupported modifying collation of column") ||
 		strings.Contains(errStr, "Data truncated") ||
 		strings.Contains(errStr, "Bad Number") ||
+		strings.Contains(errStr, "cannot convert")||
+		strings.Contains(errStr, "Data Too Long")||
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
 		strings.Contains(errStr, "used in key specification without a key length") {
 		fmt.Println(errStr)
