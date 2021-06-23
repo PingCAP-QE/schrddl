@@ -178,6 +178,7 @@ func ddlIgnoreError(err error) bool {
 	}
 	if strings.Contains(errStr, "table doesn't exist") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
+		strings.Contains(errStr,"with composite index covered or Primary Key covered now") ||
 		strings.Contains(errStr, "is not exists") || strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "Unknown table") ||
 		strings.Contains(errStr, "admin show ddl jobs len != len(tasks)") ||
