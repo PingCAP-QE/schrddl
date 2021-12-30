@@ -35,8 +35,14 @@ func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	return db, nil
 }
 
-func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType) {
-	ctx, cancel := context.WithCancel(context.Background())
+func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration) {
+	wrapCtx := context.WithCancel
+	if testTime > 0 {
+		wrapCtx = func(ctx context.Context) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(ctx, testTime)
+		}
+	}
+	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
 	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
 	for i := 0; i < concurrency; i++ {
@@ -129,7 +135,7 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Bad Number") ||
 		strings.Contains(errStr, "invalid year") ||
 		strings.Contains(errStr, "value is out of range in") ||
-		strings.Contains(errStr, "Data Too Long"){
+		strings.Contains(errStr, "Data Too Long") {
 		return true
 	}
 	return false

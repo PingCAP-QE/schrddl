@@ -15,6 +15,7 @@ package main
 
 import (
 	"flag"
+	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
 	_ "github.com/go-sql-driver/mysql"
@@ -28,6 +29,7 @@ var (
 	concurrency     = flag.Int("concurrency", 20, "concurrency")
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
+	testTime        = flag.Duration("time", 2*time.Hour, "test time")
 )
 
 func main() {
@@ -42,5 +44,5 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
-	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType)
+	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }
