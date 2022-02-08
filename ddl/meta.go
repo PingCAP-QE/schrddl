@@ -31,6 +31,7 @@ type testCase struct {
 	lastDDLID        int
 	charsets         []string
 	charsetsCollates map[string][]string
+	updateSchemaMu   sync.Mutex
 }
 
 type ddlTestErrorConflict struct {

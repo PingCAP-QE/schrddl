@@ -17,61 +17,61 @@ import (
 )
 
 func (c *testCase) generateDDLOps() error {
-	if err := c.generateCreateSchema(); err != nil {
+	if err := c.generateCreateSchema(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropSchema(); err != nil {
+	if err := c.generateDropSchema(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateAddTable(); err != nil {
+	if err := c.generateAddTable(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRenameTable(); err != nil {
+	if err := c.generateRenameTable(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateTruncateTable(); err != nil {
+	if err := c.generateTruncateTable(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyTableComment(); err != nil {
+	if err := c.generateModifyTableComment(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyTableCharsetAndCollate(); err != nil {
+	if err := c.generateModifyTableCharsetAndCollate(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateShardRowID(); err != nil {
+	if err := c.generateShardRowID(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRebaseAutoID(); err != nil {
+	if err := c.generateRebaseAutoID(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropTable(); err != nil {
+	if err := c.generateDropTable(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateCreateView(); err != nil {
+	if err := c.generateCreateView(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateAddIndex(); err != nil {
+	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRenameIndex(); err != nil {
+	if err := c.generateRenameIndex(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropIndex(); err != nil {
+	if err := c.generateDropIndex(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateAddColumn(); err != nil {
+	if err := c.generateAddColumn(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn(); err != nil {
+	if err := c.generateModifyColumn(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropColumn(); err != nil {
+	if err := c.generateDropColumn(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateSetDefaultValue(); err != nil {
+	if err := c.generateSetDefaultValue(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn2(); err != nil {
+	if err := c.generateModifyColumn2(2); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -128,7 +128,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify table comment":             ddlModifyTableComment,
 	"modify table charset and collate": ddlModifyTableCharsetAndCollate,
 
-	"modify column": ddlModifyColumn,
+	"modify column":  ddlModifyColumn,
 	"modify column2": ddlModifyColumn2,
 }
 
@@ -165,10 +165,10 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlAddIndex:  0.8,
 	ddlDropIndex: 0.5,
 
-	ddlAddColumn:    0.8,
-	ddlModifyColumn: 0.5,
+	ddlAddColumn:     0.8,
+	ddlModifyColumn:  0.5,
 	ddlModifyColumn2: 0.5,
-	ddlDropColumn:   0.5,
+	ddlDropColumn:    0.5,
 
 	ddlCreateView: 0.30,
 
@@ -209,6 +209,8 @@ type ddlJobTask struct {
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
 func (c *testCase) updateTableInfo(task *ddlJobTask) error {
+	c.updateSchemaMu.Lock()
+	defer c.updateSchemaMu.Unlock()
 	switch task.k {
 	case ddlCreateSchema:
 		return c.createSchemaJob(task)
@@ -266,6 +268,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 	}
 	tasks := make([]*ddlJobTask, 0, num)
 	var wg sync.WaitGroup
+	var unExpectedErr error
 	for i := 0; i < num; i++ {
 		task := <-taskCh
 		tasks = append(tasks, task)
@@ -278,35 +281,27 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			if !ddlIgnoreError(err) {
 				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 				task.err = err
+				unExpectedErr = err
+				return
+			}
+			if err != nil {
+				return
+			}
+			err = c.updateTableInfo(task)
+			if task.tblInfo != nil {
+				log.Infof("[ddl] [instance %d] local execute %s, err %v , table_id %s, ddlID %v", c.caseIndex, task.sql, err, task.tblInfo.id, task.ddlID)
+			} else if task.schemaInfo != nil {
+				log.Infof("[ddl] [instance %d] local execute %s, err %v , schema_id %s, ddlID %v", c.caseIndex, task.sql, err, task.schemaInfo.id, task.ddlID)
+			} else if task.viewInfo != nil {
+				log.Infof("[ddl] [instance %d] local execute %s, err %v , view_id %s, ddlID %v", c.caseIndex, task.sql, err, task.viewInfo.id, task.ddlID)
+			}
+			if err != nil && !ddlIgnoreError(err) {
+				unExpectedErr = fmt.Errorf("Error when executing SQL: %s\n, local err: %#v, remote tidb err: %#v\n%s\n", task.sql, err, task.err, task.tblInfo.debugPrintToString())
 			}
 		}(task)
 	}
 	wg.Wait()
-	db := c.dbs[0]
-	SortTasks, err := c.getSortTask(db, tasks)
-	if err != nil {
-		if ddlIgnoreError(err) {
-			return nil
-		}
-		return err
-	}
-	for _, task := range SortTasks {
-		err := c.updateTableInfo(task)
-		if task.tblInfo != nil {
-			log.Infof("[ddl] [instance %d] local execute %s, err %v , table_id %s, ddlID %v", c.caseIndex, task.sql, err, task.tblInfo.id, task.ddlID)
-		} else if task.schemaInfo != nil {
-			log.Infof("[ddl] [instance %d] local execute %s, err %v , schema_id %s, ddlID %v", c.caseIndex, task.sql, err, task.schemaInfo.id, task.ddlID)
-		} else if task.viewInfo != nil {
-			log.Infof("[ddl] [instance %d] local execute %s, err %v , view_id %s, ddlID %v", c.caseIndex, task.sql, err, task.viewInfo.id, task.ddlID)
-		}
-		if err == nil && task.err != nil || err != nil && task.err == nil {
-			if err != nil && ddlIgnoreError(err) {
-				return nil
-			}
-			return fmt.Errorf("Error when executing SQL: %s\n, local err: %#v, remote tidb err: %#v\n%s\n", task.sql, err, task.err, task.tblInfo.debugPrintToString())
-		}
-	}
-	return nil
+	return unExpectedErr
 }
 
 // execSerialDDLSQL gets a job from taskCh, and then executes the job.
@@ -340,8 +335,10 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateCreateSchema() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareCreateSchema, nil, ddlCreateSchema})
+func (c *testCase) generateCreateSchema(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareCreateSchema, nil, ddlCreateSchema})
+	}
 	return nil
 }
 
@@ -371,8 +368,10 @@ func (c *testCase) createSchemaJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateDropSchema() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropSchema, nil, ddlDropSchema})
+func (c *testCase) generateDropSchema(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropSchema, nil, ddlDropSchema})
+	}
 	return nil
 }
 
@@ -400,8 +399,10 @@ func (c *testCase) dropSchemaJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateAddTable() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddTable, nil, ddlAddTable})
+func (c *testCase) generateAddTable(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddTable, nil, ddlAddTable})
+	}
 	return nil
 }
 
@@ -483,8 +484,10 @@ func (c *testCase) addTableInfo(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateRenameTable() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRenameTable, nil, ddlRenameTable})
+func (c *testCase) generateRenameTable(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRenameTable, nil, ddlRenameTable})
+	}
 	return nil
 }
 
@@ -528,8 +531,10 @@ func (c *testCase) renameTableJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateTruncateTable() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareTruncateTable, nil, ddlTruncateTable})
+func (c *testCase) generateTruncateTable(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareTruncateTable, nil, ddlTruncateTable})
+	}
 	return nil
 }
 
@@ -565,8 +570,10 @@ func (c *testCase) truncateTableJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateModifyTableComment() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyTableComment, nil, ddlModifyTableComment})
+func (c *testCase) generateModifyTableComment(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyTableComment, nil, ddlModifyTableComment})
+	}
 	return nil
 }
 
@@ -602,9 +609,11 @@ type ddlModifyTableCharsetAndCollateJob struct {
 	newCollate string
 }
 
-func (c *testCase) generateModifyTableCharsetAndCollate() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyTableCharsetAndCollate,
-		nil, ddlModifyTableCharsetAndCollate})
+func (c *testCase) generateModifyTableCharsetAndCollate(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyTableCharsetAndCollate,
+			nil, ddlModifyTableCharsetAndCollate})
+	}
 	return nil
 }
 
@@ -662,8 +671,10 @@ func (c *testCase) modifyTableCharsetAndCollateJob(task *ddlJobTask) error {
 
 const MaxShardRowIDBits int = 7
 
-func (c *testCase) generateShardRowID() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareShardRowID, nil, ddlShardRowID})
+func (c *testCase) generateShardRowID(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareShardRowID, nil, ddlShardRowID})
+	}
 	return nil
 }
 
@@ -700,8 +711,10 @@ func (c *testCase) shardRowIDJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateRebaseAutoID() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRebaseAutoID, nil, ddlRebaseAutoID})
+func (c *testCase) generateRebaseAutoID(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRebaseAutoID, nil, ddlRebaseAutoID})
+	}
 	return nil
 }
 
@@ -740,8 +753,10 @@ func (c *testCase) rebaseAutoIDJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateDropTable() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropTable, nil, ddlDropTable})
+func (c *testCase) generateDropTable(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropTable, nil, ddlDropTable})
+	}
 	return nil
 }
 
@@ -774,8 +789,10 @@ func (c *testCase) dropTableJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateCreateView() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareCreateView, nil, ddlCreateView})
+func (c *testCase) generateCreateView(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareCreateView, nil, ddlCreateView})
+	}
 	return nil
 }
 
@@ -832,8 +849,10 @@ type ddlIndexJobArg struct {
 	index *ddlTestIndex
 }
 
-func (c *testCase) generateAddIndex() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddIndex, nil, ddlAddIndex})
+func (c *testCase) generateAddIndex(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddIndex, nil, ddlAddIndex})
+	}
 	return nil
 }
 
@@ -947,8 +966,10 @@ type ddlRenameIndexArg struct {
 	newIndex string
 }
 
-func (c *testCase) generateRenameIndex() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRenameIndex, nil, ddlRenameIndex})
+func (c *testCase) generateRenameIndex(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareRenameIndex, nil, ddlRenameIndex})
+	}
 	return nil
 }
 
@@ -978,6 +999,9 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
+	if arg.preIndex >= len(table.indexes) {
+		return fmt.Errorf("index offset %d on table %s is not exists", arg.preIndex, table.name)
+	}
 	if c.isIndexDeleted(table.indexes[arg.preIndex], table) {
 		return fmt.Errorf("index %s on table %s is not exists", table.indexes[arg.preIndex].name, table.name)
 	}
@@ -985,8 +1009,10 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateDropIndex() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropIndex, nil, ddlDropIndex})
+func (c *testCase) generateDropIndex(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropIndex, nil, ddlDropIndex})
+	}
 	return nil
 }
 
@@ -1064,8 +1090,10 @@ type ddlColumnJobArg struct {
 	insertAfterColumn *ddlTestColumn
 }
 
-func (c *testCase) generateAddColumn() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddColumn, nil, ddlAddColumn})
+func (c *testCase) generateAddColumn(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddColumn, nil, ddlAddColumn})
+	}
 	return nil
 }
 
@@ -1146,8 +1174,10 @@ func (c *testCase) addColumnJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateModifyColumn2() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyColumn2, nil, ddlModifyColumn2})
+func (c *testCase) generateModifyColumn2(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyColumn2, nil, ddlModifyColumn2})
+	}
 	return nil
 }
 
@@ -1163,7 +1193,7 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 		return nil
 	}
 	var (
-		sql string
+		sql            string
 		modifiedColumn *ddlTestColumn
 	)
 	if rand.Float64() > 0.5 {
@@ -1217,8 +1247,10 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 	return nil
 }
 
-func (c *testCase) generateModifyColumn() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyColumn, nil, ddlModifyColumn})
+func (c *testCase) generateModifyColumn(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyColumn, nil, ddlModifyColumn})
+	}
 	return nil
 }
 
@@ -1313,8 +1345,10 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 	return nil
 }
 
-func (c *testCase) generateDropColumn() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropColumn, nil, ddlDropColumn})
+func (c *testCase) generateDropColumn(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropColumn, nil, ddlDropColumn})
+	}
 	return nil
 }
 
@@ -1420,8 +1454,10 @@ type ddlSetDefaultValueArg struct {
 	newDefaultValue interface{}
 }
 
-func (c *testCase) generateSetDefaultValue() error {
-	c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareSetDefaultValue, nil, ddlSetDefaultValue})
+func (c *testCase) generateSetDefaultValue(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareSetDefaultValue, nil, ddlSetDefaultValue})
+	}
 	return nil
 }
 
