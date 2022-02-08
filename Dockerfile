@@ -1,4 +1,4 @@
-FROM hub.pingcap.net/mirrors/golang:1.16 as builder
+FROM registry-mirror.pingcap.net/library/golang:1.16 as builder
 
 WORKDIR /build
 COPY go.mod go.sum ./
@@ -7,7 +7,7 @@ COPY . /build
 RUN go build -o /schrddl
 
 
-FROM hub.pingcap.net/mirrors/debian:buster
+FROM registry-mirror.pingcap.net/library/debian:buster
 
 RUN apt -y update && apt -y install wget curl \
  && rm -rf /var/lib/apt/lists/*
