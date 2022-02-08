@@ -135,7 +135,9 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Bad Number") ||
 		strings.Contains(errStr, "invalid year") ||
 		strings.Contains(errStr, "value is out of range in") ||
-		strings.Contains(errStr, "Data Too Long") {
+		strings.Contains(errStr, "Data Too Long") ||
+		strings.Contains(errStr, "doesn't have a default value") ||
+		strings.Contains(errStr, "specified twice") {
 		return true
 	}
 	return false
@@ -175,8 +177,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Unsupported modifying collation of column") ||
 		strings.Contains(errStr, "Data truncated") ||
 		strings.Contains(errStr, "Bad Number") ||
-		strings.Contains(errStr, "cannot convert")||
-		strings.Contains(errStr, "Data Too Long")||
+		strings.Contains(errStr, "cannot convert") ||
+		strings.Contains(errStr, "Data Too Long") ||
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
 		strings.Contains(errStr, "used in key specification without a key length") {
 		fmt.Println(errStr)
@@ -184,10 +186,15 @@ func ddlIgnoreError(err error) bool {
 	}
 	if strings.Contains(errStr, "table doesn't exist") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr,"with composite index covered or Primary Key covered now") ||
+		strings.Contains(errStr, "with composite index covered or Primary Key covered now") ||
+		strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "is not exists") || strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "Unknown table") ||
 		strings.Contains(errStr, "admin show ddl jobs len != len(tasks)") ||
+		strings.Contains(errStr, "check that column/key exists") ||
+		strings.Contains(errStr, "Invalid default value") ||
+		strings.Contains(errStr, "Duplicate column name") ||
+		strings.Contains(errStr, "can't drop only column") ||
 		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "not found") ||
 		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
