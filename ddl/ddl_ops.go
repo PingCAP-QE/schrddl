@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -301,6 +302,41 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 		}(task)
 	}
 	wg.Wait()
+
+	var charset string
+	var collate string
+	var comment string
+	// After all DDL complete, check all the schemas are correct.
+	for _, schema := range c.schemas {
+		row, err := c.dbs[1].Query(fmt.Sprintf("select DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME from information_schema.schemata where schema_name='%s'", schema.name))
+		if err != nil {
+			return err
+		}
+		row.Next()
+		err = row.Scan(&charset, &collate)
+		row.Close()
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(charset, schema.charset) || !strings.EqualFold(collate, schema.collate) {
+			return errors.Errorf("schema charset or collation doesn't match, expected charset:%s, collate:%s, got charset:%s, collate:%s", schema.charset, schema.collate, charset, collate)
+		}
+	}
+	for _, table := range c.tables {
+		row, err := c.dbs[1].Query(fmt.Sprintf("select TABLE_COLLATION, TABLE_COMMENT from information_schema.tables where table_name='%s'", table.name))
+		if err != nil {
+			return err
+		}
+		row.Next()
+		err = row.Scan(&collate, &comment)
+		row.Close()
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(collate, table.collate) || !strings.EqualFold(comment, table.comment) {
+			return errors.Errorf("schema collate or comment doesn't match, expected collate:%s, comment:%s, got collate:%s, comment:%s", table.collate, table.comment, collate, comment)
+		}
+	}
 	return unExpectedErr
 }
 
