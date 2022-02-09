@@ -190,7 +190,6 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "is not exists") || strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "Unknown table") ||
-		strings.Contains(errStr, "does not exist") ||
 		strings.Contains(errStr, "admin show ddl jobs len != len(tasks)") ||
 		strings.Contains(errStr, "check that column/key exists") ||
 		strings.Contains(errStr, "Invalid default value") ||
