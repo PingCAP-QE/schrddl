@@ -18,61 +18,63 @@ import (
 )
 
 func (c *testCase) generateDDLOps() error {
-	if err := c.generateCreateSchema(2); err != nil {
+	defaultTime := 2
+	if err := c.generateCreateSchema(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropSchema(2); err != nil {
+	if err := c.generateDropSchema(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateAddTable(2); err != nil {
+	if err := c.generateAddTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRenameTable(2); err != nil {
+	if err := c.generateRenameTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateTruncateTable(2); err != nil {
+	if err := c.generateTruncateTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyTableComment(2); err != nil {
+	if err := c.generateModifyTableComment(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyTableCharsetAndCollate(2); err != nil {
+	if err := c.generateModifyTableCharsetAndCollate(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateShardRowID(2); err != nil {
+	if err := c.generateShardRowID(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRebaseAutoID(2); err != nil {
+	if err := c.generateRebaseAutoID(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropTable(2); err != nil {
+	if err := c.generateDropTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateCreateView(2); err != nil {
+	if err := c.generateCreateView(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRenameIndex(2); err != nil {
+
+	if err := c.generateRenameIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropIndex(2); err != nil {
+	if err := c.generateDropIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateAddColumn(2); err != nil {
+	if err := c.generateAddColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn(2); err != nil {
+	if err := c.generateModifyColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropColumn(2); err != nil {
+	if err := c.generateDropColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateSetDefaultValue(2); err != nil {
+	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn2(2); err != nil {
+	if err := c.generateModifyColumn2(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
