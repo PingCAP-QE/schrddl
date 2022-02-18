@@ -31,7 +31,6 @@ type testCase struct {
 	lastDDLID        int
 	charsets         []string
 	charsetsCollates map[string][]string
-	updateSchemaMu   sync.Mutex
 }
 
 type ddlTestErrorConflict struct {
@@ -412,6 +411,9 @@ func (col *ddlTestColumn) getMatchedColumnDescriptor(descriptors []*ddlTestColum
 
 func (col *ddlTestColumn) getDefinition() string {
 	if col.isPrimaryKey {
+		if col.canHaveDefaultValue() {
+			return fmt.Sprintf("%s DEFAULT %v", col.fieldType, getDefaultValueString(col.k, col.defaultValue))
+		}
 		return col.fieldType
 	}
 
@@ -727,11 +729,21 @@ func (col *ddlTestColumn) randValue() interface{} {
 	case KindJSON:
 		return col.randJsonValue()
 	case KindEnum:
+		setLen := len(col.setValue)
+		if setLen == 0 {
+			// Type is change.
+			return col.randValue()
+		}
 		i := rand.Intn(len(col.setValue))
 		return col.setValue[i]
 	case KindSet:
 		var l int
 		for l == 0 {
+			setLen := len(col.setValue)
+			if setLen == 0 {
+				// Type is change.
+				return col.randValue()
+			}
 			l = rand.Intn(len(col.setValue))
 		}
 		idxs := make([]int, l)
@@ -843,4 +855,79 @@ type ddlTestIndex struct {
 	name      string
 	signature string
 	columns   []*ddlTestColumn
+}
+
+func (col *ddlTestColumn) normalizeDataType() string {
+	switch col.k {
+	case KindTINYINT:
+		return "tinyint(4)"
+	case KindSMALLINT:
+		return "smallint(6)"
+	case KindMEDIUMINT:
+		return "mediumint(9)"
+	case KindInt32:
+		return "int(11)"
+	case KindBigInt:
+		return "bigint(20)"
+	case KindBit:
+		return fmt.Sprintf("bit(%d)", col.filedTypeM)
+	case KindDECIMAL:
+		return fmt.Sprintf("decimal(%d,%d)", col.filedTypeM, col.filedTypeD)
+	case KindFloat:
+		return "float"
+	case KindDouble:
+		return "double"
+	case KindChar:
+		return fmt.Sprintf("char(%d)", col.filedTypeM)
+	case KindVarChar:
+		return fmt.Sprintf("varchar(%d)", col.filedTypeM)
+	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB:
+		return "xxx"
+	case KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
+		return "xxx"
+	case KindBool:
+		return "tinyint(1)"
+	case KindDATE:
+		return "date"
+	case KindTIME:
+		return "time"
+	case KindDATETIME:
+		return "datetime"
+	case KindTIMESTAMP:
+		return "timestamp"
+	case KindYEAR:
+		return "year(4) unsigned"
+	case KindJSON:
+		return "json"
+	case KindEnum:
+		s := strings.Replace(col.fieldType, "ENUM", "enum", 1)
+		s = strings.Replace(col.fieldType, "\"", "'", -1)
+		return strings.Replace(s, ", ", ",", -1)
+	case KindSet:
+		s := strings.Replace(col.fieldType, "SET", "set", 1)
+		s = strings.Replace(col.fieldType, "\"", "'", -1)
+		return strings.Replace(s, ", ", ",", -1)
+	default:
+		return col.fieldType
+	}
+}
+
+// Use it after we support column charset.
+func getCharsetLen(cs string) int {
+	switch cs {
+	case "utf8":
+		return 3
+	case "utf8mb4":
+		return 4
+	case "ascii":
+		return 1
+	case "latin1":
+		return 1
+	case "binary":
+		return 1
+	case "gbk":
+		return 2
+	default:
+		return 1
+	}
 }
