@@ -30,10 +30,14 @@ var (
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	testTime        = flag.Duration("time", 2*time.Hour, "test time")
+	output          = flag.String("output", "", "output file")
 )
 
 func main() {
 	flag.Parse()
+	if *output != "" {
+		log.SetOutputByName(*output)
+	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
 	switch *mode {
