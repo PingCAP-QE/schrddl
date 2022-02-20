@@ -18,6 +18,7 @@ import (
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 )
@@ -48,5 +49,6 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
+	mysql.SetLogger(log.Logger())
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }
