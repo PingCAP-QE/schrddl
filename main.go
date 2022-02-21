@@ -19,7 +19,6 @@ import (
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
 	"github.com/go-sql-driver/mysql"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 )
 
