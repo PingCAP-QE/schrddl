@@ -137,7 +137,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "value is out of range in") ||
 		strings.Contains(errStr, "Data Too Long") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr, "specified twice") {
+		strings.Contains(errStr, "specified twice") ||
+		strings.Contains(errStr, "cannot convert datum from decimal to type year") {
 		return true
 	}
 	return false
@@ -180,7 +181,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "cannot convert") ||
 		strings.Contains(errStr, "Data Too Long") ||
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
-		strings.Contains(errStr, "used in key specification without a key length") {
+		strings.Contains(errStr, "used in key specification without a key length") ||
+		strings.Contains(errStr, "Too many keys specified; max 64 keys allowed") ||
+		strings.Contains(errStr, "BLOB/TEXT/JSON column can't have a default value") {
 		fmt.Println(errStr)
 		return true
 	}
