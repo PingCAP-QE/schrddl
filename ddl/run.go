@@ -137,7 +137,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "value is out of range in") ||
 		strings.Contains(errStr, "Data Too Long") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr, "specified twice") {
+		strings.Contains(errStr, "specified twice") ||
+		strings.Contains(errStr, "cannot convert datum from decimal to type year") {
 		return true
 	}
 	return false
