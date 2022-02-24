@@ -181,7 +181,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "cannot convert") ||
 		strings.Contains(errStr, "Data Too Long") ||
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
-		strings.Contains(errStr, "used in key specification without a key length") {
+		strings.Contains(errStr, "used in key specification without a key length") ||
+		strings.Contains(errStr, "Specified key was too long; max key length is ") {
 		fmt.Println(errStr)
 		return true
 	}
