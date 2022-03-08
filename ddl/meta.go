@@ -2,9 +2,11 @@ package ddl
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/juju/errors"
 	"math/rand"
 	"sort"
 	"strings"
@@ -89,6 +91,26 @@ func (c *testCase) pickupRandomSchema() *ddlTestSchema {
 	return nil
 }
 
+func (c *testCase) pickupDB() *sql.DB {
+	if len(c.dbs) == 0 {
+		return nil
+	}
+	return c.dbs[rand.Intn(len(c.dbs)-1)]
+}
+
+func (c *testCase) executeWithTimeout(db *sql.DB, task *ddlJobTask) error {
+	time.Sleep(time.Millisecond * time.Duration(rand.Intn(30)))
+	t := time.Second*30
+	switch task.k {
+	case ddlModifyColumn2, ddlModifyColumn, ddlAddIndex:
+		t = time.Minute * 10
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), t)
+	defer cancel()
+	_, err := db.ExecContext(ctx, task.sql)
+	return errors.Annotate(err, task.sql)
+}
+
 // pickupRandomTables picks a table randomly. The callee should ensure that
 // during this function call the table list is not modified.
 //
@@ -171,6 +193,20 @@ func (c *testCase) isIndexDeleted(index *ddlTestIndex, table *ddlTestTable) bool
 		}
 	}
 	return true
+}
+
+func (c *testCase) pickupRandomView() *ddlTestView {
+	if len(c.views) == 0 {
+		return nil
+	}
+	loc := rand.Intn(len(c.views))
+	for _, v := range c.views {
+		if loc == 0 {
+			return v
+		}
+		loc--
+	}
+	return nil
 }
 
 type ddlTestTable struct {

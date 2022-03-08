@@ -35,7 +35,7 @@ func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	return db, nil
 }
 
-func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration) {
+func Run(dbAddr []string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration) {
 	wrapCtx := context.WithCancel
 	if testTime > 0 {
 		wrapCtx = func(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -44,19 +44,21 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
+	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr[0], dbName)
 	for i := 0; i < concurrency; i++ {
-		dbs := make([]*sql.DB, 0, 2)
+		dbs := make([]*sql.DB, 0, len(dbAddr))
 		// Parallel send DDL request need more connection to send DDL request concurrently
-		db0, err := OpenDB(dbDSN, 20)
-		if err != nil {
-			log.Fatalf("[ddl] create db client error %v", err)
+		for _, s := range dbAddr {
+			db0, err := OpenDB(fmt.Sprintf("root:@tcp(%s)/%s", s, dbName), 20)
+			if err != nil {
+				log.Fatalf("[ddl] create db client error %v", err)
+			}
+			dbs = append(dbs, db0)
 		}
 		db1, err := OpenDB(dbDSN, 1)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
-		dbs = append(dbs, db0)
 		dbs = append(dbs, db1)
 		dbss = append(dbss, dbs)
 	}

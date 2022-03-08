@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
@@ -26,18 +27,21 @@ import (
 )
 
 var (
-	dbAddr          = flag.String("addr", "127.0.0.1:4000", "database address")
+	dbs             = &dbAddr{dbs: []string{"127.0.0.1:4000"}}
 	dbName          = flag.String("db", "test", "database name")
 	mode            = flag.String("mode", "serial", "test mode: serial, parallel")
-	concurrency     = flag.Int("concurrency", 20, "concurrency")
+	concurrency     = flag.Int("concurrency", 1, "concurrency")
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
-	testTime        = flag.Duration("time", 2*time.Hour, "test time")
+	testTime        = flag.Duration("time", 5*time.Minute, "test time")
 	output          = flag.String("output", "", "output file")
 )
 
-func prepareEnv() {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
+func prepareEnv(dbAddr []string) {
+	if len(dbAddr) < 1 {
+		log.Fatalf("no db address")
+	}
+	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr[0], *dbName)
 	tiDb, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
@@ -58,7 +62,21 @@ func prepareEnv() {
 	mysql.SetLogger(log.Logger())
 }
 
+type dbAddr struct {
+	dbs []string
+}
+
+func (d *dbAddr) String() string {
+	return strings.Join(d.dbs, ",")
+}
+
+func (d *dbAddr) Set(s string) error {
+	d.dbs = append(d.dbs, s)
+	return nil
+}
+
 func main() {
+	flag.Var(dbs, "addr", "database address")
 	flag.Parse()
 	if *output != "" {
 		log.SetOutputByName(*output)
@@ -73,6 +91,6 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
-	prepareEnv()
-	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	prepareEnv(dbs.dbs)
+	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }

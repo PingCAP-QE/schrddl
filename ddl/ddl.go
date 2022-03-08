@@ -610,6 +610,13 @@ func (c *testCase) executeAdminCheck() error {
 		}
 		sql += fmt.Sprintf("`%s`", table.name)
 		i++
+		for _, index := range table.indexes {
+			checkIndexSQL := fmt.Sprintf("admin check index `%s` `%s`", table.name, index.name)
+			_, err := c.pickupDB().Exec(checkIndexSQL)
+			if err != nil {
+				return errors.Annotatef(err, "Error when executing SQL: %s", checkIndexSQL)
+			}
+		}
 	}
 	dbIdx := rand.Intn(len(c.dbs))
 	db := c.dbs[dbIdx]

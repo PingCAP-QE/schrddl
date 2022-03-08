@@ -54,6 +54,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateCreateView(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateDropView(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
@@ -76,6 +79,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateModifySchemaCharsetAndCollate(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
@@ -95,6 +101,7 @@ const (
 	ddlDropIndex
 	ddlDropColumn
 	ddlDropSchema
+	ddlDropView
 
 	ddlRenameTable
 	ddlRenameIndex
@@ -107,6 +114,11 @@ const (
 	ddlModifyTableCharsetAndCollate
 	// ddlModifyColumn2 is used to test column type change.
 	ddlModifyColumn2
+
+	ActionModifySchemaCharsetAndCollate
+	ActionModifySchemaDefaultPlacement
+
+	ActionAddPrimaryKey
 
 	ddlKindNil
 )
@@ -123,6 +135,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"drop column": ddlDropColumn,
 
 	"create view": ddlCreateView,
+	"drop view":   ddlDropView,
 
 	"rename table":                     ddlRenameTable,
 	"rename index":                     ddlRenameIndex,
@@ -135,6 +148,11 @@ var mapOfDDLKind = map[string]DDLKind{
 
 	"modify column":  ddlModifyColumn,
 	"modify column2": ddlModifyColumn2,
+
+	"modify schema charset and collate": ActionModifySchemaCharsetAndCollate,
+	"modify schema default placement":   ActionModifySchemaDefaultPlacement,
+
+	"add primary key": ActionAddPrimaryKey,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -149,6 +167,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlDropColumn: "drop column",
 
 	ddlCreateView: "create view",
+	ddlDropView:   "drop view",
 
 	ddlRenameTable:                  "rename table",
 	ddlRenameIndex:                  "rename index",
@@ -160,6 +179,11 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyTableCharsetAndCollate: "modify table charset and collate",
 	ddlModifyColumn:                 "modify column",
 	ddlModifyColumn2:                "modify column2",
+
+	ActionModifySchemaCharsetAndCollate: "modify schema charset and collate",
+	ActionModifySchemaDefaultPlacement:  "modify schema default placement",
+
+	ActionAddPrimaryKey: "add primary key",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -253,6 +277,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.setDefaultValueJob(task)
 	case ddlModifyColumn2:
 		return c.modifyColumnJob(task)
+	case ActionModifySchemaCharsetAndCollate:
+		return c.setModifySchemaCharsetAndCollate(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -486,6 +512,11 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 		go func(task *ddlJobTask) {
 			defer wg.Done()
 			opStart := time.Now()
+			db := c.pickupDB()
+			err := c.executeWithTimeout(db, task)
+			if !ddlIgnoreError(err) {
+				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
+				task.err = err
 			db := c.dbs[0]
 			conn, err := db.Conn(context.Background())
 			defer func() {
@@ -580,9 +611,9 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 		return nil
 	}
 	task := <-taskCh
-	db := c.dbs[0]
+	db := c.pickupDB()
 	opStart := time.Now()
-	_, err := db.Exec(task.sql)
+	err := c.executeWithTimeout(db, task)
 	log.Infof("[ddl] [instance %d] %s, err: %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 	if err != nil {
 		if ddlIgnoreError(err) {
@@ -1025,7 +1056,7 @@ func (c *testCase) rebaseAutoIDJob(task *ddlJobTask) error {
 	sql := fmt.Sprintf("select auto_increment from information_schema.tables "+
 		"where table_schema='test' and table_name='%s'", table.name)
 	// Ignore check error, it doesn't matter.
-	c.dbs[0].QueryRow(sql).Scan(&table.autoIncID)
+	c.pickupDB().QueryRow(sql).Scan(&table.autoIncID)
 	return nil
 }
 
@@ -1103,6 +1134,33 @@ func (c *testCase) prepareCreateView(_ interface{}, taskCh chan *ddlJobTask) err
 
 func (c *testCase) createViewJob(task *ddlJobTask) error {
 	c.views[task.viewInfo.name] = task.viewInfo
+	return nil
+}
+
+func (c *testCase) generateDropView(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropView, nil, ddlCreateView})
+	}
+	return nil
+}
+
+func (c *testCase) prepareDropView(_ interface{}, taskCh chan *ddlJobTask) error {
+	view := c.pickupRandomView()
+	if view == nil {
+		return nil
+	}
+	sql := fmt.Sprintf("drop view `%s`", view.name)
+	task := &ddlJobTask{
+		k:        ddlDropView,
+		sql:      sql,
+		viewInfo: view,
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) dropViewJob(task *ddlJobTask) error {
+	delete(c.views, task.viewInfo.name)
 	return nil
 }
 
@@ -1241,6 +1299,21 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 		column.indexReferences++
 	}
 	return nil
+}
+
+func (c *testCase) generateAddPrimaryKey(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddPrimaryKey, nil, ActionAddPrimaryKey})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) error {
+
+}
+
+func (c *testCase) setAddPrimaryKey(task *ddlJobTask) error {
+
 }
 
 type ddlRenameIndexArg struct {
@@ -1834,6 +1907,39 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
 	arg.column.defaultValue = arg.newDefaultValue
+	return nil
+}
+
+func (c *testCase) generateModifySchemaCharsetAndCollate(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifySchemaCharsetAndCollate, nil, ActionModifySchemaCharsetAndCollate})
+	}
+	return nil
+}
+
+func (c *testCase) prepareModifySchemaCharsetAndCollate(_ interface{}, taskCh chan *ddlJobTask) error {
+	schema := c.pickupRandomSchema()
+	charset, collation := c.pickupRandomCharsetAndCollate()
+	taskCh <- &ddlJobTask{
+		k:          ActionModifySchemaCharsetAndCollate,
+		sql:        fmt.Sprintf("ALTER SCHEMA `%s` CHARACTER SET '%s' COLLATE '%s'", schema.name, charset, collation),
+		schemaInfo: schema,
+		arg: ddlJobArg(&ddlModifyTableCharsetAndCollateJob{
+			newCharset: charset,
+			newCollate: collation,
+		}),
+	}
+	return nil
+}
+
+func (c *testCase) setModifySchemaCharsetAndCollate(task *ddlJobTask) error {
+	schema := task.schemaInfo
+	if c.isSchemaDeleted(schema) {
+		return fmt.Errorf("schema %s is not exists", schema.name)
+	}
+	args := (*ddlModifyTableCharsetAndCollateJob)(task.arg)
+	schema.charset = args.newCharset
+	schema.collate = args.newCollate
 	return nil
 }
 
