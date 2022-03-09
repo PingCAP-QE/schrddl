@@ -88,6 +88,12 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddPrimaryKey(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateDropPrimaryKey(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateAlterIndexVisibility(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -124,6 +130,8 @@ const (
 	ActionAddPrimaryKey
 	ActionDropPrimaryKey
 
+	ActionAlterIndexVisibility
+
 	ddlKindNil
 )
 
@@ -156,8 +164,10 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify schema charset and collate": ActionModifySchemaCharsetAndCollate,
 	"modify schema default placement":   ActionModifySchemaDefaultPlacement,
 
-	"add primary key": ActionAddPrimaryKey,
+	"add primary key":  ActionAddPrimaryKey,
 	"drop primary key": ActionDropPrimaryKey,
+
+	"alter index visibility": ActionAlterIndexVisibility,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -188,8 +198,10 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ActionModifySchemaCharsetAndCollate: "modify schema charset and collate",
 	ActionModifySchemaDefaultPlacement:  "modify schema default placement",
 
-	ActionAddPrimaryKey: "add primary key",
+	ActionAddPrimaryKey:  "add primary key",
 	ActionDropPrimaryKey: "drop primary key",
+
+	ActionAlterIndexVisibility: "alter index visibility",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -206,17 +218,24 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlDropColumn:    0.5,
 
 	ddlCreateView: 0.30,
+	ddlDropView:   0.30,
 
-	ddlCreateSchema:                 0.10,
-	ddlDropSchema:                   0.10,
-	ddlRenameTable:                  0.50,
-	ddlRenameIndex:                  0.50,
-	ddlTruncateTable:                0.50,
-	ddlShardRowID:                   0.30,
-	ddlRebaseAutoID:                 0.15,
-	ddlSetDefaultValue:              0.30,
-	ddlModifyTableComment:           0.30,
-	ddlModifyTableCharsetAndCollate: 0.30,
+	ddlCreateSchema:                     0.10,
+	ddlDropSchema:                       0.10,
+	ddlRenameTable:                      0.50,
+	ddlRenameIndex:                      0.50,
+	ddlTruncateTable:                    0.50,
+	ddlShardRowID:                       0.30,
+	ddlRebaseAutoID:                     0.15,
+	ddlSetDefaultValue:                  0.30,
+	ddlModifyTableComment:               0.30,
+	ddlModifyTableCharsetAndCollate:     0.30,
+	ActionModifySchemaCharsetAndCollate: 0.30,
+
+	ActionAddPrimaryKey:  0.10,
+	ActionDropPrimaryKey: 0.10,
+
+	ActionAlterIndexVisibility: 0.20,
 }
 
 type ddlJob struct {
@@ -1355,7 +1374,6 @@ func (c *testCase) setAddPrimaryKey(task *ddlJobTask) error {
 	return nil
 }
 
-
 func (c *testCase) generateDropPrimaryKey(repeat int) error {
 	for i := 0; i < repeat; i++ {
 		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropPrimaryKey, nil, ActionDropPrimaryKey})
@@ -1500,6 +1518,63 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 		}
 	}
 	tblInfo.indexes = append(tblInfo.indexes[:iOfDropIndex], tblInfo.indexes[iOfDropIndex+1:]...)
+	return nil
+}
+
+func (c *testCase) generateAlterIndexVisibility(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAlterIndexVisibility, nil, ActionAlterIndexVisibility})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAlterIndexVisibility(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if len(table.indexes) == 0 || !table.hasPK {
+		return nil
+	}
+
+	indexToAlter := table.indexes[rand.Intn(len(table.indexes))]
+	v := "VISIBLE"
+	if indexToAlter.invisible == true {
+		v = "INVISIBLE"
+	}
+	sql := fmt.Sprintf("ALTER TABLE `%s` ALTER INDEX `%s` %s", table.name, indexToAlter.name, v)
+
+	arg := &ddlIndexJobArg{index: indexToAlter}
+	task := &ddlJobTask{
+		k:       ActionAlterIndexVisibility,
+		sql:     sql,
+		tblInfo: table,
+		arg:     ddlJobArg(arg),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) dropAlterIndexVisibilityJob(task *ddlJobTask) error {
+	jobArg := (*ddlIndexJobArg)(task.arg)
+	tblInfo := task.tblInfo
+
+	if c.isTableDeleted(tblInfo) {
+		return fmt.Errorf("table %s is not exists", tblInfo.name)
+	}
+
+	iOfAlterIndex := -1
+	for i := range tblInfo.indexes {
+		if jobArg.index.name == tblInfo.indexes[i].name {
+			iOfAlterIndex = i
+			break
+		}
+	}
+	if iOfAlterIndex == -1 {
+		return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+	}
+
+	tblInfo.indexes[iOfAlterIndex].invisible = !tblInfo.indexes[iOfAlterIndex].invisible
 	return nil
 }
 

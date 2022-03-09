@@ -892,6 +892,7 @@ type ddlTestIndex struct {
 	name      string
 	signature string
 	columns   []*ddlTestColumn
+	invisible   bool
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
