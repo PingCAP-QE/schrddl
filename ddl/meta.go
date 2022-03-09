@@ -100,7 +100,7 @@ func (c *testCase) pickupDB() *sql.DB {
 
 func (c *testCase) executeWithTimeout(db *sql.DB, task *ddlJobTask) error {
 	time.Sleep(time.Millisecond * time.Duration(rand.Intn(30)))
-	t := time.Second*30
+	t := time.Second * 30
 	switch task.k {
 	case ddlModifyColumn2, ddlModifyColumn, ddlAddIndex:
 		t = time.Minute * 10
@@ -221,6 +221,7 @@ type ddlTestTable struct {
 	comment      string // table comment
 	charset      string
 	collate      string
+	hasPK        bool
 	lock         *sync.RWMutex
 }
 

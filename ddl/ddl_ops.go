@@ -753,6 +753,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		comment:      uuid.NewV4().String(),
 		charset:      charset,
 		collate:      collate,
+		hasPK:        primaryKeyFields != 0,
 		lock:         new(sync.RWMutex),
 	}
 
@@ -1309,11 +1310,39 @@ func (c *testCase) generateAddPrimaryKey(repeat int) error {
 }
 
 func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if table.columns.Size() == 0 || table.hasPK {
+		return nil
+	}
 
+	perm := rand.Perm(table.columns.Size())
+	// build SQL
+	sql := fmt.Sprintf("ALTER TABLE `%s` ADD PRIMARY KEY (", table.name)
+	for _, i := range perm {
+		column := getColumnFromArrayList(table.columns, i)
+		if column.canBePrimary() {
+			sql += fmt.Sprintf("`%s`", column.name)
+			break
+		}
+	}
+	sql += ")"
+
+	task := &ddlJobTask{
+		k:       ActionAddPrimaryKey,
+		sql:     sql,
+		tblInfo: table,
+	}
+	taskCh <- task
+	return nil
 }
 
 func (c *testCase) setAddPrimaryKey(task *ddlJobTask) error {
-
+	tblInfo := task.tblInfo
+	tblInfo.hasPK = true
+	return nil
 }
 
 type ddlRenameIndexArg struct {
