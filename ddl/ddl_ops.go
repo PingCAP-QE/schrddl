@@ -85,6 +85,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateAddPrimaryKey(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -119,6 +122,7 @@ const (
 	ActionModifySchemaDefaultPlacement
 
 	ActionAddPrimaryKey
+	ActionDropPrimaryKey
 
 	ddlKindNil
 )
@@ -153,6 +157,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify schema default placement":   ActionModifySchemaDefaultPlacement,
 
 	"add primary key": ActionAddPrimaryKey,
+	"drop primary key": ActionDropPrimaryKey,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -184,6 +189,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ActionModifySchemaDefaultPlacement:  "modify schema default placement",
 
 	ActionAddPrimaryKey: "add primary key",
+	ActionDropPrimaryKey: "drop primary key",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -279,6 +285,10 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.modifyColumnJob(task)
 	case ActionModifySchemaCharsetAndCollate:
 		return c.setModifySchemaCharsetAndCollate(task)
+	case ActionAddPrimaryKey:
+		return c.setAddPrimaryKey(task)
+	case ActionDropPrimaryKey:
+		return c.setDropPrimaryKey(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -1342,6 +1352,39 @@ func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) 
 func (c *testCase) setAddPrimaryKey(task *ddlJobTask) error {
 	tblInfo := task.tblInfo
 	tblInfo.hasPK = true
+	return nil
+}
+
+
+func (c *testCase) generateDropPrimaryKey(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropPrimaryKey, nil, ActionDropPrimaryKey})
+	}
+	return nil
+}
+
+func (c *testCase) prepareDropPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if !table.hasPK {
+		return nil
+	}
+
+	// build SQL
+	sql := fmt.Sprintf("ALTER TABLE `%s` DROP PRIMARY KEY", table.name)
+	taskCh <- &ddlJobTask{
+		k:       ActionDropPrimaryKey,
+		sql:     sql,
+		tblInfo: table,
+	}
+	return nil
+}
+
+func (c *testCase) setDropPrimaryKey(task *ddlJobTask) error {
+	tblInfo := task.tblInfo
+	tblInfo.hasPK = false
 	return nil
 }
 
