@@ -30,10 +30,10 @@ var (
 	dbs             = &dbAddr{dbs: []string{"127.0.0.1:4000"}}
 	dbName          = flag.String("db", "test", "database name")
 	mode            = flag.String("mode", "serial", "test mode: serial, parallel")
-	concurrency     = flag.Int("concurrency", 1, "concurrency")
+	concurrency     = flag.Int("concurrency", 20, "concurrency")
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
-	testTime        = flag.Duration("time", 5*time.Minute, "test time")
+	testTime        = flag.Duration("time", 2*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
 )
 

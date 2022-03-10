@@ -152,6 +152,7 @@ func ddlIgnoreError(err error) bool {
 	}
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
+	fmt.Fprintf(os.Stdout, "check DDL err:%s\n", errStr)
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
 	}
@@ -206,6 +207,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
 		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
 		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") {
+		return true
+	}
+	if strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") || strings.Contains(errStr, "Unsupported drop primary key when the table's pkIsHandle is true") {
 		return true
 	}
 	return false

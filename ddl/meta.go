@@ -18,21 +18,27 @@ import (
 	"github.com/twinj/uuid"
 )
 
+var (
+	ddlJobCount int64 = 0
+)
+
 type testCase struct {
-	cfg              *DDLCaseConfig
-	initDB           string
-	dbs              []*sql.DB
-	caseIndex        int
-	ddlOps           []ddlTestOpExecutor
-	dmlOps           []dmlTestOpExecutor
-	tables           map[string]*ddlTestTable
-	schemas          map[string]*ddlTestSchema
-	views            map[string]*ddlTestView
-	tablesLock       sync.RWMutex
-	stop             int32
-	lastDDLID        int
-	charsets         []string
-	charsetsCollates map[string][]string
+	cfg               *DDLCaseConfig
+	initDB            string
+	dbs               []*sql.DB
+	caseIndex         int
+	ddlOps            []ddlTestOpExecutor
+	dmlOps            []dmlTestOpExecutor
+	tables            map[string]*ddlTestTable
+	schemas           map[string]*ddlTestSchema
+	views             map[string]*ddlTestView
+	placementPolicies map[string]*ddlTestPlacementPolicy
+	tablesLock        sync.RWMutex
+	stop              int32
+	lastDDLID         int
+	charsets          []string
+	charsetsCollates  map[string][]string
+	updateSchemaMu    sync.Mutex
 }
 
 type ddlTestErrorConflict struct {
@@ -105,6 +111,9 @@ func (c *testCase) executeWithTimeout(db *sql.DB, task *ddlJobTask) error {
 	case ddlModifyColumn2, ddlModifyColumn, ddlAddIndex:
 		t = time.Minute * 10
 	}
+	runningDDLCount := atomic.AddInt64(&ddlJobCount, 1)
+	defer atomic.AddInt64(&ddlJobCount, -1)
+	t = t * time.Duration(runningDDLCount)
 	ctx, cancel := context.WithTimeout(context.Background(), t)
 	defer cancel()
 	_, err := db.ExecContext(ctx, task.sql)
@@ -209,6 +218,11 @@ func (c *testCase) pickupRandomView() *ddlTestView {
 	return nil
 }
 
+type ddlTestPlacementPolicy struct {
+	Name    string
+	Content string
+}
+
 type ddlTestTable struct {
 	deleted      int32
 	name         string
@@ -222,6 +236,7 @@ type ddlTestTable struct {
 	charset      string
 	collate      string
 	hasPK        bool
+	policyName   string
 	lock         *sync.RWMutex
 }
 
@@ -892,7 +907,7 @@ type ddlTestIndex struct {
 	name      string
 	signature string
 	columns   []*ddlTestColumn
-	invisible   bool
+	invisible bool
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
