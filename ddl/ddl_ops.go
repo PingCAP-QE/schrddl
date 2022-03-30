@@ -1,11 +1,14 @@
 package ddl
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -54,6 +57,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
+
 	if err := c.generateRenameIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
@@ -63,7 +67,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn(defaultTime); err != nil {
+	if err := c.generateModifyColumn(5); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateDropColumn(defaultTime); err != nil {
@@ -72,7 +76,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn2(defaultTime); err != nil {
+	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -210,8 +214,6 @@ type ddlJobTask struct {
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
 func (c *testCase) updateTableInfo(task *ddlJobTask) error {
-	c.updateSchemaMu.Lock()
-	defer c.updateSchemaMu.Unlock()
 	switch task.k {
 	case ddlCreateSchema:
 		return c.createSchemaJob(task)
@@ -255,6 +257,147 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
 
+func getStartDDLSeqNum(db *sql.DB) (uint64, error) {
+	var seq uint64
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	conn.ExecContext(context.Background(), "use test")
+	conn.ExecContext(context.Background(), "create table test_get_start_ddl_seq_num(a int)")
+	conn.ExecContext(context.Background(), "drop table test_get_start_ddl_seq_num")
+	rows, err := conn.QueryContext(context.Background(), "select json_extract(@@tidb_last_ddl_info, '$.seq_num');")
+	if err != nil {
+		return 0, err
+	}
+	rows.Next()
+	err = rows.Scan(&seq)
+	if err != nil {
+		return 0, err
+	}
+	err = rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	err = conn.Close()
+	if err != nil {
+		return 0, err
+	}
+	return seq, nil
+}
+
+func (c *testCase) checkSchema() error {
+	var charset string
+	var collate string
+	for _, schema := range c.schemas {
+		row, err := c.dbs[0].Query(fmt.Sprintf("select DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME from information_schema.schemata where schema_name='%s'", schema.name))
+		if err != nil {
+			return err
+		}
+		row.Next()
+		err = row.Scan(&charset, &collate)
+		if err != nil {
+			return err
+		}
+		err = row.Close()
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(charset, schema.charset) || !strings.EqualFold(collate, schema.collate) {
+			return errors.Errorf("schema charset or collation doesn't match, expected charset:%s, collate:%s, got charset:%s, collate:%s", schema.charset, schema.collate, charset, collate)
+		}
+	}
+	return nil
+}
+
+func (c *testCase) checkTable() error {
+	var collate string
+	var comment string
+	for _, table := range c.tables {
+		row, err := c.dbs[0].Query(fmt.Sprintf("select TABLE_COLLATION, TABLE_COMMENT from information_schema.tables where table_name='%s'", table.name))
+		if err != nil {
+			return err
+		}
+		row.Next()
+		err = row.Scan(&collate, &comment)
+		if err != nil {
+			log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
+			return err
+		}
+		row.Close()
+		if !strings.EqualFold(collate, table.collate) || !strings.EqualFold(comment, table.comment) {
+			return errors.Errorf("table collate or comment doesn't match, table name: %s, expected collate:%s, comment:%s, got collate:%s, comment:%s", table.name, table.collate, table.comment, collate, comment)
+		}
+		// Check columns
+		var defaultValueRaw interface{}
+		var defaultValue string
+		var dateType string
+		for ite := table.columns.Iterator(); ite.Next(); {
+			column := ite.Value().(*ddlTestColumn)
+			row, err = c.dbs[0].Query(fmt.Sprintf("select COLUMN_DEFAULT, COLUMN_TYPE from information_schema.columns where table_name='%s' and column_name='%s'", table.name, column.name))
+			if err != nil {
+				return err
+			}
+			ok := row.Next()
+			if !ok {
+				return errors.New(fmt.Sprintf("no data for column %s, table %s", column.name, table.name))
+			}
+			err = row.Scan(&defaultValueRaw, &dateType)
+			if err != nil {
+				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
+				return err
+			}
+			row.Close()
+			if defaultValueRaw == nil {
+				defaultValue = "NULL"
+			} else {
+				defaultValue = fmt.Sprintf("%s", defaultValueRaw)
+			}
+			expectedDefault := getDefaultValueString(column.k, column.defaultValue)
+			expectedDefault = strings.Trim(expectedDefault, "'")
+			if column.k == KindTIMESTAMP {
+				t, err := time.ParseInLocation(TimeFormat, expectedDefault, Local)
+				if err != nil {
+					log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
+					return err
+				}
+				t = t.UTC()
+				expectedDefault = t.Format(TimeFormat)
+			}
+			if !column.canHaveDefaultValue() {
+				expectedDefault = "NULL"
+			}
+			if !strings.EqualFold(defaultValue, expectedDefault) {
+				return errors.Errorf("column default value doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, strings.Trim(expectedDefault, "'"), defaultValue)
+			}
+			expectedFieldType := column.normalizeDataType()
+			if expectedFieldType == "xxx" {
+				// We don't know the column's charset for now, so skip the check for text/blob.
+				dateType = "xxx"
+			}
+			if !strings.EqualFold(dateType, expectedFieldType) {
+				return errors.Errorf("column field type doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, expectedFieldType, dateType)
+			}
+		}
+	}
+	return nil
+}
+
+func getLastDDLInfo(conn *sql.Conn) (uint64, string, error) {
+	row, err := conn.QueryContext(context.Background(), "select json_extract(@@tidb_last_ddl_info, '$.seq_num'), json_extract(@@tidb_last_ddl_info, '$.query');")
+	if err != nil {
+		return 0, "", err
+	}
+	var seqNum uint64
+	var query string
+	row.Next()
+	err = row.Scan(&seqNum, &query)
+	if err != nil {
+		return 0, "", err
+	}
+	return seqNum, query, row.Close()
+}
+
 /*
 execParaDDLSQL get a batch of ddl from taskCh, and then:
 1. Parallel send every kind of DDL request to TiDB
@@ -270,6 +413,11 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 	tasks := make([]*ddlJobTask, 0, num)
 	var wg sync.WaitGroup
 	var unExpectedErr error
+	var globalDDLSeqNumMu sync.Mutex
+	globalDDLSeqNum, err := getStartDDLSeqNum(c.dbs[0])
+	if err != nil {
+		return err
+	}
 	for i := 0; i < num; i++ {
 		task := <-taskCh
 		tasks = append(tasks, task)
@@ -278,17 +426,62 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			defer wg.Done()
 			opStart := time.Now()
 			db := c.dbs[0]
-			_, err := db.Exec(task.sql)
-			if !ddlIgnoreError(err) {
-				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
-				task.err = err
+			conn, err := db.Conn(context.Background())
+			defer func() {
+				err := conn.Close()
+				if err != nil {
+					log.Errorf("error when closes conn %s", err.Error())
+				}
+			}()
+			if err != nil {
 				unExpectedErr = err
 				return
 			}
+			_, ddlErr := conn.ExecContext(context.Background(), task.sql)
+			if !ddlIgnoreError(ddlErr) {
+				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
+				task.err = ddlErr
+				unExpectedErr = ddlErr
+				return
+			}
+			// Try to update seq_num.
+			seqNum, query, err := getLastDDLInfo(conn)
 			if err != nil {
+				unExpectedErr = err
+				return
+			}
+
+			lock := false
+			query = strings.Replace(query, "\\\"", "\"", -1)
+			if seqNum > 0 && query == fmt.Sprintf("\"%s\"", task.sql) {
+				// We need to update sqq_num.
+				for {
+					globalDDLSeqNumMu.Lock()
+					if seqNum != globalDDLSeqNum+1 {
+						// Wait for other gorountine to update
+						globalDDLSeqNumMu.Unlock()
+						time.Sleep(5 * time.Millisecond)
+					} else {
+						globalDDLSeqNum = seqNum
+						lock = true
+						break
+					}
+				}
+			} else {
+				log.Infof("seq:%d, query:%s, task.sql:%s", seqNum, query, task.sql)
+			}
+
+			if ddlErr != nil {
+				// No need to update schema.
+				if lock {
+					globalDDLSeqNumMu.Unlock()
+				}
 				return
 			}
 			err = c.updateTableInfo(task)
+			if lock {
+				globalDDLSeqNumMu.Unlock()
+			}
 			if task.tblInfo != nil {
 				log.Infof("[ddl] [instance %d] local execute %s, err %v , table_id %s, ddlID %v", c.caseIndex, task.sql, err, task.tblInfo.id, task.ddlID)
 			} else if task.schemaInfo != nil {
@@ -302,7 +495,22 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 		}(task)
 	}
 	wg.Wait()
-	return unExpectedErr
+
+	if unExpectedErr != nil {
+		return unExpectedErr
+	}
+
+	// After all DDL complete, check all the schemas are correct.
+	err = c.checkSchema()
+	if err != nil {
+		return err
+	}
+	err = c.checkTable()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // execSerialDDLSQL gets a job from taskCh, and then executes the job.
@@ -504,16 +712,14 @@ func (c *testCase) prepareRenameTable(_ interface{}, taskCh chan *ddlJobTask) er
 	// Shadow copy the table.
 	table.lock.Lock()
 	defer table.lock.Unlock()
-	newTbl := *table
-	table.setDeleted()
-	newTbl.name = uuid.NewV4().String()
+	newName := uuid.NewV4().String()
 	sql := fmt.Sprintf("ALTER TABLE `%s` RENAME %s `%s`", table.name,
-		toAsSyntax[rand.Intn(len(toAsSyntax))], newTbl.name)
+		toAsSyntax[rand.Intn(len(toAsSyntax))], newName)
 	task := &ddlJobTask{
 		k:       ddlRenameTable,
 		sql:     sql,
 		tblInfo: table,
-		arg:     ddlJobArg(&newTbl),
+		arg:     ddlJobArg(&newName),
 	}
 	taskCh <- task
 	return nil
@@ -527,8 +733,7 @@ func (c *testCase) renameTableJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
 	delete(c.tables, table.name)
-	newTbl := (*ddlTestTable)(task.arg)
-	c.tables[newTbl.name] = newTbl
+	table.name = *(*string)(task.arg)
 	return nil
 }
 
@@ -1089,6 +1294,8 @@ type ddlColumnJobArg struct {
 	column            *ddlTestColumn
 	strategy          ddlTestAddDropColumnStrategy
 	insertAfterColumn *ddlTestColumn
+	// updateDefault is used in alter column to indicate if it updates the default value.
+	updateDefault bool
 }
 
 func (c *testCase) generateAddColumn(repeat int) error {
@@ -1231,6 +1438,9 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
 	}
+	if modifiedColumn.name == origColumn.name {
+		modifiedColumn.name = ""
+	}
 	task := &ddlJobTask{
 		// Column Type Change.
 		k:       ddlModifyColumn2,
@@ -1242,6 +1452,7 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 			column:            modifiedColumn,
 			strategy:          strategy,
 			insertAfterColumn: insertAfterColumn,
+			updateDefault:     modifiedColumn.defaultValue != origColumn.defaultValue,
 		}),
 	}
 	taskCh <- task
@@ -1299,6 +1510,9 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
 	}
+	if modifiedColumn.name == origColumn.name {
+		modifiedColumn.name = ""
+	}
 	task := &ddlJobTask{
 		k:       ddlModifyColumn,
 		tblInfo: table,
@@ -1309,6 +1523,7 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 			column:            modifiedColumn,
 			strategy:          strategy,
 			insertAfterColumn: insertAfterColumn,
+			updateDefault:     modifiedColumn.defaultValue != origColumn.defaultValue,
 		}),
 	}
 	taskCh <- task
@@ -1326,12 +1541,24 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 	if c.isColumnDeleted(arg.origColumn, table) {
 		return fmt.Errorf("column %s on table %s is not exists", arg.origColumn.name, table.name)
 	}
+	arg.origColumn.k = arg.column.k
+	if arg.column.name != "" {
+		// Rename
+		arg.origColumn.name = arg.column.name
+	}
+	arg.origColumn.fieldType = arg.column.fieldType
+	arg.origColumn.filedTypeM = arg.column.filedTypeM
+	arg.origColumn.filedTypeD = arg.column.filedTypeD
+	if arg.updateDefault {
+		arg.origColumn.defaultValue = arg.column.defaultValue
+	}
+	arg.origColumn.setValue = arg.column.setValue
 	table.columns.Remove(arg.origColumnIndex)
 	switch arg.strategy {
 	case ddlTestAddDropColumnStrategyAtBeginning:
-		table.columns.Insert(0, arg.column)
+		table.columns.Insert(0, arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtEnd:
-		table.columns.Add(arg.column)
+		table.columns.Add(arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtRandom:
 		insertPosition := arg.origColumnIndex - 1
 		for i := 0; i < table.columns.Size(); i++ {
@@ -1341,7 +1568,7 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 				break
 			}
 		}
-		table.columns.Insert(insertPosition+1, arg.column)
+		table.columns.Insert(insertPosition+1, arg.origColumn)
 	}
 	return nil
 }
@@ -1419,8 +1646,13 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 	}
 	columnToDrop := jobArg.column
 	if columnToDrop.indexReferences > 0 {
-		columnToDrop.setDeletedRecover()
-		return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference", jobArg.column.name, table.name)
+		if columnToDrop.indexReferences == 1 {
+			// TiDB support drop column with a single index.
+			columnToDrop.indexReferences--
+		} else {
+			columnToDrop.setDeletedRecover()
+			return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference", jobArg.column.name, table.name)
+		}
 	}
 	dropColumnPosition := -1
 	for i := 0; i < table.columns.Size(); i++ {
@@ -1505,8 +1737,7 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 	if c.isColumnDeleted(arg.column, table) {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
-	column := getColumnFromArrayList(table.columns, arg.columnIndex)
-	column.defaultValue = arg.newDefaultValue
+	arg.column.defaultValue = arg.newDefaultValue
 	return nil
 }
 

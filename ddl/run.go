@@ -189,7 +189,7 @@ func ddlIgnoreError(err error) bool {
 	if strings.Contains(errStr, "table doesn't exist") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
 		strings.Contains(errStr, "with composite index covered or Primary Key covered now") ||
-		strings.Contains(errStr, "column does not exist") ||
+		strings.Contains(errStr, "does not exist, this column may have been updated by other DDL") ||
 		strings.Contains(errStr, "is not exists") || strings.Contains(errStr, "column does not exist") ||
 		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "Unknown table") ||
 		strings.Contains(errStr, "admin show ddl jobs len != len(tasks)") ||
@@ -202,7 +202,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") {
+		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
+		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") {
 		return true
 	}
 	return false
