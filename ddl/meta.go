@@ -396,6 +396,10 @@ func (col *ddlTestColumn) setRenamed() {
 	atomic.StoreInt32(&col.renamed, 1)
 }
 
+func (col *ddlTestColumn) delRenamed() {
+	atomic.StoreInt32(&col.renamed, 0)
+}
+
 func (col *ddlTestColumn) setDeletedRecover() {
 	atomic.StoreInt32(&col.deleted, 0)
 }
