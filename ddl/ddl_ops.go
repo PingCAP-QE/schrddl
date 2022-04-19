@@ -361,7 +361,6 @@ func (c *testCase) checkTable() error {
 					log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
 					return err
 				}
-				t = t.UTC()
 				expectedDefault = t.Format(TimeFormat)
 			}
 			if !column.canHaveDefaultValue() {
