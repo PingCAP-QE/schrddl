@@ -587,23 +587,20 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			defer wg.Done()
 			opStart := time.Now()
 			db := c.pickupDB()
-			err := c.executeWithTimeout(db, task)
-			if !ddlIgnoreError(err) {
-				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
-				task.err = err
-			db := c.dbs[0]
 			conn, err := db.Conn(context.Background())
+			if err != nil {
+				unExpectedErr = err
+				return
+			}
 			defer func() {
 				err := conn.Close()
 				if err != nil {
 					log.Errorf("error when closes conn %s", err.Error())
 				}
 			}()
-			if err != nil {
-				unExpectedErr = err
-				return
-			}
-			_, ddlErr := conn.ExecContext(context.Background(), task.sql)
+			ddlErr := c.executeWithTimeout(task, func(ctx context.Context, s string) (sql.Result, error) {
+				return conn.ExecContext(ctx, s)
+			})
 			if !ddlIgnoreError(ddlErr) {
 				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 				task.err = ddlErr
@@ -687,7 +684,9 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 	task := <-taskCh
 	db := c.pickupDB()
 	opStart := time.Now()
-	err := c.executeWithTimeout(db, task)
+	err := c.executeWithTimeout(task, func(ctx context.Context, s string) (sql.Result, error) {
+		return db.ExecContext(ctx, task.sql)
+	})
 	log.Infof("[ddl] [instance %d] %s, err: %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 	if err != nil {
 		if ddlIgnoreError(err) {

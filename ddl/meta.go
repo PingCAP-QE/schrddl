@@ -38,7 +38,6 @@ type testCase struct {
 	lastDDLID         int
 	charsets          []string
 	charsetsCollates  map[string][]string
-	updateSchemaMu    sync.Mutex
 }
 
 type ddlTestErrorConflict struct {
@@ -104,7 +103,7 @@ func (c *testCase) pickupDB() *sql.DB {
 	return c.dbs[rand.Intn(len(c.dbs)-1)]
 }
 
-func (c *testCase) executeWithTimeout(db *sql.DB, task *ddlJobTask) error {
+func (c *testCase) executeWithTimeout(task *ddlJobTask, f func(ctx context.Context, s string) (sql.Result, error)) error {
 	time.Sleep(time.Millisecond * time.Duration(rand.Intn(30)))
 	t := time.Second * 30
 	switch task.k {
@@ -116,7 +115,7 @@ func (c *testCase) executeWithTimeout(db *sql.DB, task *ddlJobTask) error {
 	t = t * time.Duration(runningDDLCount)
 	ctx, cancel := context.WithTimeout(context.Background(), t)
 	defer cancel()
-	_, err := db.ExecContext(ctx, task.sql)
+	_, err := f(ctx, task.sql)
 	return errors.Annotate(err, task.sql)
 }
 
