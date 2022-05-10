@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	dbs             = &dbAddr{dbs: []string{"127.0.0.1:4000"}}
+	dbs             = &dbAddr{dbs: []string{}}
 	dbName          = flag.String("db", "test", "database name")
 	mode            = flag.String("mode", "serial", "test mode: serial, parallel")
 	concurrency     = flag.Int("concurrency", 20, "concurrency")
