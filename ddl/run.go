@@ -153,6 +153,7 @@ func ddlIgnoreError(err error) bool {
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
 	fmt.Fprintf(os.Stdout, "check DDL err:%s\n", errStr)
+	// TODO: remove it
 	if strings.Contains(errStr, "is still in use") && strings.Contains(errStr, "Placement policy") {
 		return true
 	}
