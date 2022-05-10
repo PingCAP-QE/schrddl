@@ -153,6 +153,9 @@ func ddlIgnoreError(err error) bool {
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
 	fmt.Fprintf(os.Stdout, "check DDL err:%s\n", errStr)
+	if strings.Contains(errStr, "is still in use") && strings.Contains(errStr, "Placement policy") {
+		return true
+	}
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
 	}
