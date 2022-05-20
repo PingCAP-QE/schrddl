@@ -33,7 +33,7 @@ var (
 	concurrency     = flag.Int("concurrency", 20, "concurrency")
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
-	testTime        = flag.Duration("time", 2*time.Hour, "test time")
+	testTime        = flag.Duration("time", 3*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
 )
 
