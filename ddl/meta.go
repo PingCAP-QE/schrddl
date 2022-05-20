@@ -6,16 +6,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/juju/errors"
 	"math/rand"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/juju/errors"
 	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -809,7 +809,7 @@ func (col *ddlTestColumn) randValue() interface{} {
 			m[idx] = struct{}{}
 			idxs[i] = idx
 		}
-		sort.Ints(idxs)
+		slices.Sort(idxs)
 		s := ""
 		for i := range idxs {
 			if i > 0 {

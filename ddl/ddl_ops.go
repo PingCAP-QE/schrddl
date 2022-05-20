@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
 )
 
 func (c *testCase) generateDDLOps() error {
@@ -1390,6 +1390,9 @@ func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) 
 	if table.columns.Size() == 0 || table.hasPK {
 		return nil
 	}
+	if table.name == "" {
+		return nil
+	}
 
 	perm := rand.Perm(table.columns.Size())
 	// build SQL
@@ -2467,24 +2470,11 @@ func (c *testCase) getSortTask(db *sql.DB, tasks []*ddlJobTask) ([]*ddlJobTask, 
 		}
 		return nil, fmt.Errorf(str)
 	}
-
-	sort.Sort(ddlJobTasks(sortTasks))
+	slices.SortFunc(sortTasks, func(i, j *ddlJobTask) bool {
+		return i.ddlID < j.ddlID
+	})
 	if len(sortTasks) > 0 {
 		c.lastDDLID = sortTasks[len(sortTasks)-1].ddlID
 	}
 	return sortTasks, nil
-}
-
-type ddlJobTasks []*ddlJobTask
-
-func (tasks ddlJobTasks) Swap(i, j int) {
-	tasks[i], tasks[j] = tasks[j], tasks[i]
-}
-
-func (tasks ddlJobTasks) Len() int {
-	return len(tasks)
-}
-
-func (tasks ddlJobTasks) Less(i, j int) bool {
-	return tasks[i].ddlID < tasks[j].ddlID
 }
