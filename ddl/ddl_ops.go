@@ -1397,13 +1397,18 @@ func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) 
 	perm := rand.Perm(table.columns.Size())
 	// build SQL
 	sql := fmt.Sprintf("ALTER TABLE `%s` ADD PRIMARY KEY (", table.name)
+	var isAdded = false
 	var column *ddlTestColumn
 	for _, i := range perm {
 		column = getColumnFromArrayList(table.columns, i)
 		if column.canBePrimary() {
 			sql += fmt.Sprintf("`%s`", column.name)
+			isAdded = true
 			break
 		}
+	}
+	if !isAdded {
+		return nil
 	}
 	sql += ")"
 
