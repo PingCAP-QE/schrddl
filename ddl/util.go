@@ -22,6 +22,8 @@ import (
 	"github.com/ngaut/log"
 )
 
+const follow_nums = 2
+
 func PadLeft(str, pad string, length int) string {
 	if len(str) >= length {
 		return str

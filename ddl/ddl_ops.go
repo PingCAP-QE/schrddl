@@ -1767,7 +1767,7 @@ func (c *testCase) prepareAlterPlacementPolicy(_ interface{}, taskCh chan *ddlJo
 		return nil
 	}
 
-	followers := rand.Intn(3) + 1
+	followers := rand.Intn(follow_nums) + 1
 	sql := fmt.Sprintf("ALTER PLACEMENT POLICY `%s` followers=%d", policy, followers)
 	taskCh <- &ddlJobTask{
 		k:             ActionAlterPlacementPolicy,
