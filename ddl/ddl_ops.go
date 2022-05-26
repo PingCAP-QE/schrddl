@@ -264,10 +264,10 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 
 	ActionAlterIndexVisibility: 0.20,
 
-	ActionCreatePlacementPolicy:     0.20,
-	ActionDropPlacementPolicy:       0.20,
-	ActionAddPlacementPolicyToTable: 0.20,
-	ActionAlterPlacementPolicy:      0.20,
+	ActionCreatePlacementPolicy:     0.10,
+	ActionDropPlacementPolicy:       0.10,
+	ActionAddPlacementPolicyToTable: 0.10,
+	ActionAlterPlacementPolicy:      0.10,
 }
 
 type ddlJob struct {
