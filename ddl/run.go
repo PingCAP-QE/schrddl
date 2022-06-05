@@ -176,6 +176,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Truncated incorrect") ||
 		strings.Contains(errStr, "overflows") ||
 		strings.Contains(errStr, "Invalid year value") ||
+		strings.Contains(errStr, "cannot convert datum from unsigned bigint to type year") ||
 		strings.Contains(errStr, "Incorrect time value") ||
 		strings.Contains(errStr, "Incorrect datetime value") ||
 		strings.Contains(errStr, "Incorrect timestamp value") ||

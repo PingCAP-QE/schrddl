@@ -22,7 +22,7 @@ import (
 	"github.com/ngaut/log"
 )
 
-const follow_nums = 2
+const follow_nums = 3
 
 func PadLeft(str, pad string, length int) string {
 	if len(str) >= length {
