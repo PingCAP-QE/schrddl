@@ -354,11 +354,12 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 		expectedDefault := getDefaultValueString(column.k, column.defaultValue)
 		expectedDefault = strings.Trim(expectedDefault, "'")
 		if column.k == KindTIMESTAMP {
-			t, err := time.ParseInLocation(TimeFormat, expectedDefault, Local)
+			t, err := time.Parse(TimeFormat, expectedDefault)
 			if err != nil {
 				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
 				return err
 			}
+			t = t.UTC()
 			expectedDefault = t.Format(TimeFormat)
 		}
 		if !column.canHaveDefaultValue() {
@@ -430,7 +431,7 @@ func (c *testCase) checkTable() error {
 		if !strings.EqualFold(collate, table.collate) || !strings.EqualFold(comment, table.comment) {
 			return errors.Errorf("table collate or comment doesn't match, table name: %s, expected collate:%s, comment:%s, got collate:%s, comment:%s", table.name, table.collate, table.comment, collate, comment)
 		}
-		// Check columnsF
+		// Check columns
 		if err = c.checkTableColumns(table); err != nil {
 			return err
 		}
