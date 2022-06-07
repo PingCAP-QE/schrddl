@@ -359,7 +359,6 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
 				return err
 			}
-			t = t.UTC()
 			expectedDefault = t.Format(TimeFormat)
 		}
 		if !column.canHaveDefaultValue() {
@@ -431,13 +430,14 @@ func (c *testCase) checkTable() error {
 		if !strings.EqualFold(collate, table.collate) || !strings.EqualFold(comment, table.comment) {
 			return errors.Errorf("table collate or comment doesn't match, table name: %s, expected collate:%s, comment:%s, got collate:%s, comment:%s", table.name, table.collate, table.comment, collate, comment)
 		}
-		// Check columns
+		// Check columnsF
 		if err = c.checkTableColumns(table); err != nil {
 			return err
 		}
 		// Check indexes
 		if err = c.checkTableIndexes(table); err != nil {
 			return err
+
 		}
 	}
 	return nil
