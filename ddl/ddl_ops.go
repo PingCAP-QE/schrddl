@@ -354,7 +354,7 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 		expectedDefault := getDefaultValueString(column.k, column.defaultValue)
 		expectedDefault = strings.Trim(expectedDefault, "'")
 		if column.k == KindTIMESTAMP {
-			t, err := time.Parse(TimeFormat, expectedDefault)
+			t, err := time.ParseInLocation(TimeFormat, expectedDefault, Local)
 			if err != nil {
 				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
 				return err
