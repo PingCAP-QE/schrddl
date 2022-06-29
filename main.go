@@ -14,7 +14,10 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"flag"
+	"fmt"
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
@@ -33,6 +36,28 @@ var (
 	output          = flag.String("output", "", "output file")
 )
 
+func prepareEnv() {
+	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
+	tiDb, err := sql.Open("mysql", dbURL)
+	if err != nil {
+		log.Fatalf("Can't open database, err: %s", err.Error())
+	}
+	tidbC, err := tiDb.Conn(context.Background())
+	if err != nil {
+		log.Fatalf("Can't connect to database, err: %s", err.Error())
+	}
+	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
+		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
+			if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='+8:00'")); err != nil {
+				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
+			}
+		}
+	}
+	tidbC.Close()
+
+	mysql.SetLogger(log.Logger())
+}
+
 func main() {
 	flag.Parse()
 	if *output != "" {
@@ -48,6 +73,6 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
-	mysql.SetLogger(log.Logger())
+	prepareEnv()
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }

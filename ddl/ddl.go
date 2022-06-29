@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,12 +81,7 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 		go func(i int) {
 			defer wg.Done()
 			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-				err := c.cases[i].execute(exeDDLFunc, exeDMLFunc)
+				err := c.cases[i].execute(ctx, exeDDLFunc, exeDMLFunc)
 				if err != nil {
 					for _, dbs := range dbss {
 						for _, db := range dbs {
@@ -370,7 +366,7 @@ func SerialExecuteDML(c *testCase, ops []dmlTestOpExecutor, postOp func() error)
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
 // When both of them ONCE complete, it exits.
-func (c *testCase) execute(executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
+func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
 	var (
 		ddlAllComplete int32 = 0
 		dmlAllComplete int32 = 0
@@ -384,6 +380,12 @@ func (c *testCase) execute(executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc)
 			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err1 != nil {
 				break
 			}
+			select {
+			case <-ctx.Done():
+				log.Infof("Time is up, exit schrddl")
+				os.Exit(0)
+			default:
+			}
 		}
 		return errors.Trace(err1)
 	}, func() error {
@@ -395,6 +397,12 @@ func (c *testCase) execute(executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc)
 			atomic.StoreInt32(&dmlAllComplete, 1)
 			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err2 != nil {
 				break
+			}
+			select {
+			case <-ctx.Done():
+				log.Infof("Time is up, exit schrddl")
+				os.Exit(0)
+			default:
 			}
 		}
 		return errors.Trace(err2)

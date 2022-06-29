@@ -310,6 +310,109 @@ func (c *testCase) checkSchema() error {
 	return nil
 }
 
+func (c *testCase) checkTableColumns(table *ddlTestTable) error {
+	var columnCnt int
+	var defaultValueRaw interface{}
+	var defaultValue string
+	var dateType string
+
+	row, err := c.dbs[0].Query(fmt.Sprintf("select count(*) from information_schema.columns where table_name='%s';", table.name))
+	if err != nil {
+		return err
+	}
+	row.Next()
+	err = row.Scan(&columnCnt)
+	if err != nil {
+		return err
+	}
+	if columnCnt != table.columns.Size() {
+		return errors.Errorf("table %s column cnt are not same, expected cnt: %d, get cnt: %d, \n %s", table.name, table.columns.Size(), columnCnt, table.debugPrintToString())
+	}
+	row.Close()
+
+	for ite := table.columns.Iterator(); ite.Next(); {
+		column := ite.Value().(*ddlTestColumn)
+		row, err = c.dbs[0].Query(fmt.Sprintf("select COLUMN_DEFAULT, COLUMN_TYPE from information_schema.columns where table_name='%s' and column_name='%s'", table.name, column.name))
+		if err != nil {
+			return err
+		}
+		ok := row.Next()
+		if !ok {
+			return errors.New(fmt.Sprintf("no data for column %s, table %s", column.name, table.name))
+		}
+		err = row.Scan(&defaultValueRaw, &dateType)
+		if err != nil {
+			log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
+			return err
+		}
+		row.Close()
+		if defaultValueRaw == nil {
+			defaultValue = "NULL"
+		} else {
+			defaultValue = fmt.Sprintf("%s", defaultValueRaw)
+		}
+		expectedDefault := getDefaultValueString(column.k, column.defaultValue)
+		expectedDefault = strings.Trim(expectedDefault, "'")
+		if column.k == KindTIMESTAMP {
+			t, err := time.ParseInLocation(TimeFormat, expectedDefault, Local)
+			if err != nil {
+				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
+				return err
+			}
+			t = t.UTC()
+			expectedDefault = t.Format(TimeFormat)
+		}
+		if !column.canHaveDefaultValue() {
+			expectedDefault = "NULL"
+		}
+		if !strings.EqualFold(defaultValue, expectedDefault) {
+			return errors.Errorf("column default value doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, strings.Trim(expectedDefault, "'"), defaultValue)
+		}
+		expectedFieldType := column.normalizeDataType()
+		if expectedFieldType == "xxx" {
+			// We don't know the column's charset for now, so skip the check for text/blob.
+			dateType = "xxx"
+		}
+		if !strings.EqualFold(dateType, expectedFieldType) {
+			return errors.Errorf("column field type doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, expectedFieldType, dateType)
+		}
+	}
+	return nil
+}
+
+func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
+	var indexCnt int
+	var columnNames string
+	row, err := c.dbs[0].Query(fmt.Sprintf("select count(*) from (select distinct index_name from information_schema.statistics where table_name='%s' and index_name != 'PRIMARY') as tmp;;", table.name))
+	if err != nil {
+		return err
+	}
+	row.Next()
+	err = row.Scan(&indexCnt)
+	if err != nil {
+		return err
+	}
+	if indexCnt != len(table.indexes) {
+		return errors.Errorf("table %s index cnt are not same, expected cnt: %d, got cnt: %d \n %s", table.name, len(table.indexes), indexCnt, table.debugPrintToString())
+	}
+	row.Close()
+	for _, idx := range table.indexes {
+		row, err = c.dbs[0].Query(fmt.Sprintf("select GROUP_CONCAT(column_name ORDER BY seq_in_index) from information_schema.statistics where table_name='%s' and index_name='%s';", table.name, idx.name))
+		if err != nil {
+			return err
+		}
+		row.Next()
+		err = row.Scan(&columnNames)
+		if err != nil {
+			return err
+		}
+		if idx.signature != columnNames {
+			return errors.Errorf("table index columns doesn't match, index name: %s, expected: %s, got: %s", idx.name, idx.signature, columnNames)
+		}
+	}
+	return nil
+}
+
 func (c *testCase) checkTable() error {
 	var collate string
 	var comment string
@@ -329,54 +432,13 @@ func (c *testCase) checkTable() error {
 			return errors.Errorf("table collate or comment doesn't match, table name: %s, expected collate:%s, comment:%s, got collate:%s, comment:%s", table.name, table.collate, table.comment, collate, comment)
 		}
 		// Check columns
-		var defaultValueRaw interface{}
-		var defaultValue string
-		var dateType string
-		for ite := table.columns.Iterator(); ite.Next(); {
-			column := ite.Value().(*ddlTestColumn)
-			row, err = c.dbs[0].Query(fmt.Sprintf("select COLUMN_DEFAULT, COLUMN_TYPE from information_schema.columns where table_name='%s' and column_name='%s'", table.name, column.name))
-			if err != nil {
-				return err
-			}
-			ok := row.Next()
-			if !ok {
-				return errors.New(fmt.Sprintf("no data for column %s, table %s", column.name, table.name))
-			}
-			err = row.Scan(&defaultValueRaw, &dateType)
-			if err != nil {
-				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
-				return err
-			}
-			row.Close()
-			if defaultValueRaw == nil {
-				defaultValue = "NULL"
-			} else {
-				defaultValue = fmt.Sprintf("%s", defaultValueRaw)
-			}
-			expectedDefault := getDefaultValueString(column.k, column.defaultValue)
-			expectedDefault = strings.Trim(expectedDefault, "'")
-			if column.k == KindTIMESTAMP {
-				t, err := time.ParseInLocation(TimeFormat, expectedDefault, Local)
-				if err != nil {
-					log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
-					return err
-				}
-				expectedDefault = t.Format(TimeFormat)
-			}
-			if !column.canHaveDefaultValue() {
-				expectedDefault = "NULL"
-			}
-			if !strings.EqualFold(defaultValue, expectedDefault) {
-				return errors.Errorf("column default value doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, strings.Trim(expectedDefault, "'"), defaultValue)
-			}
-			expectedFieldType := column.normalizeDataType()
-			if expectedFieldType == "xxx" {
-				// We don't know the column's charset for now, so skip the check for text/blob.
-				dateType = "xxx"
-			}
-			if !strings.EqualFold(dateType, expectedFieldType) {
-				return errors.Errorf("column field type doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, expectedFieldType, dateType)
-			}
+		if err = c.checkTableColumns(table); err != nil {
+			return err
+		}
+		// Check indexes
+		if err = c.checkTableIndexes(table); err != nil {
+			return err
+
 		}
 	}
 	return nil
@@ -539,6 +601,15 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 		} else {
 			return fmt.Errorf("Error when executing SQL: %s\n local Err: %#v\n", task.sql, err)
 		}
+	}
+
+	err = c.checkSchema()
+	if err != nil {
+		return err
+	}
+	err = c.checkTable()
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -1061,6 +1132,17 @@ func (c *testCase) generateAddIndex(repeat int) error {
 	return nil
 }
 
+func generateIndexSignture(index ddlTestIndex) string {
+	signature := ""
+	for i, col := range index.columns {
+		signature += col.name
+		if i != len(index.columns)-1 {
+			signature += ","
+		}
+	}
+	return signature
+}
+
 func (c *testCase) prepareAddIndex(_ interface{}, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
@@ -1111,12 +1193,7 @@ func (c *testCase) prepareAddIndex(_ interface{}, taskCh chan *ddlJobTask) error
 	if len(index.columns) == 0 {
 		return nil
 	}
-
-	signature := ""
-	for _, col := range index.columns {
-		signature += col.name + ","
-	}
-	index.signature = signature
+	index.signature = generateIndexSignture(index)
 
 	// check whether index duplicates
 	for _, idx := range table.indexes {
@@ -1167,7 +1244,7 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 }
 
 type ddlRenameIndexArg struct {
-	preIndex int
+	index    *ddlTestIndex
 	newIndex string
 }
 
@@ -1192,7 +1269,7 @@ func (c *testCase) prepareRenameIndex(_ interface{}, taskCh chan *ddlJobTask) er
 		k:       ddlRenameIndex,
 		sql:     sql,
 		tblInfo: table,
-		arg:     ddlJobArg(&ddlRenameIndexArg{loc, newIndex}),
+		arg:     ddlJobArg(&ddlRenameIndexArg{index, newIndex}),
 	}
 	taskCh <- task
 	return nil
@@ -1204,13 +1281,21 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
-	if arg.preIndex >= len(table.indexes) {
-		return fmt.Errorf("index offset %d on table %s is not exists", arg.preIndex, table.name)
+	iOfRenameIndex := -1
+	for i := range table.indexes {
+		if arg.index.name == table.indexes[i].name {
+			iOfRenameIndex = i
+			break
+		}
 	}
-	if c.isIndexDeleted(table.indexes[arg.preIndex], table) {
-		return fmt.Errorf("index %s on table %s is not exists", table.indexes[arg.preIndex].name, table.name)
+	if iOfRenameIndex == -1 {
+		return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
 	}
-	table.indexes[arg.preIndex].name = arg.newIndex
+
+	if c.isIndexDeleted(table.indexes[iOfRenameIndex], table) {
+		return fmt.Errorf("index %s on table %s is not exists", table.indexes[iOfRenameIndex].name, table.name)
+	}
+	table.indexes[iOfRenameIndex].name = arg.newIndex
 	return nil
 }
 
@@ -1288,7 +1373,6 @@ type ddlTestAddDropColumnConfig struct {
 }
 
 type ddlColumnJobArg struct {
-	origColumnIndex   int
 	origColumn        *ddlTestColumn
 	column            *ddlTestColumn
 	strategy          ddlTestAddDropColumnStrategy
@@ -1446,7 +1530,6 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 		tblInfo: table,
 		sql:     sql,
 		arg: ddlJobArg(&ddlColumnJobArg{
-			origColumnIndex:   origColIndex,
 			origColumn:        origColumn,
 			column:            modifiedColumn,
 			strategy:          strategy,
@@ -1517,7 +1600,6 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 		tblInfo: table,
 		sql:     sql,
 		arg: ddlJobArg(&ddlColumnJobArg{
-			origColumnIndex:   origColIndex,
 			origColumn:        origColumn,
 			column:            modifiedColumn,
 			strategy:          strategy,
@@ -1540,6 +1622,15 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 	if c.isColumnDeleted(arg.origColumn, table) {
 		return fmt.Errorf("column %s on table %s is not exists", arg.origColumn.name, table.name)
 	}
+
+	origColumnIndex := 0
+	for i := 0; i < table.columns.Size(); i++ {
+		col := getColumnFromArrayList(table.columns, i)
+		if col.name == arg.origColumn.name {
+			origColumnIndex = i
+			break
+		}
+	}
 	arg.origColumn.k = arg.column.k
 	if arg.column.name != "" {
 		// Rename
@@ -1552,14 +1643,14 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 		arg.origColumn.defaultValue = arg.column.defaultValue
 	}
 	arg.origColumn.setValue = arg.column.setValue
-	table.columns.Remove(arg.origColumnIndex)
+	table.columns.Remove(origColumnIndex)
 	switch arg.strategy {
 	case ddlTestAddDropColumnStrategyAtBeginning:
 		table.columns.Insert(0, arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtEnd:
 		table.columns.Add(arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtRandom:
-		insertPosition := arg.origColumnIndex - 1
+		insertPosition := origColumnIndex - 1
 		for i := 0; i < table.columns.Size(); i++ {
 			col := getColumnFromArrayList(table.columns, i)
 			if col.name == arg.insertAfterColumn.name {
@@ -1568,6 +1659,9 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 			}
 		}
 		table.columns.Insert(insertPosition+1, arg.origColumn)
+	}
+	for _, idx := range table.indexes {
+		idx.signature = generateIndexSignture(*idx)
 	}
 	return nil
 }
@@ -1617,7 +1711,7 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 	if columnToDrop.indexReferences > 0 {
 		return nil
 	}
-	columnToDrop.setDeleted()
+	// columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
 	arg := &ddlColumnJobArg{
