@@ -326,7 +326,7 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 		return err
 	}
 	if columnCnt != table.columns.Size() {
-		return errors.Errorf("table column cnt are not same, expected cnt: %d, get cnt: %d", table.columns.Size(), columnCnt)
+		return errors.Errorf("table %s column cnt are not same, expected cnt: %d, get cnt: %d, \n %s", table.name, table.columns.Size(), columnCnt, table.debugPrintToString())
 	}
 	row.Close()
 
@@ -393,7 +393,7 @@ func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
 		return err
 	}
 	if indexCnt != len(table.indexes) {
-		return errors.Errorf("table index cnt are not same, expected cnt: %d, got cnt: %d", len(table.indexes), indexCnt)
+		return errors.Errorf("table %s index cnt are not same, expected cnt: %d, got cnt: %d \n %s", table.name, len(table.indexes), indexCnt, table.debugPrintToString())
 	}
 	row.Close()
 	for _, idx := range table.indexes {
@@ -1244,7 +1244,7 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 }
 
 type ddlRenameIndexArg struct {
-	preIndex int
+	index    *ddlTestIndex
 	newIndex string
 }
 
@@ -1269,7 +1269,7 @@ func (c *testCase) prepareRenameIndex(_ interface{}, taskCh chan *ddlJobTask) er
 		k:       ddlRenameIndex,
 		sql:     sql,
 		tblInfo: table,
-		arg:     ddlJobArg(&ddlRenameIndexArg{loc, newIndex}),
+		arg:     ddlJobArg(&ddlRenameIndexArg{index, newIndex}),
 	}
 	taskCh <- task
 	return nil
@@ -1281,13 +1281,21 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
-	if arg.preIndex >= len(table.indexes) {
-		return fmt.Errorf("index offset %d on table %s is not exists", arg.preIndex, table.name)
+	iOfRenameIndex := -1
+	for i := range table.indexes {
+		if arg.index.name == table.indexes[i].name {
+			iOfRenameIndex = i
+			break
+		}
 	}
-	if c.isIndexDeleted(table.indexes[arg.preIndex], table) {
-		return fmt.Errorf("index %s on table %s is not exists", table.indexes[arg.preIndex].name, table.name)
+	if iOfRenameIndex == -1 {
+		return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
 	}
-	table.indexes[arg.preIndex].name = arg.newIndex
+
+	if c.isIndexDeleted(table.indexes[iOfRenameIndex], table) {
+		return fmt.Errorf("index %s on table %s is not exists", table.indexes[iOfRenameIndex].name, table.name)
+	}
+	table.indexes[iOfRenameIndex].name = arg.newIndex
 	return nil
 }
 
@@ -1365,7 +1373,6 @@ type ddlTestAddDropColumnConfig struct {
 }
 
 type ddlColumnJobArg struct {
-	origColumnIndex   int
 	origColumn        *ddlTestColumn
 	column            *ddlTestColumn
 	strategy          ddlTestAddDropColumnStrategy
@@ -1523,7 +1530,6 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 		tblInfo: table,
 		sql:     sql,
 		arg: ddlJobArg(&ddlColumnJobArg{
-			origColumnIndex:   origColIndex,
 			origColumn:        origColumn,
 			column:            modifiedColumn,
 			strategy:          strategy,
@@ -1594,7 +1600,6 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 		tblInfo: table,
 		sql:     sql,
 		arg: ddlJobArg(&ddlColumnJobArg{
-			origColumnIndex:   origColIndex,
 			origColumn:        origColumn,
 			column:            modifiedColumn,
 			strategy:          strategy,
@@ -1617,6 +1622,15 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 	if c.isColumnDeleted(arg.origColumn, table) {
 		return fmt.Errorf("column %s on table %s is not exists", arg.origColumn.name, table.name)
 	}
+
+	origColumnIndex := 0
+	for i := 0; i < table.columns.Size(); i++ {
+		col := getColumnFromArrayList(table.columns, i)
+		if col.name == arg.origColumn.name {
+			origColumnIndex = i
+			break
+		}
+	}
 	arg.origColumn.k = arg.column.k
 	if arg.column.name != "" {
 		// Rename
@@ -1629,14 +1643,14 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 		arg.origColumn.defaultValue = arg.column.defaultValue
 	}
 	arg.origColumn.setValue = arg.column.setValue
-	table.columns.Remove(arg.origColumnIndex)
+	table.columns.Remove(origColumnIndex)
 	switch arg.strategy {
 	case ddlTestAddDropColumnStrategyAtBeginning:
 		table.columns.Insert(0, arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtEnd:
 		table.columns.Add(arg.origColumn)
 	case ddlTestAddDropColumnStrategyAtRandom:
-		insertPosition := arg.origColumnIndex - 1
+		insertPosition := origColumnIndex - 1
 		for i := 0; i < table.columns.Size(); i++ {
 			col := getColumnFromArrayList(table.columns, i)
 			if col.name == arg.insertAfterColumn.name {
@@ -1697,7 +1711,7 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 	if columnToDrop.indexReferences > 0 {
 		return nil
 	}
-	columnToDrop.setDeleted()
+	// columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
 	arg := &ddlColumnJobArg{

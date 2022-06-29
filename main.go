@@ -15,11 +15,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"time"
-
-	"database/sql"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
 	"github.com/go-sql-driver/mysql"
