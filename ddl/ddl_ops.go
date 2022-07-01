@@ -1707,10 +1707,6 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 
-	// We does not support dropping a column with index
-	if columnToDrop.indexReferences > 0 {
-		return nil
-	}
 	// columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
@@ -1738,15 +1734,22 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
 	columnToDrop := jobArg.column
-	if columnToDrop.indexReferences > 0 {
-		if columnToDrop.indexReferences == 1 {
-			// TiDB support drop column with a single index.
-			columnToDrop.indexReferences--
+
+	// Drop index as well.
+	dropIndexCnt := 0
+	tempIdx := table.indexes[:0]
+	for _, idx := range table.indexes {
+		if len(idx.columns) == 1 && idx.columns[0].name == columnToDrop.name {
+			dropIndexCnt++
 		} else {
-			columnToDrop.setDeletedRecover()
-			return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference", jobArg.column.name, table.name)
+			tempIdx = append(tempIdx, idx)
 		}
 	}
+	table.indexes = tempIdx
+	if columnToDrop.indexReferences != dropIndexCnt {
+		return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference %d, drop index cnt %d", jobArg.column.name, table.name, columnToDrop.indexReferences, dropIndexCnt)
+	}
+
 	dropColumnPosition := -1
 	for i := 0; i < table.columns.Size(); i++ {
 		column := getColumnFromArrayList(table.columns, i)
