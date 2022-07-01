@@ -1707,10 +1707,6 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 
-	// We does not support dropping a column with index
-	if columnToDrop.indexReferences > 0 {
-		return nil
-	}
 	// columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
