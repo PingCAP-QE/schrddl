@@ -17,6 +17,7 @@ import (
 var defaultPushMetricsInterval = 15 * time.Second
 var enableTransactionTestFlag = "0"
 var enableTransactionTest = false
+var Chaos bool = false
 
 func init() {
 	if enableTransactionTestFlag == "1" {
@@ -35,7 +36,8 @@ func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	return db, nil
 }
 
-func Run(dbAddr []string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration) {
+func Run(dbAddr []string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration, chaos bool) {
+	Chaos = chaos
 	wrapCtx := context.WithCancel
 	if testTime > 0 {
 		wrapCtx = func(ctx context.Context) (context.Context, context.CancelFunc) {

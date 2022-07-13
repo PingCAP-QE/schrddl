@@ -33,6 +33,7 @@ var (
 	concurrency     = flag.Int("concurrency", 20, "concurrency")
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
+	chaos           = flag.Bool("chaos", true, "whether to test in the chaos mode")
 	testTime        = flag.Duration("time", 6*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
 )
@@ -92,5 +93,5 @@ func main() {
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
 	prepareEnv(dbs.dbs)
-	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime, chaos)
 }

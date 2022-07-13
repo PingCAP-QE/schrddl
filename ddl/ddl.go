@@ -88,8 +88,12 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 							disableTiKVGC(db)
 						}
 					}
-					// os.Exit(-1)
-					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					if Chaos {
+						log.Warnf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					} else {
+						// os.Exit(-1)
+						log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					}
 				}
 			}
 		}(i)
