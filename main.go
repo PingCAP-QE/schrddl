@@ -92,6 +92,10 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
-	prepareEnv(dbs.dbs)
+	if !*chaos {
+		prepareEnv(dbs.dbs)
+	} else {
+		log.Warnf("in the chaos mode, Please do the prepare env by yourself")
+	}
 	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime, *chaos)
 }
