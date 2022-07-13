@@ -93,5 +93,5 @@ func main() {
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
 	prepareEnv(dbs.dbs)
-	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime, chaos)
+	Run(dbs.dbs, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime, *chaos)
 }
