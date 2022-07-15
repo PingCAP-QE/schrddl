@@ -106,12 +106,12 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	ctx := context.Background()
 	dbIdx := rand.Intn(len(c.dbs))
 	db := c.dbs[dbIdx]
+	task := <-taskCh
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil
 	}
 	defer conn.Close()
-	task := <-taskCh
 	err = c.sendDMLRequest(ctx, conn, task)
 	if err != nil {
 		if dmlIgnoreError(err) {
@@ -134,7 +134,7 @@ func (c *testCase) execDMLInTransactionSQL(taskCh chan *dmlJobTask) error {
 	tasksLen := len(taskCh)
 
 	ctx := context.Background()
-	conn, err := c.dbs[1].Conn(ctx)
+	conn, err := c.dbs[len(c.dbs)-1].Conn(ctx)
 	if err != nil {
 		return nil
 	}

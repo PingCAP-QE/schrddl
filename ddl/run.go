@@ -17,6 +17,7 @@ import (
 var defaultPushMetricsInterval = 15 * time.Second
 var enableTransactionTestFlag = "0"
 var enableTransactionTest = false
+var Chaos bool = false
 
 func init() {
 	if enableTransactionTestFlag == "1" {
@@ -35,7 +36,8 @@ func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	return db, nil
 }
 
-func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration) {
+func Run(dbAddr []string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration, chaos bool) {
+	Chaos = chaos
 	wrapCtx := context.WithCancel
 	if testTime > 0 {
 		wrapCtx = func(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -44,19 +46,21 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
+	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr[0], dbName)
 	for i := 0; i < concurrency; i++ {
-		dbs := make([]*sql.DB, 0, 2)
+		dbs := make([]*sql.DB, 0, len(dbAddr))
 		// Parallel send DDL request need more connection to send DDL request concurrently
-		db0, err := OpenDB(dbDSN, 20)
-		if err != nil {
-			log.Fatalf("[ddl] create db client error %v", err)
+		for _, s := range dbAddr {
+			db0, err := OpenDB(fmt.Sprintf("root:@tcp(%s)/%s", s, dbName), 20)
+			if err != nil {
+				log.Fatalf("[ddl] create db client error %v", err)
+			}
+			dbs = append(dbs, db0)
 		}
 		db1, err := OpenDB(dbDSN, 1)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
-		dbs = append(dbs, db0)
 		dbs = append(dbs, db1)
 		dbss = append(dbss, dbs)
 	}
@@ -149,16 +153,21 @@ func ddlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
+	if strings.Contains(errStr, "invalid connection") {
+		return true
+	}
 	log.Warnf("check DDL err:%s", errStr)
+	fmt.Fprintf(os.Stdout, "check DDL err:%s\n", errStr)
+	// TODO: remove it
+	if strings.Contains(errStr, "is still in use") && strings.Contains(errStr, "Placement policy") {
+		return true
+	}
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
 	}
 	// Sometimes, set shard row id bits to a large value might cause global auto ID overflow error.
 	// We ignore this error here.
 	if match, _ := regexp.MatchString(`cause next global auto ID( \d+ | )overflow`, errStr); match {
-		return true
-	}
-	if strings.Contains(errStr, "invalid connection") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported shard_row_id_bits for table with primary key as row id") {
@@ -169,6 +178,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Truncated incorrect") ||
 		strings.Contains(errStr, "overflows") ||
 		strings.Contains(errStr, "Invalid year value") ||
+		strings.Contains(errStr, "cannot convert datum from unsigned bigint to type year") ||
 		strings.Contains(errStr, "Incorrect time value") ||
 		strings.Contains(errStr, "Incorrect datetime value") ||
 		strings.Contains(errStr, "Incorrect timestamp value") ||
@@ -204,6 +214,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
 		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
 		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") {
+		return true
+	}
+	if strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") || strings.Contains(errStr, "Unsupported drop primary key when the table's pkIsHandle is true") {
 		return true
 	}
 	return false

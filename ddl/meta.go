@@ -2,35 +2,42 @@ package ddl
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/juju/errors"
 	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
+)
+
+var (
+	ddlJobCount int64 = 0
 )
 
 type testCase struct {
-	cfg              *DDLCaseConfig
-	initDB           string
-	dbs              []*sql.DB
-	caseIndex        int
-	ddlOps           []ddlTestOpExecutor
-	dmlOps           []dmlTestOpExecutor
-	tables           map[string]*ddlTestTable
-	schemas          map[string]*ddlTestSchema
-	views            map[string]*ddlTestView
-	tablesLock       sync.RWMutex
-	stop             int32
-	lastDDLID        int
-	charsets         []string
-	charsetsCollates map[string][]string
+	cfg               *DDLCaseConfig
+	initDB            string
+	dbs               []*sql.DB
+	caseIndex         int
+	ddlOps            []ddlTestOpExecutor
+	dmlOps            []dmlTestOpExecutor
+	tables            map[string]*ddlTestTable
+	schemas           map[string]*ddlTestSchema
+	views             map[string]*ddlTestView
+	placementPolicies map[string]*ddlTestPlacementPolicy
+	tablesLock        sync.RWMutex
+	stop              int32
+	lastDDLID         int
+	charsets          []string
+	charsetsCollates  map[string][]string
 }
 
 type ddlTestErrorConflict struct {
@@ -87,6 +94,29 @@ func (c *testCase) pickupRandomSchema() *ddlTestSchema {
 		loc--
 	}
 	return nil
+}
+
+func (c *testCase) pickupDB() *sql.DB {
+	if len(c.dbs) == 0 {
+		return nil
+	}
+	return c.dbs[rand.Intn(len(c.dbs)-1)]
+}
+
+func (c *testCase) executeWithTimeout(task *ddlJobTask, f func(ctx context.Context, s string) (sql.Result, error)) error {
+	time.Sleep(time.Millisecond * time.Duration(rand.Intn(30)))
+	t := time.Second * 30
+	switch task.k {
+	case ddlModifyColumn2, ddlModifyColumn, ddlAddIndex:
+		t = time.Minute * 10
+	}
+	runningDDLCount := atomic.AddInt64(&ddlJobCount, 1)
+	defer atomic.AddInt64(&ddlJobCount, -1)
+	t = t * time.Duration(runningDDLCount)
+	ctx, cancel := context.WithTimeout(context.Background(), t)
+	defer cancel()
+	_, err := f(ctx, task.sql)
+	return errors.Annotate(err, task.sql)
 }
 
 // pickupRandomTables picks a table randomly. The callee should ensure that
@@ -173,6 +203,25 @@ func (c *testCase) isIndexDeleted(index *ddlTestIndex, table *ddlTestTable) bool
 	return true
 }
 
+func (c *testCase) pickupRandomView() *ddlTestView {
+	if len(c.views) == 0 {
+		return nil
+	}
+	loc := rand.Intn(len(c.views))
+	for _, v := range c.views {
+		if loc == 0 {
+			return v
+		}
+		loc--
+	}
+	return nil
+}
+
+type ddlTestPlacementPolicy struct {
+	Name    string
+	Content string
+}
+
 type ddlTestTable struct {
 	deleted      int32
 	name         string
@@ -185,6 +234,8 @@ type ddlTestTable struct {
 	comment      string // table comment
 	charset      string
 	collate      string
+	hasPK        bool
+	policyName   string
 	lock         *sync.RWMutex
 }
 
@@ -758,7 +809,7 @@ func (col *ddlTestColumn) randValue() interface{} {
 			m[idx] = struct{}{}
 			idxs[i] = idx
 		}
-		sort.Ints(idxs)
+		slices.Sort(idxs)
 		s := ""
 		for i := range idxs {
 			if i > 0 {
@@ -855,6 +906,7 @@ type ddlTestIndex struct {
 	name      string
 	signature string
 	columns   []*ddlTestColumn
+	invisible bool
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {

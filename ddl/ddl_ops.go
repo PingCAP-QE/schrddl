@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
 )
 
 func (c *testCase) generateDDLOps() error {
@@ -54,6 +54,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateCreateView(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateDropView(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
@@ -76,7 +79,31 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateModifySchemaCharsetAndCollate(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	if err := c.generateModifyColumn2(5); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateAddPrimaryKey(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateDropPrimaryKey(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateAlterIndexVisibility(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateAlterPlacementPolicy(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateCreatePlacementPolicy(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateDropPlacementPolicy(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateAddPlacementPolicyToTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -95,6 +122,7 @@ const (
 	ddlDropIndex
 	ddlDropColumn
 	ddlDropSchema
+	ddlDropView
 
 	ddlRenameTable
 	ddlRenameIndex
@@ -107,6 +135,19 @@ const (
 	ddlModifyTableCharsetAndCollate
 	// ddlModifyColumn2 is used to test column type change.
 	ddlModifyColumn2
+
+	ActionModifySchemaCharsetAndCollate
+	ActionModifySchemaDefaultPlacement
+
+	ActionAddPrimaryKey
+	ActionDropPrimaryKey
+
+	ActionAlterIndexVisibility
+
+	ActionCreatePlacementPolicy
+	ActionDropPlacementPolicy
+	ActionAddPlacementPolicyToTable
+	ActionAlterPlacementPolicy
 
 	ddlKindNil
 )
@@ -123,6 +164,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"drop column": ddlDropColumn,
 
 	"create view": ddlCreateView,
+	"drop view":   ddlDropView,
 
 	"rename table":                     ddlRenameTable,
 	"rename index":                     ddlRenameIndex,
@@ -135,6 +177,19 @@ var mapOfDDLKind = map[string]DDLKind{
 
 	"modify column":  ddlModifyColumn,
 	"modify column2": ddlModifyColumn2,
+
+	"modify schema charset and collate": ActionModifySchemaCharsetAndCollate,
+	"modify schema default placement":   ActionModifySchemaDefaultPlacement,
+
+	"add primary key":  ActionAddPrimaryKey,
+	"drop primary key": ActionDropPrimaryKey,
+
+	"alter index visibility": ActionAlterIndexVisibility,
+
+	"create placement policy":       ActionCreatePlacementPolicy,
+	"drop placement policy":         ActionDropPlacementPolicy,
+	"add placement policy to table": ActionAddPlacementPolicyToTable,
+	"alter placement policy":        ActionAlterPlacementPolicy,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -149,6 +204,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlDropColumn: "drop column",
 
 	ddlCreateView: "create view",
+	ddlDropView:   "drop view",
 
 	ddlRenameTable:                  "rename table",
 	ddlRenameIndex:                  "rename index",
@@ -160,6 +216,19 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyTableCharsetAndCollate: "modify table charset and collate",
 	ddlModifyColumn:                 "modify column",
 	ddlModifyColumn2:                "modify column2",
+
+	ActionModifySchemaCharsetAndCollate: "modify schema charset and collate",
+	ActionModifySchemaDefaultPlacement:  "modify schema default placement",
+
+	ActionAddPrimaryKey:  "add primary key",
+	ActionDropPrimaryKey: "drop primary key",
+
+	ActionAlterIndexVisibility: "alter index visibility",
+
+	ActionCreatePlacementPolicy:     "create placement policy",
+	ActionDropPlacementPolicy:       "drop placement policy",
+	ActionAddPlacementPolicyToTable: "add placement policy to table",
+	ActionAlterPlacementPolicy:      "alter placement policy",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -176,17 +245,29 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlDropColumn:    0.5,
 
 	ddlCreateView: 0.30,
+	ddlDropView:   0.30,
 
-	ddlCreateSchema:                 0.10,
-	ddlDropSchema:                   0.10,
-	ddlRenameTable:                  0.50,
-	ddlRenameIndex:                  0.50,
-	ddlTruncateTable:                0.50,
-	ddlShardRowID:                   0.30,
-	ddlRebaseAutoID:                 0.15,
-	ddlSetDefaultValue:              0.30,
-	ddlModifyTableComment:           0.30,
-	ddlModifyTableCharsetAndCollate: 0.30,
+	ddlCreateSchema:                     0.10,
+	ddlDropSchema:                       0.10,
+	ddlRenameTable:                      0.50,
+	ddlRenameIndex:                      0.50,
+	ddlTruncateTable:                    0.50,
+	ddlShardRowID:                       0.30,
+	ddlRebaseAutoID:                     0.15,
+	ddlSetDefaultValue:                  0.30,
+	ddlModifyTableComment:               0.30,
+	ddlModifyTableCharsetAndCollate:     0.30,
+	ActionModifySchemaCharsetAndCollate: 0.30,
+
+	ActionAddPrimaryKey:  0.10,
+	ActionDropPrimaryKey: 0.10,
+
+	ActionAlterIndexVisibility: 0.20,
+
+	ActionCreatePlacementPolicy:     0.20,
+	ActionDropPlacementPolicy:       0.20,
+	ActionAddPlacementPolicyToTable: 0.20,
+	ActionAlterPlacementPolicy:      0.20,
 }
 
 type ddlJob struct {
@@ -202,14 +283,15 @@ type ddlJob struct {
 type ddlJobArg unsafe.Pointer
 
 type ddlJobTask struct {
-	ddlID      int
-	k          DDLKind
-	tblInfo    *ddlTestTable
-	schemaInfo *ddlTestSchema
-	viewInfo   *ddlTestView
-	sql        string
-	arg        ddlJobArg
-	err        error // err is an error executed by the remote TiDB.
+	ddlID         int
+	k             DDLKind
+	tblInfo       *ddlTestTable
+	schemaInfo    *ddlTestSchema
+	viewInfo      *ddlTestView
+	placementInfo *ddlTestPlacementPolicy
+	sql           string
+	arg           ddlJobArg
+	err           error // err is an error executed by the remote TiDB.
 }
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
@@ -237,6 +319,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.dropTableJob(task)
 	case ddlCreateView:
 		return c.createViewJob(task)
+	case ddlDropView:
+		return c.dropViewJob(task)
 	case ddlAddIndex:
 		return c.addIndexJob(task)
 	case ddlRenameIndex:
@@ -253,6 +337,22 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.setDefaultValueJob(task)
 	case ddlModifyColumn2:
 		return c.modifyColumnJob(task)
+	case ActionModifySchemaCharsetAndCollate:
+		return c.setModifySchemaCharsetAndCollate(task)
+	case ActionAddPrimaryKey:
+		return c.setAddPrimaryKey(task)
+	case ActionDropPrimaryKey:
+		return c.setDropPrimaryKey(task)
+	case ActionAlterIndexVisibility:
+		return c.setAlterIndexVisibility(task)
+	case ActionCreatePlacementPolicy:
+		return c.setCreatePlacementPolicy(task)
+	case ActionDropPlacementPolicy:
+		return c.setDropPlacementPolicy(task)
+	case ActionAddPlacementPolicyToTable:
+		return c.setAddPlacementPolicyToTable(task)
+	case ActionAlterPlacementPolicy:
+		return c.setAlterPlacementPolicy(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -486,19 +586,21 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 		go func(task *ddlJobTask) {
 			defer wg.Done()
 			opStart := time.Now()
-			db := c.dbs[0]
+			db := c.pickupDB()
 			conn, err := db.Conn(context.Background())
+			if err != nil {
+				unExpectedErr = err
+				return
+			}
 			defer func() {
 				err := conn.Close()
 				if err != nil {
 					log.Errorf("error when closes conn %s", err.Error())
 				}
 			}()
-			if err != nil {
-				unExpectedErr = err
-				return
-			}
-			_, ddlErr := conn.ExecContext(context.Background(), task.sql)
+			ddlErr := c.executeWithTimeout(task, func(ctx context.Context, s string) (sql.Result, error) {
+				return conn.ExecContext(ctx, s)
+			})
 			if !ddlIgnoreError(ddlErr) {
 				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 				task.err = ddlErr
@@ -580,9 +682,11 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 		return nil
 	}
 	task := <-taskCh
-	db := c.dbs[0]
+	db := c.pickupDB()
 	opStart := time.Now()
-	_, err := db.Exec(task.sql)
+	err := c.executeWithTimeout(task, func(ctx context.Context, s string) (sql.Result, error) {
+		return db.ExecContext(ctx, task.sql)
+	})
 	log.Infof("[ddl] [instance %d] %s, err: %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 	if err != nil {
 		if ddlIgnoreError(err) {
@@ -722,6 +826,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		comment:      uuid.NewV4().String(),
 		charset:      charset,
 		collate:      collate,
+		hasPK:        primaryKeyFields != 0,
 		lock:         new(sync.RWMutex),
 	}
 
@@ -1025,7 +1130,7 @@ func (c *testCase) rebaseAutoIDJob(task *ddlJobTask) error {
 	sql := fmt.Sprintf("select auto_increment from information_schema.tables "+
 		"where table_schema='test' and table_name='%s'", table.name)
 	// Ignore check error, it doesn't matter.
-	c.dbs[0].QueryRow(sql).Scan(&table.autoIncID)
+	c.pickupDB().QueryRow(sql).Scan(&table.autoIncID)
 	return nil
 }
 
@@ -1103,6 +1208,33 @@ func (c *testCase) prepareCreateView(_ interface{}, taskCh chan *ddlJobTask) err
 
 func (c *testCase) createViewJob(task *ddlJobTask) error {
 	c.views[task.viewInfo.name] = task.viewInfo
+	return nil
+}
+
+func (c *testCase) generateDropView(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropView, nil, ddlCreateView})
+	}
+	return nil
+}
+
+func (c *testCase) prepareDropView(_ interface{}, taskCh chan *ddlJobTask) error {
+	view := c.pickupRandomView()
+	if view == nil {
+		return nil
+	}
+	sql := fmt.Sprintf("drop view `%s`", view.name)
+	task := &ddlJobTask{
+		k:        ddlDropView,
+		sql:      sql,
+		viewInfo: view,
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) dropViewJob(task *ddlJobTask) error {
+	delete(c.views, task.viewInfo.name)
 	return nil
 }
 
@@ -1243,6 +1375,100 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 	return nil
 }
 
+func (c *testCase) generateAddPrimaryKey(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddPrimaryKey, nil, ActionAddPrimaryKey})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAddPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if table.columns.Size() == 0 || table.hasPK {
+		return nil
+	}
+	if table.name == "" {
+		return nil
+	}
+
+	perm := rand.Perm(table.columns.Size())
+	// build SQL
+	sql := fmt.Sprintf("ALTER TABLE `%s` ADD PRIMARY KEY (", table.name)
+	var isAdded = false
+	var column *ddlTestColumn
+	for _, i := range perm {
+		column = getColumnFromArrayList(table.columns, i)
+		if column.canBePrimary() {
+			sql += fmt.Sprintf("`%s`", column.name)
+			isAdded = true
+			break
+		}
+	}
+	if !isAdded {
+		return nil
+	}
+	sql += ")"
+
+	task := &ddlJobTask{
+		k:       ActionAddPrimaryKey,
+		sql:     sql,
+		tblInfo: table,
+		arg:     ddlJobArg(column),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) setAddPrimaryKey(task *ddlJobTask) error {
+	tblInfo := task.tblInfo
+	tblInfo.hasPK = true
+	col := (*ddlTestColumn)(task.arg)
+	col.isPrimaryKey = true
+	return nil
+}
+
+func (c *testCase) generateDropPrimaryKey(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropPrimaryKey, nil, ActionDropPrimaryKey})
+	}
+	return nil
+}
+
+func (c *testCase) prepareDropPrimaryKey(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if !table.hasPK {
+		return nil
+	}
+
+	// build SQL
+	sql := fmt.Sprintf("ALTER TABLE `%s` DROP PRIMARY KEY", table.name)
+	taskCh <- &ddlJobTask{
+		k:       ActionDropPrimaryKey,
+		sql:     sql,
+		tblInfo: table,
+	}
+	return nil
+}
+
+func (c *testCase) setDropPrimaryKey(task *ddlJobTask) error {
+	tblInfo := task.tblInfo
+	tblInfo.hasPK = false
+	for ite := tblInfo.columns.Iterator(); ite.Next(); {
+		col := ite.Value().(*ddlTestColumn)
+		if col.isPrimaryKey {
+			col.isPrimaryKey = false
+			break
+		}
+	}
+	return nil
+}
+
 type ddlRenameIndexArg struct {
 	index    *ddlTestIndex
 	newIndex string
@@ -1355,6 +1581,205 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 		}
 	}
 	tblInfo.indexes = append(tblInfo.indexes[:iOfDropIndex], tblInfo.indexes[iOfDropIndex+1:]...)
+	return nil
+}
+
+func (c *testCase) generateAlterIndexVisibility(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAlterIndexVisibility, nil, ActionAlterIndexVisibility})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAlterIndexVisibility(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+	if len(table.indexes) == 0 || !table.hasPK {
+		return nil
+	}
+
+	indexToAlter := table.indexes[rand.Intn(len(table.indexes))]
+	v := "VISIBLE"
+	if indexToAlter.invisible == true {
+		v = "INVISIBLE"
+	}
+	sql := fmt.Sprintf("ALTER TABLE `%s` ALTER INDEX `%s` %s", table.name, indexToAlter.name, v)
+
+	arg := &ddlIndexJobArg{index: indexToAlter}
+	task := &ddlJobTask{
+		k:       ActionAlterIndexVisibility,
+		sql:     sql,
+		tblInfo: table,
+		arg:     ddlJobArg(arg),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) setAlterIndexVisibility(task *ddlJobTask) error {
+	jobArg := (*ddlIndexJobArg)(task.arg)
+	tblInfo := task.tblInfo
+
+	if c.isTableDeleted(tblInfo) {
+		return fmt.Errorf("table %s is not exists", tblInfo.name)
+	}
+
+	iOfAlterIndex := -1
+	for i := range tblInfo.indexes {
+		if jobArg.index.name == tblInfo.indexes[i].name {
+			iOfAlterIndex = i
+			break
+		}
+	}
+	if iOfAlterIndex == -1 {
+		return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+	}
+
+	tblInfo.indexes[iOfAlterIndex].invisible = !tblInfo.indexes[iOfAlterIndex].invisible
+	return nil
+}
+
+func (c *testCase) generateCreatePlacementPolicy(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareCreatePlacementPolicy, nil, ActionCreatePlacementPolicy})
+	}
+	return nil
+}
+
+func (c *testCase) prepareCreatePlacementPolicy(_ interface{}, taskCh chan *ddlJobTask) error {
+	policy := &ddlTestPlacementPolicy{
+		Name:    uuid.NewV4().String(),
+		Content: "followers=2",
+	}
+
+	sql := fmt.Sprintf("CREATE PLACEMENT POLICY `%s` followers=2", policy.Name)
+	taskCh <- &ddlJobTask{
+		k:             ActionCreatePlacementPolicy,
+		sql:           sql,
+		placementInfo: policy,
+	}
+	return nil
+}
+
+func (c *testCase) setCreatePlacementPolicy(task *ddlJobTask) error {
+	policy := task.placementInfo
+	c.placementPolicies[policy.Name] = policy
+	return nil
+}
+
+func (c *testCase) generateDropPlacementPolicy(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareDropPlacementPolicy, nil, ActionDropPlacementPolicy})
+	}
+	return nil
+}
+
+func (c *testCase) prepareDropPlacementPolicy(_ interface{}, taskCh chan *ddlJobTask) error {
+	var policy string
+	for k := range c.placementPolicies {
+		if rand.Intn(len(c.placementPolicies)) == 0 {
+			policy = k
+			break
+		}
+	}
+
+	if policy == "" {
+		return nil
+	}
+
+	sql := fmt.Sprintf("DROP PLACEMENT POLICY `%s`", policy)
+	taskCh <- &ddlJobTask{
+		k:             ActionDropPlacementPolicy,
+		sql:           sql,
+		placementInfo: c.placementPolicies[policy],
+	}
+	return nil
+}
+
+func (c *testCase) setDropPlacementPolicy(task *ddlJobTask) error {
+	if task.placementInfo == nil {
+		return nil
+	}
+	delete(c.placementPolicies, task.placementInfo.Name)
+	return nil
+}
+
+func (c *testCase) generateAddPlacementPolicyToTable(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAddPlacementPolicyToTable, nil, ActionAddPlacementPolicyToTable})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAddPlacementPolicyToTable(_ interface{}, taskCh chan *ddlJobTask) error {
+	var policy string
+	for k := range c.placementPolicies {
+		if rand.Intn(len(c.placementPolicies)) == 0 {
+			policy = k
+			break
+		}
+	}
+
+	if policy == "" {
+		return nil
+	}
+
+	table := c.pickupRandomTable()
+	if table == nil || table.policyName != "" {
+		return nil
+	}
+
+	sql := fmt.Sprintf("ALTER TABLE `%s` PLACEMENT POLICY=`%s`", table.name, policy)
+	taskCh <- &ddlJobTask{
+		k:             ActionAddPlacementPolicyToTable,
+		sql:           sql,
+		tblInfo:       table,
+		placementInfo: c.placementPolicies[policy],
+	}
+	return nil
+}
+
+func (c *testCase) setAddPlacementPolicyToTable(task *ddlJobTask) error {
+	table := task.tblInfo
+	table.policyName = task.placementInfo.Name
+	return nil
+}
+
+func (c *testCase) generateAlterPlacementPolicy(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareAlterPlacementPolicy, nil, ActionAlterPlacementPolicy})
+	}
+	return nil
+}
+
+func (c *testCase) prepareAlterPlacementPolicy(_ interface{}, taskCh chan *ddlJobTask) error {
+	var policy string
+	for k := range c.placementPolicies {
+		if rand.Intn(len(c.placementPolicies)) == 0 {
+			policy = k
+			break
+		}
+	}
+
+	if policy == "" {
+		return nil
+	}
+
+	followers := rand.Intn(follow_nums) + 1
+	sql := fmt.Sprintf("ALTER PLACEMENT POLICY `%s` followers=%d", policy, followers)
+	taskCh <- &ddlJobTask{
+		k:             ActionAlterPlacementPolicy,
+		sql:           sql,
+		placementInfo: c.placementPolicies[policy],
+		arg:           ddlJobArg(&followers),
+	}
+	return nil
+}
+
+func (c *testCase) setAlterPlacementPolicy(task *ddlJobTask) error {
+	c.placementPolicies[task.placementInfo.Name].Content = fmt.Sprintf("followers=%d", (*int)(task.arg))
 	return nil
 }
 
@@ -1679,6 +2104,8 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 
+	table.lock.Lock()
+	defer table.lock.Unlock()
 	columnsSnapshot := table.filterColumns(table.predicateAll)
 	if len(columnsSnapshot) <= 1 {
 		return nil
@@ -1834,6 +2261,42 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
 	arg.column.defaultValue = arg.newDefaultValue
+	return nil
+}
+
+func (c *testCase) generateModifySchemaCharsetAndCollate(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifySchemaCharsetAndCollate, nil, ActionModifySchemaCharsetAndCollate})
+	}
+	return nil
+}
+
+func (c *testCase) prepareModifySchemaCharsetAndCollate(_ interface{}, taskCh chan *ddlJobTask) error {
+	schema := c.pickupRandomSchema()
+	if schema == nil {
+		return nil
+	}
+	charset, collation := c.pickupRandomCharsetAndCollate()
+	taskCh <- &ddlJobTask{
+		k:          ActionModifySchemaCharsetAndCollate,
+		sql:        fmt.Sprintf("ALTER SCHEMA `%s` CHARACTER SET '%s' COLLATE '%s'", schema.name, charset, collation),
+		schemaInfo: schema,
+		arg: ddlJobArg(&ddlModifyTableCharsetAndCollateJob{
+			newCharset: charset,
+			newCollate: collation,
+		}),
+	}
+	return nil
+}
+
+func (c *testCase) setModifySchemaCharsetAndCollate(task *ddlJobTask) error {
+	schema := task.schemaInfo
+	if c.isSchemaDeleted(schema) {
+		return fmt.Errorf("schema %s is not exists", schema.name)
+	}
+	args := (*ddlModifyTableCharsetAndCollateJob)(task.arg)
+	schema.charset = args.newCharset
+	schema.collate = args.newCollate
 	return nil
 }
 
@@ -2012,24 +2475,11 @@ func (c *testCase) getSortTask(db *sql.DB, tasks []*ddlJobTask) ([]*ddlJobTask, 
 		}
 		return nil, fmt.Errorf(str)
 	}
-
-	sort.Sort(ddlJobTasks(sortTasks))
+	slices.SortFunc(sortTasks, func(i, j *ddlJobTask) bool {
+		return i.ddlID < j.ddlID
+	})
 	if len(sortTasks) > 0 {
 		c.lastDDLID = sortTasks[len(sortTasks)-1].ddlID
 	}
 	return sortTasks, nil
-}
-
-type ddlJobTasks []*ddlJobTask
-
-func (tasks ddlJobTasks) Swap(i, j int) {
-	tasks[i], tasks[j] = tasks[j], tasks[i]
-}
-
-func (tasks ddlJobTasks) Len() int {
-	return len(tasks)
-}
-
-func (tasks ddlJobTasks) Less(i, j int) bool {
-	return tasks[i].ddlID < tasks[j].ddlID
 }
