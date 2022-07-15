@@ -153,6 +153,9 @@ func ddlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
+	if strings.Contains(errStr, "invalid connection") {
+		return true
+	}
 	log.Warnf("check DDL err:%s", errStr)
 	fmt.Fprintf(os.Stdout, "check DDL err:%s\n", errStr)
 	// TODO: remove it
@@ -165,9 +168,6 @@ func ddlIgnoreError(err error) bool {
 	// Sometimes, set shard row id bits to a large value might cause global auto ID overflow error.
 	// We ignore this error here.
 	if match, _ := regexp.MatchString(`cause next global auto ID( \d+ | )overflow`, errStr); match {
-		return true
-	}
-	if strings.Contains(errStr, "invalid connection") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported shard_row_id_bits for table with primary key as row id") {
