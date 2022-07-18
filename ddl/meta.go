@@ -186,6 +186,7 @@ type ddlTestTable struct {
 	charset      string
 	collate      string
 	lock         *sync.RWMutex
+	replicaCnt   int
 }
 
 func (table *ddlTestTable) isDeleted() bool {
