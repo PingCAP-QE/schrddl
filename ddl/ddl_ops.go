@@ -79,6 +79,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateSetTilfahReplica(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -107,6 +110,7 @@ const (
 	ddlModifyTableCharsetAndCollate
 	// ddlModifyColumn2 is used to test column type change.
 	ddlModifyColumn2
+	ddlSetTiflashReplica
 
 	ddlKindNil
 )
@@ -133,8 +137,9 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify table comment":             ddlModifyTableComment,
 	"modify table charset and collate": ddlModifyTableCharsetAndCollate,
 
-	"modify column":  ddlModifyColumn,
-	"modify column2": ddlModifyColumn2,
+	"modify column":       ddlModifyColumn,
+	"modify column2":      ddlModifyColumn2,
+	"set tiflash replica": ddlSetTiflashReplica,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -160,6 +165,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyTableCharsetAndCollate: "modify table charset and collate",
 	ddlModifyColumn:                 "modify column",
 	ddlModifyColumn2:                "modify column2",
+	ddlSetTiflashReplica:            "set tiflash replica",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -187,6 +193,7 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlSetDefaultValue:              0.30,
 	ddlModifyTableComment:           0.30,
 	ddlModifyTableCharsetAndCollate: 0.30,
+	ddlSetTiflashReplica:            0.30,
 }
 
 type ddlJob struct {
@@ -253,6 +260,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.setDefaultValueJob(task)
 	case ddlModifyColumn2:
 		return c.modifyColumnJob(task)
+	case ddlSetTiflashReplica:
+		return c.setTiflashReplicaJob(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -1834,6 +1843,49 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
 	arg.column.defaultValue = arg.newDefaultValue
+	return nil
+}
+
+func (c *testCase) generateSetTilfahReplica(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareSetTiflashReplica, nil, ddlSetTiflashReplica})
+	}
+	return nil
+}
+
+type ddlSetTiflashReplicaArg struct {
+	cnt int
+}
+
+func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+
+	cnt := rand.Intn(6)
+	sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", table.name, cnt)
+	task := &ddlJobTask{
+		k:       ddlSetTiflashReplica,
+		sql:     sql,
+		tblInfo: table,
+		arg: ddlJobArg(&ddlSetTiflashReplicaArg{
+			cnt,
+		}),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) setTiflashReplicaJob(task *ddlJobTask) error {
+	table := task.tblInfo
+	table.lock.Lock()
+	defer table.lock.Unlock()
+	if c.isTableDeleted(table) {
+		return fmt.Errorf("table %s is not exists", table.name)
+	}
+	arg := (*ddlSetTiflashReplicaArg)(task.arg)
+	table.replicaCnt = arg.cnt
 	return nil
 }
 
