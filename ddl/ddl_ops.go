@@ -82,6 +82,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateMultiSchemaChange(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateSetTilfahReplica(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -110,6 +113,7 @@ const (
 	ddlModifyTableCharsetAndCollate
 	// ddlModifyColumn2 is used to test column type change.
 	ddlModifyColumn2
+	ddlSetTiflashReplica
 
 	ddlMultiSchemaChange
 
@@ -142,6 +146,7 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify column2": ddlModifyColumn2,
 
 	"multi schema change": ddlMultiSchemaChange,
+	"set tiflash replica": ddlSetTiflashReplica,
 }
 
 var mapOfDDLKindToString = map[DDLKind]string{
@@ -168,6 +173,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyColumn:                 "modify column",
 	ddlModifyColumn2:                "modify column2",
 	ddlMultiSchemaChange:            "multi schema change",
+	ddlSetTiflashReplica:            "set tiflash replica",
 }
 
 // mapOfDDLKindProbability use to control every kind of ddl request execute probability.
@@ -197,6 +203,7 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlSetDefaultValue:              0.30,
 	ddlModifyTableComment:           0.30,
 	ddlModifyTableCharsetAndCollate: 0.30,
+	ddlSetTiflashReplica:            0.30,
 }
 
 type ddlJob struct {
@@ -265,6 +272,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.modifyColumnJob(task)
 	case ddlMultiSchemaChange:
 		return c.multiSchemaChangeJob(task)
+	case ddlSetTiflashReplica:
+		return c.setTiflashReplicaJob(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -1778,10 +1787,6 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 		return nil
 	}
 
-	// We does not support dropping a column with index
-	if columnToDrop.indexReferences > 0 {
-		return nil
-	}
 	// columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
@@ -1809,15 +1814,22 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
 	columnToDrop := jobArg.column
-	if columnToDrop.indexReferences > 0 {
-		if columnToDrop.indexReferences == 1 {
-			// TiDB support drop column with a single index.
-			columnToDrop.indexReferences--
+
+	// Drop index as well.
+	dropIndexCnt := 0
+	tempIdx := table.indexes[:0]
+	for _, idx := range table.indexes {
+		if len(idx.columns) == 1 && idx.columns[0].name == columnToDrop.name {
+			dropIndexCnt++
 		} else {
-			columnToDrop.setDeletedRecover()
-			return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference", jobArg.column.name, table.name)
+			tempIdx = append(tempIdx, idx)
 		}
 	}
+	table.indexes = tempIdx
+	if columnToDrop.indexReferences != dropIndexCnt {
+		return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference %d, drop index cnt %d", jobArg.column.name, table.name, columnToDrop.indexReferences, dropIndexCnt)
+	}
+
 	dropColumnPosition := -1
 	for i := 0; i < table.columns.Size(); i++ {
 		column := getColumnFromArrayList(table.columns, i)
@@ -1902,6 +1914,49 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
 	arg.column.defaultValue = arg.newDefaultValue
+	return nil
+}
+
+func (c *testCase) generateSetTilfahReplica(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareSetTiflashReplica, nil, ddlSetTiflashReplica})
+	}
+	return nil
+}
+
+type ddlSetTiflashReplicaArg struct {
+	cnt int
+}
+
+func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+
+	cnt := rand.Intn(6)
+	sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", table.name, cnt)
+	task := &ddlJobTask{
+		k:       ddlSetTiflashReplica,
+		sql:     sql,
+		tblInfo: table,
+		arg: ddlJobArg(&ddlSetTiflashReplicaArg{
+			cnt,
+		}),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) setTiflashReplicaJob(task *ddlJobTask) error {
+	table := task.tblInfo
+	table.lock.Lock()
+	defer table.lock.Unlock()
+	if c.isTableDeleted(table) {
+		return fmt.Errorf("table %s is not exists", table.name)
+	}
+	arg := (*ddlSetTiflashReplicaArg)(task.arg)
+	table.replicaCnt = arg.cnt
 	return nil
 }
 
