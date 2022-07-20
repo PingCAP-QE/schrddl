@@ -375,6 +375,34 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 	err := parallel(func() error {
 		var err1 error
 		for {
+			go func() {
+				tk := time.Tick(time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-tk:
+					rs, err := c.dbs[0].Query("admin show ddl jobs")
+					if err != nil {
+						jobID := 0
+						rs.Next()
+						err = rs.Scan(&jobID)
+						if err != nil {
+							log.Errorf("unexpected error when scan", err)
+							return
+						}
+						err = rs.Close()
+						if err != nil {
+							log.Errorf("unexpected error when close", err)
+							return
+						}
+						_, err := c.dbs[0].Exec(fmt.Sprintf("admin cancel ddl jobs %d", jobID))
+						if err != nil {
+							log.Errorf("unexpected error when execute cancel ddl", err)
+							return
+						}
+					}
+				}
+			}()
 			err1 = executeDDL(c, c.ddlOps, nil)
 			atomic.StoreInt32(&ddlAllComplete, 1)
 			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err1 != nil {
