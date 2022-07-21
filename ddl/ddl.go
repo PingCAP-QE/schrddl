@@ -381,8 +381,8 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				case <-ctx.Done():
 					return
 				case <-tk:
-					rs, err := c.dbs[0].Query("admin show ddl jobs")
-					if err != nil {
+					rs, err := c.dbs[0].Query("select `job_id` from information_schema.ddl_jobs")
+					if err == nil {
 						jobID := 0
 						rs.Next()
 						err = rs.Scan(&jobID)
@@ -400,6 +400,11 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 							log.Errorf("unexpected error when execute cancel ddl", err)
 							return
 						}
+					}
+					_, err = c.dbs[0].Exec("admin show ddl jobs")
+					if err != nil {
+						log.Errorf("unexpected error when execute admin show ddl jobs", err)
+						return
 					}
 				}
 			}()

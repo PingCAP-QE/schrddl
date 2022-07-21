@@ -412,6 +412,7 @@ func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
 		}
 		row.Next()
 		err = row.Scan(&columnNames)
+		row.Close()
 		if err != nil {
 			return err
 		}
