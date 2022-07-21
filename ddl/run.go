@@ -166,6 +166,7 @@ func ddlIgnoreError(err error) bool {
 	}
 	// Ignore Column Type Change error.
 	if strings.Contains(errStr, "Unsupported modify column") ||
+		strings.Contains(errStr, "Cancelled DDL job") ||
 		strings.Contains(errStr, "Truncated incorrect") ||
 		strings.Contains(errStr, "overflows") ||
 		strings.Contains(errStr, "Invalid year value") ||
