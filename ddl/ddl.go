@@ -401,6 +401,11 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 							return
 						}
 					}
+					_, err = c.dbs[0].Exec("admin show ddl jobs")
+					if err != nil {
+						log.Errorf("unexpected error when execute admin show ddl jobs", err)
+						return
+					}
 				}
 			}()
 			err1 = executeDDL(c, c.ddlOps, nil)
