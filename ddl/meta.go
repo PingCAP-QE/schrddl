@@ -164,15 +164,6 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 	return true
 }
 
-func (c *testCase) isIndexDeleted(index *ddlTestIndex, table *ddlTestTable) bool {
-	for _, i := range table.indexes {
-		if i.name == index.name {
-			return false
-		}
-	}
-	return true
-}
-
 type ddlTestTable struct {
 	deleted      int32
 	name         string
@@ -395,6 +386,10 @@ func (col *ddlTestColumn) isRenamed() bool {
 
 func (col *ddlTestColumn) setRenamed() {
 	atomic.StoreInt32(&col.renamed, 1)
+}
+
+func (col *ddlTestColumn) delRenamed() {
+	atomic.StoreInt32(&col.renamed, 0)
 }
 
 func (col *ddlTestColumn) setDeletedRecover() {
