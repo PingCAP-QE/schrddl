@@ -164,15 +164,6 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 	return true
 }
 
-func (c *testCase) isIndexDeleted(index *ddlTestIndex, table *ddlTestTable) bool {
-	for _, i := range table.indexes {
-		if i.name == index.name {
-			return false
-		}
-	}
-	return true
-}
-
 type ddlTestTable struct {
 	deleted      int32
 	name         string

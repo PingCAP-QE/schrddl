@@ -162,6 +162,7 @@ func (c *testCase) prepareSubJobs(ctx *multiSchemaChangeCtx, ddlKind DDLKind) er
 	} else {
 		return fmt.Errorf("invalid sub job sql: %s", subJob.sql)
 	}
+	subJob.isSubJob = true
 	ctx.arg.subJobs = append(ctx.arg.subJobs, subJob)
 	return nil
 }

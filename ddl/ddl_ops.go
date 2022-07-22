@@ -227,6 +227,7 @@ type ddlJobTask struct {
 	sql        string
 	arg        ddlJobArg
 	err        error // err is an error executed by the remote TiDB.
+	isSubJob   bool
 }
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
@@ -1328,13 +1329,10 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 			break
 		}
 	}
-	if iOfRenameIndex == -1 {
+	if iOfRenameIndex == -1 && !task.isSubJob {
 		return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
 	}
 
-	if c.isIndexDeleted(table.indexes[iOfRenameIndex], table) {
-		return fmt.Errorf("index %s on table %s is not exists", table.indexes[iOfRenameIndex].name, table.name)
-	}
 	table.indexes[iOfRenameIndex].name = arg.newIndex
 	return nil
 }
@@ -1387,7 +1385,7 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 			break
 		}
 	}
-	if iOfDropIndex == -1 {
+	if iOfDropIndex == -1 && !task.isSubJob {
 		return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
 	}
 
@@ -1788,7 +1786,7 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 		return nil
 	}
 
-	// columnToDrop.setDeleted()
+	columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
 	arg := &ddlColumnJobArg{
