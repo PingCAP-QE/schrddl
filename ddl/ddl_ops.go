@@ -1329,8 +1329,12 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 			break
 		}
 	}
-	if iOfRenameIndex == -1 && !task.isSubJob {
-		return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
+	if iOfRenameIndex == -1 {
+		if !task.isSubJob {
+			return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
+		} else {
+			return nil
+		}
 	}
 
 	table.indexes[iOfRenameIndex].name = arg.newIndex
@@ -1385,8 +1389,12 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 			break
 		}
 	}
-	if iOfDropIndex == -1 && !task.isSubJob {
-		return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+	if iOfDropIndex == -1 {
+		if !task.isSubJob {
+			return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+		} else {
+			return nil
+		}
 	}
 
 	for _, column := range jobArg.index.columns {
