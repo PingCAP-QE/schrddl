@@ -34,7 +34,7 @@ var (
 	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	chaos           = flag.Bool("chaos", true, "whether to test in the chaos mode")
-	testTime        = flag.Duration("time", 6*time.Hour, "test time")
+	testTime        = flag.Duration("time", 48*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
 )
 
