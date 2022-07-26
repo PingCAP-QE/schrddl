@@ -79,6 +79,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateMultiSchemaChange(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	if err := c.generateSetTilfahReplica(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
@@ -112,6 +115,8 @@ const (
 	ddlModifyColumn2
 	ddlSetTiflashReplica
 
+	ddlMultiSchemaChange
+
 	ddlKindNil
 )
 
@@ -137,8 +142,10 @@ var mapOfDDLKind = map[string]DDLKind{
 	"modify table comment":             ddlModifyTableComment,
 	"modify table charset and collate": ddlModifyTableCharsetAndCollate,
 
-	"modify column":       ddlModifyColumn,
-	"modify column2":      ddlModifyColumn2,
+	"modify column":  ddlModifyColumn,
+	"modify column2": ddlModifyColumn2,
+
+	"multi schema change": ddlMultiSchemaChange,
 	"set tiflash replica": ddlSetTiflashReplica,
 }
 
@@ -165,6 +172,7 @@ var mapOfDDLKindToString = map[DDLKind]string{
 	ddlModifyTableCharsetAndCollate: "modify table charset and collate",
 	ddlModifyColumn:                 "modify column",
 	ddlModifyColumn2:                "modify column2",
+	ddlMultiSchemaChange:            "multi schema change",
 	ddlSetTiflashReplica:            "set tiflash replica",
 }
 
@@ -180,6 +188,8 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlModifyColumn:  0.5,
 	ddlModifyColumn2: 0.5,
 	ddlDropColumn:    0.5,
+
+	ddlMultiSchemaChange: 0.5,
 
 	ddlCreateView: 0.30,
 
@@ -217,6 +227,7 @@ type ddlJobTask struct {
 	sql        string
 	arg        ddlJobArg
 	err        error // err is an error executed by the remote TiDB.
+	isSubJob   bool
 }
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
@@ -260,6 +271,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.setDefaultValueJob(task)
 	case ddlModifyColumn2:
 		return c.modifyColumnJob(task)
+	case ddlMultiSchemaChange:
+		return c.multiSchemaChangeJob(task)
 	case ddlSetTiflashReplica:
 		return c.setTiflashReplicaJob(task)
 	}
@@ -467,6 +480,14 @@ func getLastDDLInfo(conn *sql.Conn) (uint64, string, error) {
 		return 0, "", err
 	}
 	return seqNum, query, row.Close()
+}
+
+func (c *testCase) getTable(t interface{}) *ddlTestTable {
+	if t == nil {
+		return c.pickupRandomTable()
+	} else {
+		return t.(*multiSchemaChangeCtx).tblInfo
+	}
 }
 
 /*
@@ -1153,8 +1174,8 @@ func generateIndexSignture(index ddlTestIndex) string {
 	return signature
 }
 
-func (c *testCase) prepareAddIndex(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
@@ -1197,6 +1218,12 @@ func (c *testCase) prepareAddIndex(_ interface{}, taskCh chan *ddlJobTask) error
 			if column.canBeIndex() {
 				index.columns = append(index.columns, column)
 			}
+		}
+	}
+
+	for _, column := range index.columns {
+		if !checkAddDropColumn(ctx, column) {
+			return nil
 		}
 	}
 
@@ -1265,14 +1292,17 @@ func (c *testCase) generateRenameIndex(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareRenameIndex(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil || len(table.indexes) == 0 {
 		return nil
 	}
 	loc := rand.Intn(len(table.indexes))
 	index := table.indexes[loc]
 	newIndex := uuid.NewV4().String()
+	if !checkModifyIdx(ctx, index) {
+		return nil
+	}
 	sql := fmt.Sprintf("ALTER TABLE `%s` RENAME INDEX `%s` to `%s`",
 		table.name, index.name, newIndex)
 	task := &ddlJobTask{
@@ -1291,6 +1321,7 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
+
 	iOfRenameIndex := -1
 	for i := range table.indexes {
 		if arg.index.name == table.indexes[i].name {
@@ -1299,12 +1330,13 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 		}
 	}
 	if iOfRenameIndex == -1 {
-		return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
+		if !task.isSubJob {
+			return fmt.Errorf("table %s, index %s is not exists", table.name, arg.index.name)
+		} else {
+			return nil
+		}
 	}
 
-	if c.isIndexDeleted(table.indexes[iOfRenameIndex], table) {
-		return fmt.Errorf("index %s on table %s is not exists", table.indexes[iOfRenameIndex].name, table.name)
-	}
 	table.indexes[iOfRenameIndex].name = arg.newIndex
 	return nil
 }
@@ -1316,8 +1348,8 @@ func (c *testCase) generateDropIndex(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropIndex(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareDropIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
@@ -1326,6 +1358,9 @@ func (c *testCase) prepareDropIndex(_ interface{}, taskCh chan *ddlJobTask) erro
 	}
 	indexToDropIndex := rand.Intn(len(table.indexes))
 	indexToDrop := table.indexes[indexToDropIndex]
+	if !checkModifyIdx(ctx, indexToDrop) {
+		return nil
+	}
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP INDEX `%s`", table.name, indexToDrop.name)
 
 	arg := &ddlIndexJobArg{index: indexToDrop}
@@ -1355,7 +1390,11 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 		}
 	}
 	if iOfDropIndex == -1 {
-		return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+		if !task.isSubJob {
+			return fmt.Errorf("table %s , index %s is not exists", tblInfo.name, jobArg.index.name)
+		} else {
+			return nil
+		}
 	}
 
 	for _, column := range jobArg.index.columns {
@@ -1398,13 +1437,16 @@ func (c *testCase) generateAddColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareAddColumn(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareAddColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
 	strategy := rand.Intn(ddlTestAddDropColumnStrategyAtRandom) + ddlTestAddDropColumnStrategyAtBeginning
 	newColumn := getRandDDLTestColumn()
+	if !checkAddDropColumn(ctx, newColumn) {
+		return nil
+	}
 	insertAfterPosition := -1
 	// build SQL
 	sql := fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s", table.name, newColumn.name, newColumn.getDefinition())
@@ -1416,6 +1458,9 @@ func (c *testCase) prepareAddColumn(_ interface{}, taskCh chan *ddlJobTask) erro
 	case ddlTestAddDropColumnStrategyAtRandom:
 		insertAfterPosition = rand.Intn(table.columns.Size())
 		column := getColumnFromArrayList(table.columns, insertAfterPosition)
+		if !checkRelatedColumn(ctx, column) {
+			return nil
+		}
 		sql += fmt.Sprintf(" AFTER `%s`", column.name)
 	}
 
@@ -1482,8 +1527,8 @@ func (c *testCase) generateModifyColumn2(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
@@ -1504,10 +1549,16 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 		}
 		// for change column
 		modifiedColumn = generateRandModifiedColumn2(origColumn, true)
+		if !checkAddDropColumn(ctx, origColumn) || !checkAddDropColumn(ctx, modifiedColumn) {
+			return nil
+		}
 		origColumn.setRenamed()
 		sql = fmt.Sprintf("alter table `%s` change column `%s` `%s` %s", table.name,
 			origColumn.name, modifiedColumn.name, modifiedColumn.getDefinition())
 	} else {
+		if !checkModifyColumn(ctx, origColumn) {
+			return nil
+		}
 		// for modify column
 		modifiedColumn = generateRandModifiedColumn2(origColumn, false)
 		sql = fmt.Sprintf("alter table `%s` modify column `%s` %s", table.name,
@@ -1521,12 +1572,20 @@ func (c *testCase) prepareModifyColumn2(_ interface{}, taskCh chan *ddlJobTask) 
 		sql += " FIRST"
 	case ddlTestAddDropColumnStrategyAtEnd:
 		endColumn := getColumnFromArrayList(table.columns, table.columns.Size()-1)
+		if !checkRelatedColumn(ctx, endColumn) {
+			origColumn.delRenamed()
+			return nil
+		}
 		if endColumn.name != origColumn.name {
 			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
 		}
 	case ddlTestAddDropColumnStrategyAtRandom:
 		insertPosition := rand.Intn(table.columns.Size())
 		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
+		if !checkRelatedColumn(ctx, insertAfterColumn) {
+			origColumn.delRenamed()
+			return nil
+		}
 		if insertPosition != origColIndex {
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
@@ -1558,8 +1617,8 @@ func (c *testCase) generateModifyColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
@@ -1577,11 +1636,17 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 			return nil
 		}
 		modifiedColumn = generateRandModifiedColumn(origColumn, true)
+		if !checkAddDropColumn(ctx, origColumn) || !checkAddDropColumn(ctx, modifiedColumn) {
+			return nil
+		}
 		origColumn.setRenamed()
 		sql = fmt.Sprintf("alter table `%s` change column `%s` `%s` %s", table.name,
 			origColumn.name, modifiedColumn.name, modifiedColumn.getDefinition())
 	} else {
 		modifiedColumn = generateRandModifiedColumn(origColumn, false)
+		if !checkModifyColumn(ctx, origColumn) {
+			return nil
+		}
 		sql = fmt.Sprintf("alter table `%s` modify column `%s` %s", table.name,
 			origColumn.name, modifiedColumn.getDefinition())
 	}
@@ -1592,12 +1657,20 @@ func (c *testCase) prepareModifyColumn(_ interface{}, taskCh chan *ddlJobTask) e
 		sql += " FIRST"
 	case ddlTestAddDropColumnStrategyAtEnd:
 		endColumn := getColumnFromArrayList(table.columns, table.columns.Size()-1)
+		if !checkRelatedColumn(ctx, endColumn) {
+			origColumn.delRenamed()
+			return nil
+		}
 		if endColumn.name != origColumn.name {
 			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
 		}
 	case ddlTestAddDropColumnStrategyAtRandom:
 		insertPosition := rand.Intn(table.columns.Size())
 		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
+		if !checkRelatedColumn(ctx, insertAfterColumn) {
+			origColumn.delRenamed()
+			return nil
+		}
 		if insertPosition != origColIndex {
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
@@ -1683,8 +1756,8 @@ func (c *testCase) generateDropColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) error {
-	table := c.pickupRandomTable()
+func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
@@ -1707,6 +1780,10 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 
 	columnToDrop := getColumnFromArrayList(table.columns, columnToDropIndex)
 
+	if !checkAddDropColumn(ctx, columnToDrop) {
+		return nil
+	}
+
 	// Primary key columns cannot be dropped
 	if columnToDrop.isPrimaryKey {
 		return nil
@@ -1717,7 +1794,7 @@ func (c *testCase) prepareDropColumn(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 
-	// columnToDrop.setDeleted()
+	columnToDrop.setDeleted()
 	sql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table.name, columnToDrop.name)
 
 	arg := &ddlColumnJobArg{
