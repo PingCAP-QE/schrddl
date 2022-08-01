@@ -34,6 +34,7 @@ var (
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	testTime        = flag.Duration("time", 2*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
+	indexMode       = flag.Bool("index-mode", false, "test more index operator")
 )
 
 func prepareEnv() {
@@ -74,5 +75,5 @@ func main() {
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
 	prepareEnv()
-	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime, *indexMode)
 }

@@ -249,12 +249,18 @@ ParallelExecuteOperations executes process:
 func ParallelExecuteOperations(c *testCase, ops []ddlTestOpExecutor, postOp func() error) error {
 	perm := rand.Perm(len(ops))
 	taskCh := make(chan *ddlJobTask, len(ops))
+	var probability map[int]float64
+	if isIndexMode {
+		probability = mapOfDDLKindProbabilityInIndexMode
+	} else {
+		probability = mapOfDDLKindProbability
+	}
 	for _, idx := range perm {
 		if c.isStop() {
 			return nil
 		}
 		op := ops[idx]
-		if rand.Float64() > mapOfDDLKindProbability[op.ddlKind] {
+		if rand.Float64() > probability[op.ddlKind] {
 			continue
 		}
 		op.executeFunc(op.config, taskCh)
