@@ -18,6 +18,7 @@ var defaultPushMetricsInterval = 15 * time.Second
 var enableTransactionTestFlag = "0"
 var enableTransactionTest = false
 var isIndexMode = false
+var Chaos bool = false
 
 func init() {
 	if enableTransactionTestFlag == "1" {
@@ -36,7 +37,8 @@ func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	return db, nil
 }
 
-func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration, indexMode bool) {
+func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysqlCompatible bool, testTp DDLTestType, testTime time.Duration, indexMode, chaos bool) {
+	Chaos = chaos
 	isIndexMode = indexMode
 	wrapCtx := context.WithCancel
 	if testTime > 0 {
@@ -151,6 +153,9 @@ func ddlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
+	if Chaos && strings.Contains(errStr, "invalid connection") {
+		return true
+	}
 	log.Warnf("check DDL err:%s", errStr)
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
