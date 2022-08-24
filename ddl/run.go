@@ -141,6 +141,9 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "cannot convert datum from decimal to type year") {
 		return true
 	}
+	if strings.Contains(errStr, "Unsupported multi schema change") {
+		return true
+	}
 	return false
 }
 
