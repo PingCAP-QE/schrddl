@@ -20,6 +20,7 @@ import (
 )
 
 func (c *testCase) generateDDLOps() error {
+	// Todo check all ddl weather destroy partition table and normal table consist.
 	defaultTime := 2
 	if err := c.generateCreateSchema(defaultTime); err != nil {
 		return errors.Trace(err)
@@ -57,7 +58,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
-
+	// Todo
 	if err := c.generateRenameIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
@@ -83,6 +84,9 @@ func (c *testCase) generateDDLOps() error {
 		return errors.Trace(err)
 	}
 	if err := c.generateSetTilfahReplica(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateExchangePartition(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -114,6 +118,7 @@ const (
 	// ddlModifyColumn2 is used to test column type change.
 	ddlModifyColumn2
 	ddlSetTiflashReplica
+	ddlExchangePartition
 
 	ddlMultiSchemaChange
 
@@ -219,15 +224,16 @@ type ddlJob struct {
 type ddlJobArg unsafe.Pointer
 
 type ddlJobTask struct {
-	ddlID      int
-	k          DDLKind
-	tblInfo    *ddlTestTable
-	schemaInfo *ddlTestSchema
-	viewInfo   *ddlTestView
-	sql        string
-	arg        ddlJobArg
-	err        error // err is an error executed by the remote TiDB.
-	isSubJob   bool
+	ddlID            int
+	k                DDLKind
+	tblInfo          *ddlTestTable
+	partitionTblInfo *ddlTestTable
+	schemaInfo       *ddlTestSchema
+	viewInfo         *ddlTestView
+	sql              string
+	arg              ddlJobArg
+	err              error // err is an error executed by the remote TiDB.
+	isSubJob         bool
 }
 
 // Maintain the tableInfo description in the memory, once schrddl fails, we can get more details from the memory schema copy.
@@ -275,6 +281,8 @@ func (c *testCase) updateTableInfo(task *ddlJobTask) error {
 		return c.multiSchemaChangeJob(task)
 	case ddlSetTiflashReplica:
 		return c.setTiflashReplicaJob(task)
+	case ddlExchangePartition:
+		return c.exchangePartitionJob(task)
 	}
 	return fmt.Errorf("unknow ddl task , %v", *task)
 }
@@ -717,9 +725,18 @@ func (c *testCase) generateAddTable(repeat int) error {
 
 func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) error {
 	columnCount := rand.Intn(c.cfg.TablesToCreate) + 2
+	createPartitionTable := false
+	if cfg != nil {
+		createPartitionTable = cfg.(bool)
+	}
 	tableColumns := arraylist.New()
 	for i := 0; i < columnCount; i++ {
-		columns := getRandDDLTestColumns()
+		columns := make([]*ddlTestColumn, 0)
+		if createPartitionTable {
+			columns = append(columns, getDDLTestColumn(0))
+		} else {
+			columns = getRandDDLTestColumns()
+		}
 		for _, column := range columns {
 			tableColumns.Add(column)
 		}
@@ -728,7 +745,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	// Generate primary key with [0, 3) size
 	primaryKeyFields := rand.Intn(3)
 	primaryKeys := make([]int, 0)
-	if primaryKeyFields > 0 {
+	if primaryKeyFields > 0 && !createPartitionTable {
 		// Random elections column as primary key, but also check the column whether can be primary key.
 		perm := rand.Perm(tableColumns.Size())[0:primaryKeyFields]
 		for _, columnIndex := range perm {
@@ -783,6 +800,54 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		tblInfo: &tableInfo,
 	}
 	taskCh <- task
+
+	if createPartitionTable {
+		partitionTableColumns := arraylist.New()
+		partitionCols := make([]*ddlTestColumn, 0)
+		for i := 0; i < columnCount; i++ {
+			col := getDDLTestColumn(0)
+			tableColumn := getColumnFromArrayList(tableColumns, i)
+			col.name = tableColumn.name
+			col.defaultValue = tableColumn.defaultValue
+			partitionCols = append(partitionCols, col)
+			for _, column := range partitionCols {
+				partitionTableColumns.Add(column)
+			}
+		}
+
+		partitionTableInfo := ddlTestTable{
+			name:             uuid.NewV4().String(),
+			columns:          partitionTableColumns,
+			indexes:          make([]*ddlTestIndex, 0),
+			numberOfRows:     0,
+			deleted:          0,
+			comment:          tableInfo.comment,
+			charset:          charset,
+			collate:          collate,
+			lock:             new(sync.RWMutex),
+			isPartitionTable: true,
+		}
+		partitionSql := fmt.Sprintf("CREATE TABLE `%s` (", partitionTableInfo.name)
+		for i := 0; i < partitionTableInfo.columns.Size(); i++ {
+			if i > 0 {
+				partitionSql += ", "
+			}
+			column := getColumnFromArrayList(partitionTableColumns, i)
+			partitionSql += fmt.Sprintf("`%s` %s", column.name, column.getDefinition())
+		}
+		partitionSql += fmt.Sprintf(") COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
+			partitionTableInfo.comment, charset, collate)
+		column := getColumnFromArrayList(partitionTableColumns, 0)
+		partitionSql = partitionSql + fmt.Sprintf("partition by hash(%s) partitions 2", column.name)
+		partitionTableTask := &ddlJobTask{
+			k:       ddlAddTable,
+			sql:     partitionSql,
+			tblInfo: &partitionTableInfo,
+		}
+		task.partitionTblInfo = &partitionTableInfo
+		taskCh <- partitionTableTask
+	}
+
 	return nil
 }
 
@@ -849,6 +914,7 @@ func (c *testCase) prepareTruncateTable(_ interface{}, taskCh chan *ddlJobTask) 
 	if tableToTruncate == nil {
 		return nil
 	}
+	partitionTableToTruncate := tableToTruncate.partitionTable
 	sql := fmt.Sprintf("TRUNCATE TABLE `%s`", tableToTruncate.name)
 	task := &ddlJobTask{
 		k:       ddlTruncateTable,
@@ -856,6 +922,17 @@ func (c *testCase) prepareTruncateTable(_ interface{}, taskCh chan *ddlJobTask) 
 		tblInfo: tableToTruncate,
 	}
 	taskCh <- task
+
+	if partitionTableToTruncate != nil {
+		partitionSql := fmt.Sprintf("TRUNCATE TABLE `%s`", partitionTableToTruncate.name)
+		partitionTask := &ddlJobTask{
+			k:       ddlTruncateTable,
+			sql:     partitionSql,
+			tblInfo: partitionTableToTruncate,
+		}
+		taskCh <- partitionTask
+	}
+
 	return nil
 }
 
@@ -888,6 +965,7 @@ func (c *testCase) prepareModifyTableComment(_ interface{}, taskCh chan *ddlJobT
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	newComm := uuid.NewV4().String()
 	sql := fmt.Sprintf("ALTER TABLE `%s` COMMENT '%s'", table.name, newComm)
 	task := &ddlJobTask{
@@ -897,6 +975,17 @@ func (c *testCase) prepareModifyTableComment(_ interface{}, taskCh chan *ddlJobT
 		arg:     ddlJobArg(&newComm),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` COMMENT '%s'", partitionTable.name, newComm)
+		partitionTask := &ddlJobTask{
+			k:       ddlModifyTableComment,
+			tblInfo: partitionTable,
+			sql:     partitionSql,
+			arg:     ddlJobArg(&newComm),
+		}
+		taskCh <- partitionTask
+	}
 	return nil
 }
 
@@ -928,7 +1017,7 @@ func (c *testCase) prepareModifyTableCharsetAndCollate(_ interface{}, taskCh cha
 	if table == nil {
 		return nil
 	}
-
+	partitionTable := table.partitionTable
 	// Currently only support converting utf8 to utf8mb4.
 	// But since tidb has bugs when converting utf8 to utf8mb4 if table has blob column.
 	// See https://github.com/pingcap/tidb/pull/10477 for more detail.
@@ -961,6 +1050,21 @@ func (c *testCase) prepareModifyTableCharsetAndCollate(_ interface{}, taskCh cha
 		}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionTableSql := fmt.Sprintf("ALTER TABLE `%s` CHARACTER SET '%s' COLLATE '%s'",
+			partitionTable.name, charset, collate)
+		partitionTableTask := &ddlJobTask{
+			k:       ddlModifyTableCharsetAndCollate,
+			sql:     partitionTableSql,
+			tblInfo: partitionTable,
+			arg: ddlJobArg(&ddlModifyTableCharsetAndCollateJob{
+				newCharset: charset,
+				newCollate: collate,
+			}),
+		}
+		taskCh <- partitionTableTask
+	}
 	return nil
 }
 
@@ -994,6 +1098,7 @@ func (c *testCase) prepareShardRowID(_ interface{}, taskCh chan *ddlJobTask) err
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	// Don't make shard row bits too large.
 	shardRowId := rand.Intn(MaxShardRowIDBits)
 	sql := fmt.Sprintf("ALTER TABLE `%s` SHARD_ROW_ID_BITS = %d", table.name, shardRowId)
@@ -1004,6 +1109,18 @@ func (c *testCase) prepareShardRowID(_ interface{}, taskCh chan *ddlJobTask) err
 		arg:     ddlJobArg(&shardRowId),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionTableSql := fmt.Sprintf("ALTER TABLE `%s` SHARD_ROW_ID_BITS = %d", partitionTable.name, shardRowId)
+		partitionTableTask := &ddlJobTask{
+			k:       ddlShardRowID,
+			tblInfo: partitionTable,
+			sql:     partitionTableSql,
+			arg:     ddlJobArg(&shardRowId),
+		}
+		taskCh <- partitionTableTask
+	}
+
 	return nil
 }
 
@@ -1029,6 +1146,7 @@ func (c *testCase) prepareRebaseAutoID(_ interface{}, taskCh chan *ddlJobTask) e
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	newAutoID := table.newRandAutoID()
 	if newAutoID < 0 {
 		return nil
@@ -1040,6 +1158,17 @@ func (c *testCase) prepareRebaseAutoID(_ interface{}, taskCh chan *ddlJobTask) e
 		tblInfo: table,
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionSql := fmt.Sprintf("alter table `%s` auto_increment=%d", partitionTable.name, newAutoID)
+		partitionTask := &ddlJobTask{
+			k:       ddlRebaseAutoID,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+		}
+		taskCh <- partitionTask
+	}
+
 	return nil
 }
 
@@ -1070,6 +1199,7 @@ func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) er
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	tableToDrop := c.pickupRandomTable()
+	partitionTable := tableToDrop.partitionTable
 	if len(c.tables) <= 1 || tableToDrop == nil {
 		return nil
 	}
@@ -1082,6 +1212,17 @@ func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) er
 		tblInfo: tableToDrop,
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionTable.setDeleted()
+		partitionTableSql := fmt.Sprintf("DROP TABLE `%s`", tableToDrop.name)
+		partitionTableTask := &ddlJobTask{
+			k:       ddlDropTable,
+			sql:     partitionTableSql,
+			tblInfo: partitionTable,
+		}
+		taskCh <- partitionTableTask
+	}
 	return nil
 }
 
@@ -1178,6 +1319,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	strategy := rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
 	// build index definition
 	index := ddlTestIndex{
@@ -1185,7 +1327,9 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		signature: "",
 		columns:   make([]*ddlTestColumn, 0),
 	}
-
+	posIndex := -1
+	numberOfColumns := -1
+	var perm []int
 	switch strategy {
 	case ddlTestIndexStrategySingleColumnAtBeginning:
 		column0 := getColumnFromArrayList(table.columns, 0)
@@ -1200,18 +1344,19 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		}
 		index.columns = append(index.columns, lastColumn)
 	case ddlTestIndexStrategySingleColumnRandom:
-		col := getColumnFromArrayList(table.columns, rand.Intn(table.columns.Size()))
+		posIndex = rand.Intn(table.columns.Size())
+		col := getColumnFromArrayList(table.columns, posIndex)
 		if !col.canBeIndex() {
 			return nil
 		}
 		index.columns = append(index.columns, col)
 	case ddlTestIndexStrategyMultipleColumnRandom:
-		numberOfColumns := rand.Intn(table.columns.Size()) + 1
+		numberOfColumns = rand.Intn(table.columns.Size()) + 1
 		// Multiple columns of one index should no more than 16.
 		if numberOfColumns > 10 {
 			numberOfColumns = 10
 		}
-		perm := rand.Perm(table.columns.Size())[:numberOfColumns]
+		perm = rand.Perm(table.columns.Size())[:numberOfColumns]
 		for _, idx := range perm {
 			column := getColumnFromArrayList(table.columns, idx)
 			if column.canBeIndex() {
@@ -1256,6 +1401,84 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		arg:     ddlJobArg(arg),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		// build index definition
+		partitionIndex := ddlTestIndex{
+			name:      index.name,
+			signature: "",
+			columns:   make([]*ddlTestColumn, 0),
+		}
+
+		switch strategy {
+		case ddlTestIndexStrategySingleColumnAtBeginning:
+			column0 := getColumnFromArrayList(partitionTable.columns, 0)
+			if !column0.canBeIndex() {
+				return nil
+			}
+			partitionIndex.columns = append(partitionIndex.columns, column0)
+		case ddlTestIndexStrategySingleColumnAtEnd:
+			lastColumn := getColumnFromArrayList(partitionTable.columns, partitionTable.columns.Size()-1)
+			if !lastColumn.canBeIndex() {
+				return nil
+			}
+			partitionIndex.columns = append(partitionIndex.columns, lastColumn)
+		case ddlTestIndexStrategySingleColumnRandom:
+			col := getColumnFromArrayList(partitionTable.columns, posIndex)
+			if !col.canBeIndex() {
+				return nil
+			}
+			partitionIndex.columns = append(partitionIndex.columns, col)
+		case ddlTestIndexStrategyMultipleColumnRandom:
+			// Multiple columns of one index should no more than 16.
+			if numberOfColumns > 10 {
+				numberOfColumns = 10
+			}
+			for _, idx := range perm {
+				column := getColumnFromArrayList(partitionTable.columns, idx)
+				if column.canBeIndex() {
+					partitionIndex.columns = append(partitionIndex.columns, column)
+				}
+			}
+		}
+
+		for _, column := range partitionIndex.columns {
+			if !checkAddDropColumn(ctx, column) {
+				return nil
+			}
+		}
+
+		if len(partitionIndex.columns) == 0 {
+			return nil
+		}
+		partitionIndex.signature = generateIndexSignture(partitionIndex)
+
+		// check whether index duplicates
+		for _, idx := range partitionTable.indexes {
+			if idx.signature == partitionIndex.signature {
+				return nil
+			}
+		}
+
+		// build SQL
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` ADD INDEX `%s` (", partitionTable.name, partitionIndex.name)
+		for i, column := range partitionIndex.columns {
+			if i > 0 {
+				partitionSql += ", "
+			}
+			partitionSql += fmt.Sprintf("`%s`", column.name)
+		}
+		partitionSql += ")"
+
+		partitionArg := &ddlIndexJobArg{index: &partitionIndex}
+		partitionTask := &ddlJobTask{
+			k:       ddlAddIndex,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+			arg:     ddlJobArg(partitionArg),
+		}
+		taskCh <- partitionTask
+	}
 	return nil
 }
 
@@ -1296,6 +1519,7 @@ func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) 
 	if table == nil || len(table.indexes) == 0 {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	loc := rand.Intn(len(table.indexes))
 	index := table.indexes[loc]
 	newIndex := uuid.NewV4().String()
@@ -1311,6 +1535,19 @@ func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) 
 		arg:     ddlJobArg(&ddlRenameIndexArg{index, newIndex}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionTableSql := fmt.Sprintf("ALTER TABLE `%s` RENAME INDEX `%s` to `%s`",
+			partitionTable.name, index.name, newIndex)
+		partitionTableIndex := partitionTable.indexes[loc]
+		partitionTableTask := &ddlJobTask{
+			k:       ddlRenameIndex,
+			sql:     partitionTableSql,
+			tblInfo: partitionTable,
+			arg:     ddlJobArg(&ddlRenameIndexArg{partitionTableIndex, newIndex}),
+		}
+		taskCh <- partitionTableTask
+	}
 	return nil
 }
 
@@ -1352,6 +1589,7 @@ func (c *testCase) prepareDropIndex(ctx interface{}, taskCh chan *ddlJobTask) er
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	if len(table.indexes) == 0 {
 		return nil
 	}
@@ -1370,6 +1608,26 @@ func (c *testCase) prepareDropIndex(ctx interface{}, taskCh chan *ddlJobTask) er
 		arg:     ddlJobArg(arg),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		if len(partitionTable.indexes) == 0 {
+			return nil
+		}
+		partitionIndexToDrop := partitionTable.indexes[indexToDropIndex]
+		if !checkModifyIdx(ctx, partitionIndexToDrop) {
+			return nil
+		}
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` DROP INDEX `%s`", partitionTable.name, partitionIndexToDrop.name)
+
+		partitionArg := &ddlIndexJobArg{index: partitionIndexToDrop}
+		partitionTask := &ddlJobTask{
+			k:       ddlDropIndex,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+			arg:     ddlJobArg(partitionArg),
+		}
+		taskCh <- partitionTask
+	}
 	return nil
 }
 
@@ -1441,8 +1699,9 @@ func (c *testCase) prepareAddColumn(ctx interface{}, taskCh chan *ddlJobTask) er
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	strategy := rand.Intn(ddlTestAddDropColumnStrategyAtRandom) + ddlTestAddDropColumnStrategyAtBeginning
-	newColumn := getRandDDLTestColumn()
+	newColumn, dataType := getRandDDLTestColumn()
 	if !checkAddDropColumn(ctx, newColumn) {
 		return nil
 	}
@@ -1477,6 +1736,43 @@ func (c *testCase) prepareAddColumn(ctx interface{}, taskCh chan *ddlJobTask) er
 		arg:     ddlJobArg(arg),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionNewColumn := getDDLTestColumn(dataType)
+		if !checkAddDropColumn(ctx, partitionNewColumn) {
+			return nil
+		}
+		// build SQL
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s", partitionTable.name, partitionNewColumn.name, partitionNewColumn.getDefinition())
+		switch strategy {
+		case ddlTestAddDropColumnStrategyAtBeginning:
+			partitionSql += " FIRST"
+		case ddlTestAddDropColumnStrategyAtEnd:
+			// do nothing
+		case ddlTestAddDropColumnStrategyAtRandom:
+			partitionColumn := getColumnFromArrayList(partitionTable.columns, insertAfterPosition)
+			if !checkRelatedColumn(ctx, partitionColumn) {
+				return nil
+			}
+			partitionSql += fmt.Sprintf(" AFTER `%s`", partitionColumn.name)
+		}
+
+		partitionArg := &ddlColumnJobArg{
+			column:   partitionNewColumn,
+			strategy: strategy,
+		}
+		if insertAfterPosition != -1 {
+			arg.insertAfterColumn = getColumnFromArrayList(partitionTable.columns, insertAfterPosition)
+		}
+		partitionTask := &ddlJobTask{
+			k:       ddlAddColumn,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+			arg:     ddlJobArg(partitionArg),
+		}
+		taskCh <- partitionTask
+	}
+
 	return nil
 }
 
@@ -1531,6 +1827,7 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	table.lock.Lock()
 	defer table.lock.Unlock()
 	origColIndex, origColumn := table.pickupRandomColumn()
@@ -1541,7 +1838,9 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 		sql            string
 		modifiedColumn *ddlTestColumn
 	)
-	if rand.Float64() > 0.5 {
+	p := rand.Float64()
+	insertPosition := -1
+	if p > 0.5 {
 		// If a column has dependency, it cannot be renamed.
 		if origColumn.hasGenerateCol() {
 			return nil
@@ -1579,7 +1878,6 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
 		}
 	case ddlTestAddDropColumnStrategyAtRandom:
-		insertPosition := rand.Intn(table.columns.Size())
 		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
 		if !checkRelatedColumn(ctx, insertAfterColumn) {
 			origColumn.delRenamed()
@@ -1606,6 +1904,86 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 		}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionColumns := partitionTable.filterColumns(table.predicateAll)
+		if len(partitionColumns) == 0 {
+			return nil
+		}
+		partitionOrigColumn := partitionColumns[origColIndex]
+		if partitionOrigColumn == nil {
+			return nil
+		}
+		var (
+			partitionSql            string
+			partitionModifiedColumn *ddlTestColumn
+		)
+		if p > 0.5 {
+			// If a column has dependency, it cannot be renamed.
+			if partitionOrigColumn.hasGenerateCol() {
+				return nil
+			}
+			// for change column
+			partitionModifiedColumn = generateRandModifiedColumn2(partitionOrigColumn, true)
+			if !checkAddDropColumn(ctx, partitionOrigColumn) || !checkAddDropColumn(ctx, partitionModifiedColumn) {
+				return nil
+			}
+			partitionOrigColumn.setRenamed()
+			partitionSql = fmt.Sprintf("alter table `%s` change column `%s` `%s` %s", partitionTable.name,
+				partitionOrigColumn.name, partitionModifiedColumn.name, partitionModifiedColumn.getDefinition())
+		} else {
+			if !checkModifyColumn(ctx, partitionOrigColumn) {
+				return nil
+			}
+			// for modify column
+			partitionModifiedColumn = generateRandModifiedColumn2(partitionOrigColumn, false)
+			partitionSql = fmt.Sprintf("alter table `%s` modify column `%s` %s", partitionTable.name,
+				partitionOrigColumn.name, partitionModifiedColumn.getDefinition())
+		}
+		// Inject the new offset for the new column.
+		var partitionInsertAfterColumn *ddlTestColumn = nil
+		switch strategy {
+		case ddlTestAddDropColumnStrategyAtBeginning:
+			partitionSql += " FIRST"
+		case ddlTestAddDropColumnStrategyAtEnd:
+			endColumn := getColumnFromArrayList(partitionTable.columns, partitionTable.columns.Size()-1)
+			if !checkRelatedColumn(ctx, endColumn) {
+				partitionOrigColumn.delRenamed()
+				return nil
+			}
+			if endColumn.name != partitionOrigColumn.name {
+				partitionSql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
+			}
+		case ddlTestAddDropColumnStrategyAtRandom:
+			partitionInsertAfterColumn = getColumnFromArrayList(partitionTable.columns, insertPosition)
+			if !checkRelatedColumn(ctx, partitionInsertAfterColumn) {
+				partitionOrigColumn.delRenamed()
+				return nil
+			}
+			if insertPosition != origColIndex {
+				partitionSql += fmt.Sprintf(" AFTER `%s`", partitionInsertAfterColumn.name)
+			}
+		}
+		if partitionModifiedColumn.name == partitionOrigColumn.name {
+			partitionModifiedColumn.name = ""
+		}
+		partitionTask := &ddlJobTask{
+			// Column Type Change.
+			k:       ddlModifyColumn2,
+			tblInfo: partitionTable,
+			sql:     partitionSql,
+			arg: ddlJobArg(&ddlColumnJobArg{
+				origColumn:        partitionOrigColumn,
+				column:            partitionModifiedColumn,
+				strategy:          strategy,
+				insertAfterColumn: partitionInsertAfterColumn,
+				updateDefault:     partitionModifiedColumn.defaultValue != partitionOrigColumn.defaultValue,
+			}),
+		}
+		taskCh <- partitionTask
+
+	}
+
 	return nil
 }
 
@@ -1621,6 +1999,7 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	table.lock.Lock()
 	defer table.lock.Unlock()
 	origColIndex, origColumn := table.pickupRandomColumn()
@@ -1629,7 +2008,9 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 	}
 	var modifiedColumn *ddlTestColumn
 	var sql string
-	if rand.Float64() > 0.5 {
+	insertPosition := -1
+	p := rand.Float64()
+	if p > 0.5 {
 		// If a column has dependency, it cannot be renamed.
 		if origColumn.hasGenerateCol() {
 			return nil
@@ -1664,7 +2045,7 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
 		}
 	case ddlTestAddDropColumnStrategyAtRandom:
-		insertPosition := rand.Intn(table.columns.Size())
+		insertPosition = rand.Intn(table.columns.Size())
 		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
 		if !checkRelatedColumn(ctx, insertAfterColumn) {
 			origColumn.delRenamed()
@@ -1690,6 +2071,79 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 		}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionColumns := partitionTable.filterColumns(table.predicateAll)
+		if len(partitionColumns) == 0 {
+			return nil
+		}
+		partitionOrigColumn := partitionColumns[origColIndex]
+		if partitionOrigColumn == nil || !partitionOrigColumn.canBeModified() {
+			return nil
+		}
+		var partitionModifiedColumn *ddlTestColumn
+		var partitionSql string
+		var partitionInsertAfterColumn *ddlTestColumn = nil
+		if p > 0.5 {
+			// If a column has dependency, it cannot be renamed.
+			if partitionOrigColumn.hasGenerateCol() {
+				return nil
+			}
+			partitionModifiedColumn = generateRandModifiedColumn(partitionOrigColumn, true)
+			if !checkAddDropColumn(ctx, partitionOrigColumn) || !checkAddDropColumn(ctx, partitionModifiedColumn) {
+				return nil
+			}
+			partitionOrigColumn.setRenamed()
+			partitionSql = fmt.Sprintf("alter table `%s` change column `%s` `%s` %s", partitionTable.name,
+				partitionOrigColumn.name, partitionModifiedColumn.name, partitionModifiedColumn.getDefinition())
+		} else {
+			partitionModifiedColumn = generateRandModifiedColumn(partitionOrigColumn, false)
+			if !checkModifyColumn(ctx, partitionOrigColumn) {
+				return nil
+			}
+			partitionSql = fmt.Sprintf("alter table `%s` modify column `%s` %s", partitionTable.name,
+				partitionOrigColumn.name, partitionModifiedColumn.getDefinition())
+		}
+		switch strategy {
+		case ddlTestAddDropColumnStrategyAtBeginning:
+			partitionSql += " FIRST"
+		case ddlTestAddDropColumnStrategyAtEnd:
+			endColumn := getColumnFromArrayList(partitionTable.columns, partitionTable.columns.Size()-1)
+			if !checkRelatedColumn(ctx, endColumn) {
+				partitionOrigColumn.delRenamed()
+				return nil
+			}
+			if endColumn.name != partitionOrigColumn.name {
+				partitionSql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
+			}
+		case ddlTestAddDropColumnStrategyAtRandom:
+			partitionInsertAfterColumn = getColumnFromArrayList(partitionTable.columns, insertPosition)
+			if !checkRelatedColumn(ctx, partitionInsertAfterColumn) {
+				partitionOrigColumn.delRenamed()
+				return nil
+			}
+			if insertPosition != origColIndex {
+				partitionSql += fmt.Sprintf(" AFTER `%s`", partitionInsertAfterColumn.name)
+			}
+		}
+		if partitionModifiedColumn.name == partitionOrigColumn.name {
+			partitionModifiedColumn.name = ""
+		}
+		partitionTask := &ddlJobTask{
+			k:       ddlModifyColumn,
+			tblInfo: partitionTable,
+			sql:     partitionSql,
+			arg: ddlJobArg(&ddlColumnJobArg{
+				origColumn:        partitionOrigColumn,
+				column:            partitionModifiedColumn,
+				strategy:          strategy,
+				insertAfterColumn: partitionInsertAfterColumn,
+				updateDefault:     partitionModifiedColumn.defaultValue != partitionOrigColumn.defaultValue,
+			}),
+		}
+		taskCh <- partitionTask
+	}
+
 	return nil
 }
 
@@ -1760,7 +2214,7 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 	if table == nil {
 		return nil
 	}
-
+	partitionTable := table.partitionTable
 	columnsSnapshot := table.filterColumns(table.predicateAll)
 	if len(columnsSnapshot) <= 1 {
 		return nil
@@ -1808,6 +2262,36 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 		arg:     ddlJobArg(arg),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionColumnToDrop := getColumnFromArrayList(partitionTable.columns, columnToDropIndex)
+		if !checkAddDropColumn(ctx, partitionColumnToDrop) {
+			return nil
+		}
+		// Primary key columns cannot be dropped
+		if partitionColumnToDrop.isPrimaryKey {
+			return nil
+		}
+		// Column cannot be dropped if the column has generated column dependency
+		if partitionColumnToDrop.hasGenerateCol() {
+			return nil
+		}
+		partitionColumnToDrop.setDeleted()
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", partitionTable.name, partitionColumnToDrop.name)
+		partitionArg := &ddlColumnJobArg{
+			column:            partitionColumnToDrop,
+			strategy:          strategy,
+			insertAfterColumn: nil,
+		}
+		partitionTableTask := &ddlJobTask{
+			k:       ddlDropColumn,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+			arg:     ddlJobArg(partitionArg),
+		}
+		taskCh <- partitionTableTask
+	}
+
 	return nil
 }
 
@@ -1881,6 +2365,7 @@ func (c *testCase) prepareSetDefaultValue(_ interface{}, taskCh chan *ddlJobTask
 	if table == nil {
 		return nil
 	}
+	partitionTable := table.partitionTable
 	columns := table.filterColumns(table.predicateAll)
 	if len(columns) == 0 {
 		return nil
@@ -1905,6 +2390,27 @@ func (c *testCase) prepareSetDefaultValue(_ interface{}, taskCh chan *ddlJobTask
 		}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionColumns := partitionTable.filterColumns(partitionTable.predicateAll)
+		if len(partitionColumns) == 0 {
+			return nil
+		}
+		partitionColumn := partitionColumns[loc]
+		partitionSql := fmt.Sprintf("ALTER TABLE `%s` ALTER `%s` SET DEFAULT %s", partitionTable.name,
+			partitionColumn.name, getDefaultValueString(partitionColumn.k, newDefaultValue))
+		partitionTask := &ddlJobTask{
+			k:       ddlSetDefaultValue,
+			sql:     partitionSql,
+			tblInfo: partitionTable,
+			arg: ddlJobArg(&ddlSetDefaultValueArg{
+				columnIndex:     loc,
+				column:          partitionColumn,
+				newDefaultValue: newDefaultValue,
+			}),
+		}
+		taskCh <- partitionTask
+	}
 	return nil
 }
 
@@ -1939,7 +2445,7 @@ func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTa
 	if table == nil {
 		return nil
 	}
-
+	partitionTable := table.partitionTable
 	cnt := rand.Intn(6)
 	sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", table.name, cnt)
 	task := &ddlJobTask{
@@ -1951,6 +2457,20 @@ func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTa
 		}),
 	}
 	taskCh <- task
+
+	if partitionTable != nil {
+		partitionTableSql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", partitionTable.name, cnt)
+
+		partitionTableTask := &ddlJobTask{
+			k:       ddlSetTiflashReplica,
+			sql:     partitionTableSql,
+			tblInfo: partitionTable,
+			arg: ddlJobArg(&ddlSetTiflashReplicaArg{
+				cnt,
+			}),
+		}
+		taskCh <- partitionTableTask
+	}
 	return nil
 }
 
@@ -1963,6 +2483,39 @@ func (c *testCase) setTiflashReplicaJob(task *ddlJobTask) error {
 	}
 	arg := (*ddlSetTiflashReplicaArg)(task.arg)
 	table.replicaCnt = arg.cnt
+	return nil
+}
+
+func (c *testCase) generateExchangePartition(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareExchangePartition, nil, ddlExchangePartition})
+	}
+	return nil
+}
+
+func (c *testCase) prepareExchangePartition(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil || table.partitionTable == nil {
+		return nil
+	}
+	partitionTable := table.partitionTable
+	sql := fmt.Sprintf("ALTER TABLE `%s` EXCHANGE PARTITION p0 WITH TABLE `%s`", partitionTable.name, table.name)
+	task := &ddlJobTask{
+		k:       ddlExchangePartition,
+		sql:     sql,
+		tblInfo: table,
+	}
+	taskCh <- task
+
+	return nil
+}
+
+func (c *testCase) exchangePartitionJob(task *ddlJobTask) error {
+	table := task.tblInfo
+	partitionTable := table.partitionTable
+	table.lock.Lock()
+	table.columns, partitionTable.columns = partitionTable.columns, table.columns
+	table.lock.Unlock()
 	return nil
 }
 

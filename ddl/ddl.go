@@ -213,10 +213,14 @@ func (c *testCase) initialize(dbs []*sql.DB) error {
 		return errors.Trace(err)
 	}
 	// Create 2 table before executes DDL & DML
-	taskCh := make(chan *ddlJobTask, 2)
+	taskCh := make(chan *ddlJobTask, 3)
 	c.prepareAddTable(nil, taskCh)
-	c.prepareAddTable(nil, taskCh)
+	c.prepareAddTable(true, taskCh)
 	if c.cfg.TestTp == SerialDDLTest {
+		err = c.execSerialDDLSQL(taskCh)
+		if err != nil {
+			return errors.Trace(err)
+		}
 		err = c.execSerialDDLSQL(taskCh)
 		if err != nil {
 			return errors.Trace(err)

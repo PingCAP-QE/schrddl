@@ -99,7 +99,7 @@ func (c *testCase) pickupRandomSchema() *ddlTestSchema {
 func (c *testCase) pickupRandomTable() *ddlTestTable {
 	tableNames := make([]string, 0)
 	for name, table := range c.tables {
-		if table.isDeleted() {
+		if table.isDeleted() || table.isPartitionTable {
 			continue
 		}
 		tableNames = append(tableNames, name)
@@ -165,19 +165,21 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 }
 
 type ddlTestTable struct {
-	deleted      int32
-	name         string
-	id           string // table_id , get from admin show ddl jobs
-	columns      *arraylist.List
-	indexes      []*ddlTestIndex
-	numberOfRows int
-	shardRowId   int64 // shard_row_id_bits
-	autoIncID    int64
-	comment      string // table comment
-	charset      string
-	collate      string
-	lock         *sync.RWMutex
-	replicaCnt   int
+	deleted          int32
+	name             string
+	id               string // table_id , get from admin show ddl jobs
+	columns          *arraylist.List
+	indexes          []*ddlTestIndex
+	numberOfRows     int
+	shardRowId       int64 // shard_row_id_bits
+	autoIncID        int64
+	comment          string // table comment
+	charset          string
+	collate          string
+	lock             *sync.RWMutex
+	replicaCnt       int
+	partitionTable   *ddlTestTable
+	isPartitionTable bool
 }
 
 func (table *ddlTestTable) isDeleted() bool {
@@ -526,7 +528,7 @@ func getDDLTestColumn(n int) *ddlTestColumn {
 	return column
 }
 
-func getRandDDLTestColumn() *ddlTestColumn {
+func getRandDDLTestColumn() (*ddlTestColumn, int) {
 	var n int
 	for {
 		n = RandDataType()
@@ -534,7 +536,7 @@ func getRandDDLTestColumn() *ddlTestColumn {
 			break
 		}
 	}
-	return getDDLTestColumn(n)
+	return getDDLTestColumn(n), n
 }
 
 // generateRandModifiedColumn returns a random column to modify column `col`.
@@ -581,7 +583,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 
 // generateRandModifiedColumn2 returns a totally new column, may with the old name.
 func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestColumn {
-	newColumn := getRandDDLTestColumn()
+	newColumn, _ := getRandDDLTestColumn()
 	if renameCol {
 		newColumn.name = uuid.NewV4().String()
 	} else {
