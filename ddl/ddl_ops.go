@@ -778,7 +778,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		column := getColumnFromArrayList(tableColumns, i)
 		sql += fmt.Sprintf("`%s` %s", column.name, column.getDefinition())
 	}
-	if primaryKeyFields > 0 {
+	if primaryKeyFields > 0 && !createPartitionTable {
 		sql += ", PRIMARY KEY ("
 		for i, columnIndex := range primaryKeys {
 			if i > 0 {
@@ -801,8 +801,8 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 
 	if createPartitionTable {
 		partitionTableColumns := arraylist.New()
-		partitionCols := make([]*ddlTestColumn, 0)
 		for i := 0; i < columnCount; i++ {
+			partitionCols := make([]*ddlTestColumn, 0)
 			col := getDDLTestColumn(0)
 			tableColumn := getColumnFromArrayList(tableColumns, i)
 			col.name = tableColumn.name
@@ -836,7 +836,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		partitionSql += fmt.Sprintf(") COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 			partitionTableInfo.comment, charset, collate)
 		column := getColumnFromArrayList(partitionTableColumns, 0)
-		partitionSql = partitionSql + fmt.Sprintf(" partition by hash('%s') partitions 2", column.name)
+		partitionSql = partitionSql + fmt.Sprintf(" partition by hash(`%s`) partitions 2", column.name)
 		partitionTableTask := &ddlJobTask{
 			k:       ddlAddTable,
 			sql:     partitionSql,
@@ -1197,8 +1197,7 @@ func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) er
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	tableToDrop := c.pickupRandomTable()
-	partitionTable := tableToDrop.partitionTable
-	if len(c.tables) <= 1 || tableToDrop == nil || partitionTable != nil {
+	if len(c.tables) <= 1 || tableToDrop == nil || tableToDrop.partitionTable != nil {
 		return nil
 	}
 	tableToDrop.setDeleted()
@@ -1865,6 +1864,7 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 			sql += fmt.Sprintf(" AFTER `%s`", endColumn.name)
 		}
 	case ddlTestAddDropColumnStrategyAtRandom:
+		insertPosition = rand.Intn(table.columns.Size())
 		insertAfterColumn = getColumnFromArrayList(table.columns, insertPosition)
 		if !checkRelatedColumn(ctx, insertAfterColumn) {
 			origColumn.delRenamed()
