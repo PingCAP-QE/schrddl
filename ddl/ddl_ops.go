@@ -20,7 +20,6 @@ import (
 )
 
 func (c *testCase) generateDDLOps() error {
-	// Todo check all ddl weather destroy partition table and normal table consist.
 	defaultTime := 2
 	if err := c.generateCreateSchema(defaultTime); err != nil {
 		return errors.Trace(err)
@@ -58,7 +57,6 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
-	// Todo
 	if err := c.generateRenameIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
@@ -838,7 +836,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		partitionSql += fmt.Sprintf(") COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 			partitionTableInfo.comment, charset, collate)
 		column := getColumnFromArrayList(partitionTableColumns, 0)
-		partitionSql = partitionSql + fmt.Sprintf("partition by hash(%s) partitions 2", column.name)
+		partitionSql = partitionSql + fmt.Sprintf(" partition by hash('%s') partitions 2", column.name)
 		partitionTableTask := &ddlJobTask{
 			k:       ddlAddTable,
 			sql:     partitionSql,
@@ -1200,7 +1198,7 @@ func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) er
 	defer c.tablesLock.Unlock()
 	tableToDrop := c.pickupRandomTable()
 	partitionTable := tableToDrop.partitionTable
-	if len(c.tables) <= 1 || tableToDrop == nil {
+	if len(c.tables) <= 1 || tableToDrop == nil || partitionTable != nil {
 		return nil
 	}
 	tableToDrop.setDeleted()
@@ -1212,17 +1210,6 @@ func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) er
 		tblInfo: tableToDrop,
 	}
 	taskCh <- task
-
-	if partitionTable != nil {
-		partitionTable.setDeleted()
-		partitionTableSql := fmt.Sprintf("DROP TABLE `%s`", tableToDrop.name)
-		partitionTableTask := &ddlJobTask{
-			k:       ddlDropTable,
-			sql:     partitionTableSql,
-			tblInfo: partitionTable,
-		}
-		taskCh <- partitionTableTask
-	}
 	return nil
 }
 
