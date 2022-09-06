@@ -57,6 +57,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddIndex(10); err != nil {
 		return errors.Trace(err)
 	}
+
 	if err := c.generateRenameIndex(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
@@ -386,7 +387,6 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 				log.Errorf("error %s, stack %s", err.Error(), debug.Stack())
 				return err
 			}
-			t = t.UTC()
 			expectedDefault = t.Format(TimeFormat)
 		}
 		if !column.canHaveDefaultValue() {
