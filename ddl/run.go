@@ -185,7 +185,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "used in key specification without a key length") ||
 		strings.Contains(errStr, "Specified key was too long; max key length is ") ||
 		strings.Contains(errStr, "should be less than the total tiflash server count") ||
-		strings.Contains(errStr, "Unsupported ALTER TiFlash settings") {
+		strings.Contains(errStr, "Unsupported ALTER table replica for table contain gbk charset") {
 		fmt.Println(errStr)
 		return true
 	}
