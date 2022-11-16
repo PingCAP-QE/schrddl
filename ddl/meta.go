@@ -841,7 +841,7 @@ func (col *ddlTestColumn) canBeWhere() bool {
 	}
 }
 
-//BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value")
+// BLOB, TEXT, GEOMETRY or JSON column 'b' can't have a default value")
 func (col *ddlTestColumn) canHaveDefaultValue() bool {
 	switch col.k {
 	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT, KindJSON:
@@ -896,7 +896,7 @@ func (col *ddlTestColumn) normalizeDataType() string {
 	case KindTIMESTAMP:
 		return "timestamp"
 	case KindYEAR:
-		return "year(4) unsigned"
+		return "year(4)"
 	case KindJSON:
 		return "json"
 	case KindEnum:
