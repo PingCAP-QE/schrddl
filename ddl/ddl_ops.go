@@ -206,6 +206,33 @@ var mapOfDDLKindProbability = map[DDLKind]float64{
 	ddlSetTiflashReplica:            0.30,
 }
 
+// mapOfDDLKindProbabilityInIndexMode use to control every kind of ddl request execute probability in index mode.
+var mapOfDDLKindProbabilityInIndexMode = map[DDLKind]float64{
+	ddlAddTable:  0.05,
+	ddlDropTable: 0.05,
+
+	ddlAddIndex:  0.85,
+	ddlDropIndex: 0.5,
+
+	ddlAddColumn:     0.2,
+	ddlModifyColumn:  0.1,
+	ddlModifyColumn2: 0.1,
+	ddlDropColumn:    0.1,
+
+	ddlCreateView: 0.07,
+
+	ddlCreateSchema:                 0.02,
+	ddlDropSchema:                   0.02,
+	ddlRenameTable:                  0.12,
+	ddlRenameIndex:                  0.12,
+	ddlTruncateTable:                0.12,
+	ddlShardRowID:                   0.07,
+	ddlRebaseAutoID:                 0.03,
+	ddlSetDefaultValue:              0.07,
+	ddlModifyTableComment:           0.07,
+	ddlModifyTableCharsetAndCollate: 0.07,
+}
+
 type ddlJob struct {
 	id         int
 	schemaName string

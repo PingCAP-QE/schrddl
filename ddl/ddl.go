@@ -88,8 +88,12 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 							disableTiKVGC(db)
 						}
 					}
-					// os.Exit(-1)
-					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					if Chaos {
+						log.Warnf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					} else {
+						// os.Exit(-1)
+						log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+					}
 				}
 			}
 		}(i)
@@ -249,12 +253,18 @@ ParallelExecuteOperations executes process:
 func ParallelExecuteOperations(c *testCase, ops []ddlTestOpExecutor, postOp func() error) error {
 	perm := rand.Perm(len(ops))
 	taskCh := make(chan *ddlJobTask, len(ops))
+	var probability map[int]float64
+	if isIndexMode {
+		probability = mapOfDDLKindProbabilityInIndexMode
+	} else {
+		probability = mapOfDDLKindProbability
+	}
 	for _, idx := range perm {
 		if c.isStop() {
 			return nil
 		}
 		op := ops[idx]
-		if rand.Float64() > mapOfDDLKindProbability[op.ddlKind] {
+		if rand.Float64() > probability[op.ddlKind] {
 			continue
 		}
 		op.executeFunc(op.config, taskCh)
