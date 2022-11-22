@@ -27,6 +27,7 @@ type testCase struct {
 	schemas          map[string]*ddlTestSchema
 	views            map[string]*ddlTestView
 	tablesLock       sync.RWMutex
+	schemasLock      sync.Mutex
 	stop             int32
 	lastDDLID        int
 	charsets         []string

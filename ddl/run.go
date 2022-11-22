@@ -15,14 +15,7 @@ import (
 )
 
 var defaultPushMetricsInterval = 15 * time.Second
-var enableTransactionTestFlag = "0"
-var enableTransactionTest = false
-
-func init() {
-	if enableTransactionTestFlag == "1" {
-		enableTransactionTest = true
-	}
-}
+var EnableTransactionTest = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -86,8 +79,13 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		exeDDLFunc = ParallelExecuteOperations
 	}
 	execDMLFunc := SerialExecuteDML
-	if enableTransactionTest {
+	if EnableTransactionTest {
 		execDMLFunc = TransactionExecuteOperations
+	}
+	var err error
+	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
+	if err != nil {
+		log.Fatalf("[ddl] get start ddl seq num error %v", err)
 	}
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)
