@@ -16,6 +16,7 @@ import (
 
 var defaultPushMetricsInterval = 15 * time.Second
 var EnableTransactionTest = false
+var RCIsolation = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -87,6 +88,9 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	if err != nil {
 		log.Fatalf("[ddl] get start ddl seq num error %v", err)
 	}
+	if RCIsolation {
+		dbss[0][0].Exec("set global transaction_isolation='read-committed'")
+	}
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)
 	}
@@ -100,7 +104,7 @@ func dmlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
-	if strings.Contains(errStr, "Information schema is changed") {
+	if strings.Contains(errStr, "Information schema is changed") && !RCIsolation {
 		return true
 	}
 	if strings.Contains(errStr, "try again later") {
