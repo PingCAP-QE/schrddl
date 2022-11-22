@@ -179,10 +179,11 @@ func (c *testCase) execDMLInTransactionSQL(taskCh chan *dmlJobTask) error {
 			return fmt.Errorf("Error when executing SQL: %s\n local Err: %#v\n%s\n", task.sql, err, task.tblInfo.debugPrintToString())
 		}
 	}
+	log.Infof("[dml] [instance %d] finish transaction dml", c.caseIndex)
 	return nil
 }
 
-const dmlSizeEachRound = 1
+const dmlSizeEachRound = 10
 
 func (c *testCase) generateInsert() error {
 	for i := 0; i < dmlSizeEachRound; i++ {

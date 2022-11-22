@@ -325,7 +325,7 @@ func TransactionExecuteOperations(c *testCase, ops []dmlTestOpExecutor, postOp f
 				transactionOpsLen = len(ops) - i
 			}
 			opNum = 0
-			if postOp != nil {
+			if postOp != nil && rand.Intn(5) == 0 {
 				err = postOp()
 				if err != nil {
 					return errors.Trace(err)
@@ -395,7 +395,9 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 							log.Errorf("unexpected error when close", err)
 							return
 						}
+						globalCancelMu.Lock()
 						_, err := c.dbs[0].Exec(fmt.Sprintf("admin cancel ddl jobs %d", jobID))
+						globalCancelMu.Unlock()
 						if err != nil {
 							log.Errorf("unexpected error when execute cancel ddl", err)
 							return
@@ -408,8 +410,10 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 					}
 				}
 			}()
+			c.schemasLock.Lock()
 			err1 = executeDDL(c, c.ddlOps, nil)
 			atomic.StoreInt32(&ddlAllComplete, 1)
+			c.schemasLock.Unlock()
 			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err1 != nil {
 				break
 			}
@@ -464,13 +468,14 @@ var selectID int32
 // executeVerifyIntegrity verifies the integrity of the data in the database
 // by comparing the data in memory (that we expected) with the data in the database.
 func (c *testCase) executeVerifyIntegrity() error {
-	c.tablesLock.RLock()
+	log.Infof("[ddl] [instance %d] Verifying integrity...", c.caseIndex)
+	c.schemasLock.Lock()
+	defer c.schemasLock.Unlock()
 	tablesSnapshot := make([]*ddlTestTable, 0)
 	for _, table := range c.tables {
 		tablesSnapshot = append(tablesSnapshot, table)
 	}
 	gotTableTime := time.Now()
-	c.tablesLock.RUnlock()
 
 	uniqID := atomic.AddInt32(&selectID, 1)
 

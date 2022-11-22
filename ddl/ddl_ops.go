@@ -19,6 +19,10 @@ import (
 	"github.com/twinj/uuid"
 )
 
+var globalDDLSeqNumMu sync.Mutex
+var globalDDLSeqNum uint64
+var globalCancelMu sync.Mutex
+
 func (c *testCase) generateDDLOps() error {
 	defaultTime := 2
 	if err := c.generateCreateSchema(defaultTime); err != nil {
@@ -504,11 +508,6 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 	tasks := make([]*ddlJobTask, 0, num)
 	var wg sync.WaitGroup
 	var unExpectedErr error
-	var globalDDLSeqNumMu sync.Mutex
-	globalDDLSeqNum, err := getStartDDLSeqNum(c.dbs[0])
-	if err != nil {
-		return err
-	}
 	for i := 0; i < num; i++ {
 		task := <-taskCh
 		tasks = append(tasks, task)
@@ -528,6 +527,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 				unExpectedErr = err
 				return
 			}
+			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 			_, ddlErr := conn.ExecContext(context.Background(), task.sql)
 			if !ddlIgnoreError(ddlErr) {
 				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
@@ -592,7 +592,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 	}
 
 	// After all DDL complete, check all the schemas are correct.
-	err = c.checkSchema()
+	err := c.checkSchema()
 	if err != nil {
 		return err
 	}
@@ -601,6 +601,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 		return err
 	}
 
+	log.Infof("[ddl] [instance %d] finish ddl", c.caseIndex)
 	return nil
 }
 

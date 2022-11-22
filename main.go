@@ -34,6 +34,7 @@ var (
 	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	testTime        = flag.Duration("time", 2*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
+	txn             = flag.Bool("txn", false, "enable txn dml")
 )
 
 func prepareEnv() {
@@ -62,6 +63,9 @@ func main() {
 	flag.Parse()
 	if *output != "" {
 		log.SetOutputByName(*output)
+	}
+	if *txn {
+		EnableTransactionTest = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
