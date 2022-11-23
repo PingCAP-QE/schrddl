@@ -35,6 +35,7 @@ var (
 	testTime        = flag.Duration("time", 2*time.Hour, "test time")
 	output          = flag.String("output", "", "output file")
 	txn             = flag.Bool("txn", false, "enable txn dml")
+	rc              = flag.Bool("rc-txn", false, "read-committed isolation")
 )
 
 func prepareEnv() {
@@ -66,6 +67,9 @@ func main() {
 	}
 	if *txn {
 		EnableTransactionTest = true
+	}
+	if *rc {
+		RCIsolation = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
