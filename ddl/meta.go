@@ -100,7 +100,7 @@ func (c *testCase) pickupRandomSchema() *ddlTestSchema {
 func (c *testCase) pickupRandomTable() *ddlTestTable {
 	tableNames := make([]string, 0)
 	for name, table := range c.tables {
-		if table.isDeleted() {
+		if table.isDeleted() || table.isPartitionTable {
 			continue
 		}
 		tableNames = append(tableNames, name)
@@ -166,19 +166,21 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 }
 
 type ddlTestTable struct {
-	deleted      int32
-	name         string
-	id           string // table_id , get from admin show ddl jobs
-	columns      *arraylist.List
-	indexes      []*ddlTestIndex
-	numberOfRows int
-	shardRowId   int64 // shard_row_id_bits
-	autoIncID    int64
-	comment      string // table comment
-	charset      string
-	collate      string
-	lock         *sync.RWMutex
-	replicaCnt   int
+	deleted          int32
+	name             string
+	id               string // table_id , get from admin show ddl jobs
+	columns          *arraylist.List
+	indexes          []*ddlTestIndex
+	numberOfRows     int
+	shardRowId       int64 // shard_row_id_bits
+	autoIncID        int64
+	comment          string // table comment
+	charset          string
+	collate          string
+	lock             *sync.RWMutex
+	replicaCnt       int
+	partitionTable   *ddlTestTable
+	isPartitionTable bool
 }
 
 func (table *ddlTestTable) isDeleted() bool {
@@ -476,6 +478,20 @@ func (col *ddlTestColumn) canBeModified() bool {
 		typeSupported = true
 	}
 	return typeSupported
+}
+
+func deepCopyDdlTestColumn(col *ddlTestColumn) *ddlTestColumn {
+	newCol := &ddlTestColumn{
+		k:            col.k,
+		name:         col.name,
+		fieldType:    col.fieldType,
+		deleted:      col.deleted,
+		filedTypeM:   col.filedTypeM,
+		filedTypeD:   col.filedTypeD,
+		setValue:     col.setValue,
+		defaultValue: col.defaultValue,
+	}
+	return newCol
 }
 
 func getDDLTestColumn(n int) *ddlTestColumn {
@@ -852,6 +868,19 @@ type ddlTestIndex struct {
 	name      string
 	signature string
 	columns   []*ddlTestColumn
+}
+
+func deepCopyDdlTestIndex(index *ddlTestIndex) *ddlTestIndex {
+	newColumns := make([]*ddlTestColumn, 0)
+	for i := 0; i < len(index.columns); i++ {
+		newColumns = append(newColumns, deepCopyDdlTestColumn(index.columns[i]))
+	}
+	newIndex := &ddlTestIndex{
+		name:      index.name,
+		signature: index.signature,
+		columns:   newColumns,
+	}
+	return newIndex
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
