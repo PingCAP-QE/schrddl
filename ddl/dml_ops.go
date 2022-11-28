@@ -73,7 +73,16 @@ func checkConflict(task *dmlJobTask) error {
 }
 
 func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dmlJobTask) error {
-	_, err := conn.ExecContext(ctx, task.sql)
+	var err error
+	var stmt *sql.Stmt
+	if Prepare {
+		stmt, err = conn.PrepareContext(ctx, task.sql)
+		if err == nil {
+			_, err = stmt.ExecContext(ctx)
+		}
+	} else {
+		_, err = conn.ExecContext(ctx, task.sql)
+	}
 	task.err = err
 	log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
 	if err != nil {

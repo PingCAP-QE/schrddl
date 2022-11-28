@@ -36,6 +36,7 @@ var (
 	output          = flag.String("output", "", "output file")
 	txn             = flag.Bool("txn", false, "enable txn dml")
 	rc              = flag.Bool("rc-txn", false, "read-committed isolation")
+	prepare         = flag.Bool("prepare", false, "use prepare statement")
 )
 
 func prepareEnv() {
@@ -70,6 +71,9 @@ func main() {
 	}
 	if *rc {
 		RCIsolation = true
+	}
+	if *prepare {
+		Prepare = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
