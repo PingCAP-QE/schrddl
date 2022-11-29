@@ -147,6 +147,9 @@ func dmlIgnoreError(err error) bool {
 	if strings.Contains(errStr, "Unsupported multi schema change") {
 		return true
 	}
+	if !RCIsolation && strings.Contains(errStr, "public column") {
+		return true
+	}
 	return false
 }
 

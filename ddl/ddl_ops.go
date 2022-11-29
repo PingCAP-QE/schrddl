@@ -22,6 +22,7 @@ import (
 var globalDDLSeqNumMu sync.Mutex
 var globalDDLSeqNum uint64
 var globalCancelMu sync.Mutex
+var globalCheckDDLMu sync.Mutex
 
 func (c *testCase) generateDDLOps() error {
 	defaultTime := 2
@@ -585,6 +586,11 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			}
 		}(task)
 	}
+
+	// Block here so that we can check if all DDLs can be finish in expected time.
+	globalCheckDDLMu.Lock()
+	globalCheckDDLMu.Unlock()
+
 	wg.Wait()
 
 	if unExpectedErr != nil {
