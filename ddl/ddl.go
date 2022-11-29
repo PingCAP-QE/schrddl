@@ -63,6 +63,42 @@ func (c *DDLCase) String() string {
 	return "ddl"
 }
 
+func backgroundCheckDDLFinish(db *sql.DB, concurrency int) {
+	for {
+		time.Sleep(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
+		log.Info("[ddl] check ddl jobs")
+		// Stop new ddl.
+		globalCheckDDLMu.Lock()
+		startTime := time.Now()
+		for {
+			row, err := db.Query("select count(*) from mysql.tidb_ddl_job")
+			if err != nil {
+				log.Warnf("read tidb_ddl_job failed", err)
+				break
+			}
+			row.Next()
+			var jobCnt int
+			err = row.Scan(&jobCnt)
+			if err != nil {
+				log.Fatal("read job cnt from row failed")
+			}
+			err = row.Close()
+			if err != nil {
+				log.Warnf("close query failed", err)
+				break
+			}
+			if jobCnt == 0 {
+				break
+			}
+			timeout := time.Duration(concurrency*30) * time.Second
+			if time.Since(startTime) > timeout {
+				log.Fatalf("cannot finish all DDL in %f seconds", timeout.Seconds())
+			}
+		}
+		globalCheckDDLMu.Unlock()
+	}
+}
+
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
 func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
 	for _, dbs := range dbss {
@@ -75,6 +111,7 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 	defer func() {
 		log.Infof("[%s] test end...", c)
 	}()
+	go backgroundCheckDDLFinish(c.cases[0].dbs[0], c.cfg.Concurrency)
 	var wg sync.WaitGroup
 	for i := 0; i < c.cfg.Concurrency; i++ {
 		wg.Add(1)
