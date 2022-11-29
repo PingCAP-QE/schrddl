@@ -17,6 +17,7 @@ import (
 var defaultPushMetricsInterval = 15 * time.Second
 var EnableTransactionTest = false
 var RCIsolation = false
+var Prepare = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
