@@ -79,6 +79,7 @@ func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dml
 		stmt, err = conn.PrepareContext(ctx, task.sql)
 		if err == nil {
 			_, err = stmt.ExecContext(ctx)
+			_ = stmt.Close()
 		}
 	} else {
 		_, err = conn.ExecContext(ctx, task.sql)
