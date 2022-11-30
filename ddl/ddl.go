@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,9 +62,16 @@ func (c *DDLCase) String() string {
 	return "ddl"
 }
 
-func backgroundCheckDDLFinish(db *sql.DB, concurrency int) {
+func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
+	tk := time.NewTicker(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
 	for {
-		time.Sleep(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
+		select {
+		case <-ctx.Done():
+			log.Infof("Time is up, exit schrddl")
+			return
+		case <-tk.C:
+			tk.Reset(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
+		}
 		log.Info("[ddl] check ddl jobs")
 		// Stop new ddl.
 		globalCheckDDLMu.Lock()
@@ -111,8 +117,12 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 	defer func() {
 		log.Infof("[%s] test end...", c)
 	}()
-	go backgroundCheckDDLFinish(c.cases[0].dbs[0], c.cfg.Concurrency)
 	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		backgroundCheckDDLFinish(ctx, c.cases[0].dbs[0], c.cfg.Concurrency)
+		wg.Done()
+	}()
 	for i := 0; i < c.cfg.Concurrency; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -127,6 +137,12 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 					}
 					// os.Exit(-1)
 					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
+				}
+				select {
+				case <-ctx.Done():
+					log.Infof("Time is up, exit schrddl")
+					return
+				default:
 				}
 			}
 		}(i)
@@ -457,7 +473,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 			select {
 			case <-ctx.Done():
 				log.Infof("Time is up, exit schrddl")
-				os.Exit(0)
+				return nil
 			default:
 			}
 		}
@@ -475,7 +491,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 			select {
 			case <-ctx.Done():
 				log.Infof("Time is up, exit schrddl")
-				os.Exit(0)
+				return nil
 			default:
 			}
 		}
