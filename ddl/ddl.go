@@ -96,10 +96,11 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 			if jobCnt == 0 {
 				break
 			}
-			timeout := time.Duration(concurrency*30) * time.Second
+			timeout := time.Duration(concurrency*60) * time.Second
 			if time.Since(startTime) > timeout {
 				log.Fatalf("cannot finish all DDL in %f seconds", timeout.Seconds())
 			}
+			time.Sleep(3 * time.Second)
 		}
 		globalCheckDDLMu.Unlock()
 	}
