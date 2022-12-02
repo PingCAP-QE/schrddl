@@ -215,7 +215,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
 		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
 		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
-		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") {
+		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") ||
+		strings.Contains(errStr, "not allowed type for this type of partitioning") ||
+		strings.Contains(errStr, "A PRIMARY KEY must include all columns in the table's partitioning function") {
 		return true
 	}
 	return false

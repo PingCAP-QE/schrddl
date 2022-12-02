@@ -725,10 +725,14 @@ func (c *testCase) generateAddTable(repeat int) error {
 func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) error {
 	columnCount := rand.Intn(c.cfg.TablesToCreate) + 2
 	tableColumns := arraylist.New()
+	var partitionColumnName string
 	for i := 0; i < columnCount; i++ {
 		columns := getRandDDLTestColumns()
 		for _, column := range columns {
 			tableColumns.Add(column)
+			if column.k <= KindBigInt && partitionColumnName == "" {
+				partitionColumnName = column.name
+			}
 		}
 	}
 
@@ -781,8 +785,14 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		}
 		sql += ")"
 	}
-	sql += fmt.Sprintf(") COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
+	sql += ")"
+
+	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
+
+	if rand.Intn(3) == 0 && partitionColumnName != "" {
+		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumnName, rand.Intn(10)+1)
+	}
 
 	task := &ddlJobTask{
 		k:       ddlAddTable,
