@@ -790,7 +790,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
 
-	if rand.Intn(1) == 0 && partitionColumnName != "" {
+	if rand.Intn(3) == 0 && partitionColumnName != "" {
 		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumnName, rand.Intn(10)+1)
 	}
 
