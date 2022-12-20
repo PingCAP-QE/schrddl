@@ -63,19 +63,23 @@ func (c *DDLCase) String() string {
 }
 
 func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
-	tk := time.NewTicker(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
+	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("Time is up, exit schrddl")
 			return
 		case <-tk.C:
-			tk.Reset(time.Duration(60+rand.Intn(20)*concurrency) * time.Second)
+			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
+		}
+		if rand.Intn(3) != 0 {
+			continue
 		}
 		log.Info("[ddl] check ddl jobs")
 		// Stop new ddl.
 		globalCheckDDLMu.Lock()
 		startTime := time.Now()
+		preJobCnt := 0
 		for {
 			row, err := db.Query("select count(*) from mysql.tidb_ddl_job")
 			if err != nil {
@@ -96,10 +100,11 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 			if jobCnt == 0 {
 				break
 			}
-			timeout := time.Duration(concurrency*60) * time.Second
-			if time.Since(startTime) > timeout {
+			timeout := time.Duration(concurrency*120) * time.Second
+			if time.Since(startTime) > timeout && preJobCnt == jobCnt {
 				log.Fatalf("cannot finish all DDL in %f seconds", timeout.Seconds())
 			}
+			preJobCnt = jobCnt
 			time.Sleep(3 * time.Second)
 		}
 		globalCheckDDLMu.Unlock()

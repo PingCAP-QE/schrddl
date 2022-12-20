@@ -618,6 +618,11 @@ func (c *testCase) execSerialDDLSQL(taskCh chan *ddlJobTask) error {
 	}
 	task := <-taskCh
 	db := c.dbs[0]
+
+	// Block here so that we can check if all DDLs can be finish in expected time.
+	globalCheckDDLMu.Lock()
+	globalCheckDDLMu.Unlock()
+
 	opStart := time.Now()
 	_, err := db.Exec(task.sql)
 	log.Infof("[ddl] [instance %d] %s, err: %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
