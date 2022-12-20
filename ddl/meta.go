@@ -300,8 +300,8 @@ func (table *ddlTestTable) debugPrintToString() string {
 		buffer.WriteString("#")
 		buffer.WriteString(PadRight(fmt.Sprintf("%d", i), " ", 4))
 		buffer.WriteString(": ")
-		for i := 0; i < table.columns.Size(); i++ {
-			col := getColumnFromArrayList(table.columns, i)
+		for j := 0; j < table.columns.Size(); j++ {
+			col := getColumnFromArrayList(table.columns, j)
 			buffer.WriteString(PadLeft(fmt.Sprintf("%v", getRowFromArrayList(col.rows, i)), " ", 11))
 			buffer.WriteString(", ")
 		}
