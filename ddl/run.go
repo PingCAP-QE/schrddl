@@ -141,7 +141,7 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Data Too Long") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
 		strings.Contains(errStr, "specified twice") ||
-		strings.Contains(errStr, "cannot convert datum from decimal to type year") {
+		strings.Contains(errStr, "cannot convert datum from") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
