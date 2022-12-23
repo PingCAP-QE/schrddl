@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/twinj/uuid"
 )
@@ -927,4 +928,97 @@ func getCharsetLen(cs string) int {
 	default:
 		return 1
 	}
+}
+
+func kToType(k int) sqlgen.ColumnType {
+	switch k {
+	case KindTINYINT:
+		return sqlgen.ColumnTypeTinyInt
+	case KindSMALLINT:
+		return sqlgen.ColumnTypeSmallInt
+	case KindMEDIUMINT:
+		return sqlgen.ColumnTypeMediumInt
+	case KindInt32:
+		return sqlgen.ColumnTypeInt
+	case KindBigInt:
+		return sqlgen.ColumnTypeBigInt
+	case KindBit:
+		return sqlgen.ColumnTypeBit
+	case KindFloat:
+		return sqlgen.ColumnTypeFloat
+	case KindDouble:
+		return sqlgen.ColumnTypeDouble
+	case KindDECIMAL:
+		return sqlgen.ColumnTypeDecimal
+	case KindChar:
+		return sqlgen.ColumnTypeChar
+	case KindVarChar:
+		return sqlgen.ColumnTypeVarchar
+	case KindBLOB:
+		return sqlgen.ColumnTypeBlob
+	case KindTINYBLOB:
+		return sqlgen.ColumnTypeBlob
+	case KindMEDIUMBLOB:
+		return sqlgen.ColumnTypeBlob
+	case KindLONGBLOB:
+		return sqlgen.ColumnTypeBlob
+	case KindTEXT:
+		return sqlgen.ColumnTypeText
+	case KindTINYTEXT:
+		return sqlgen.ColumnTypeText
+	case KindMEDIUMTEXT:
+		return sqlgen.ColumnTypeText
+	case KindLONGTEXT:
+		return sqlgen.ColumnTypeText
+	case KindBool:
+		return sqlgen.ColumnTypeBoolean
+	case KindDATE:
+		return sqlgen.ColumnTypeDate
+	case KindTIME:
+		return sqlgen.ColumnTypeTime
+	case KindDATETIME:
+		return sqlgen.ColumnTypeDatetime
+	case KindTIMESTAMP:
+		return sqlgen.ColumnTypeTimestamp
+	case KindYEAR:
+		return sqlgen.ColumnTypeYear
+	case KindJSON:
+		return sqlgen.ColumnTypeJSON
+	case KindEnum:
+		return sqlgen.ColumnTypeEnum
+	case KindSet:
+		return sqlgen.ColumnTypeSet
+	default:
+		panic("should not happen")
+	}
+}
+
+func toCollation() {
+
+}
+
+func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
+	tbl := &sqlgen.Table{
+		Name: table.name,
+	}
+	for i := 0; i < table.columns.Size(); i++ {
+		col := getColumnFromArrayList(table.columns, i)
+		toCol := &sqlgen.Column{
+			Name:       col.name,
+			Tp:         kToType(col.k),
+			IsUnsigned: false,
+			Arg1:       col.filedTypeM,
+			Arg2:       col.filedTypeD,
+			Args:       col.setValue,
+			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
+			IsNotNull:  false,
+		}
+		tbl.Columns = append(tbl.Columns, toCol)
+	}
+	for _, idx := range table.indexes {
+		toIdx := &sqlgen.Index{
+			Name: idx.name,
+		}
+	}
+	tbl.Indexes
 }
