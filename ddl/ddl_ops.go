@@ -1206,7 +1206,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		name:      uuid.NewV4().String(),
 		signature: "",
 		columns:   make([]*ddlTestColumn, 0),
-		uniques:   rand.Intn(2) == 0,
+		uniques:   rand.Intn(3) == 0,
 	}
 
 	switch strategy {
