@@ -141,7 +141,7 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Data Too Long") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
 		strings.Contains(errStr, "specified twice") ||
-		strings.Contains(errStr, "cannot convert datum from decimal to type year") {
+		strings.Contains(errStr, "cannot convert datum from") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -217,7 +217,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
 		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") ||
 		strings.Contains(errStr, "not allowed type for this type of partitioning") ||
-		strings.Contains(errStr, "A PRIMARY KEY must include all columns in the table's partitioning function") {
+		strings.Contains(errStr, "A PRIMARY KEY must include all columns in the table's partitioning function") ||
+		strings.Contains(errStr, "A UNIQUE INDEX must include all columns in the table's partitioning function") ||
+		strings.Contains(errStr, "cannot convert datum") {
 		return true
 	}
 	return false
