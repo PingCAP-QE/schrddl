@@ -530,12 +530,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			}
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 			_, ddlErr := conn.ExecContext(context.Background(), task.sql)
-			if !ddlIgnoreError(ddlErr) {
-				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
-				task.err = ddlErr
-				unExpectedErr = ddlErr
-				return
-			}
+
 			// Try to update seq_num.
 			seqNum, query, err := getLastDDLInfo(conn)
 			if err != nil {
@@ -547,12 +542,16 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			query = strings.Replace(query, "\\\"", "\"", -1)
 			if seqNum > 0 && query == fmt.Sprintf("\"%s\"", task.sql) {
 				// We need to update sqq_num.
+				startTs := time.Now()
 				for {
 					globalDDLSeqNumMu.Lock()
 					if seqNum != globalDDLSeqNum+1 {
 						// Wait for other gorountine to update
 						globalDDLSeqNumMu.Unlock()
 						time.Sleep(5 * time.Millisecond)
+						if time.Since(startTs) >= 10*time.Second {
+							log.Errorf("wait for updating seq_num timeout, seq_num:%d, globalDDLSeqNum:%d", seqNum, globalDDLSeqNum)
+						}
 					} else {
 						globalDDLSeqNum = seqNum
 						lock = true
@@ -561,6 +560,17 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 				}
 			} else {
 				log.Infof("seq:%d, query:%s, task.sql:%s", seqNum, query, task.sql)
+			}
+
+			if !ddlIgnoreError(ddlErr) {
+				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
+				task.err = ddlErr
+				unExpectedErr = ddlErr
+				// No need to update schema.
+				if lock {
+					globalDDLSeqNumMu.Unlock()
+				}
+				return
 			}
 
 			if ddlErr != nil {

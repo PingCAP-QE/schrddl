@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 )
@@ -18,6 +19,9 @@ func (c *testCase) generateDMLOps() error {
 		return errors.Trace(err)
 	}
 	if err := c.generateDelete(); err != nil {
+		return errors.Trace(err)
+	}
+	if err := c.generateSelect(); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -97,15 +101,7 @@ func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dml
 }
 
 func (c *testCase) execDMLInLocal(task *dmlJobTask) error {
-	switch task.k {
-	case dmlInsert:
-		return c.doInsertJob(task)
-	case dmlUpdate:
-		return c.doUpdateJob(task)
-	case dmlDelete:
-		return c.doDeleteJob(task)
-	}
-	return fmt.Errorf("unknow dml task , %v", *task)
+	return nil
 }
 
 // execSerialDMLSQL gets a job from taskCh, and then executes the job.
@@ -229,6 +225,23 @@ func (c *testCase) prepareInsert(cfg interface{}, taskCh chan *dmlJobTask) error
 	}
 	table.lock.Lock()
 	defer table.lock.Unlock()
+
+	if rand.Intn(2) == 0 {
+		state := sqlgen.NewState()
+		state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+		sql, err := sqlgen.CommonInsertOrReplace.Eval(state)
+		if err != nil {
+			return err
+		}
+		task := &dmlJobTask{
+			k:       dmlInsert,
+			sql:     sql,
+			tblInfo: table,
+		}
+		taskCh <- task
+		return nil
+	}
+
 	columns := table.filterColumns(table.predicateNotGenerated)
 	nonPkColumns := table.filterColumns(table.predicateNonPrimaryKeyAndNotGen)
 
@@ -332,36 +345,6 @@ func (c *testCase) prepareInsert(cfg interface{}, taskCh chan *dmlJobTask) error
 	return nil
 }
 
-func (c *testCase) doInsertJob(task *dmlJobTask) error {
-	table := task.tblInfo
-	assigns := task.assigns
-
-	// append row
-	table.lock.Lock()
-	for ite := table.columns.Iterator(); ite.Next(); {
-		column := ite.Value().(*ddlTestColumn)
-		cd := column.getMatchedColumnDescriptor(assigns)
-		if cd == nil {
-			if column.isGenerated() {
-				cd = column.dependency.getMatchedColumnDescriptor(assigns)
-				if cd == nil {
-					column.rows.Add(nil)
-				} else {
-					column.rows.Add(cd.column.getDependenciedColsValue(column))
-				}
-			} else {
-				// only happens when using SET
-				column.rows.Add(column.defaultValue)
-			}
-		} else {
-			column.rows.Add(cd.value)
-		}
-	}
-	table.numberOfRows++
-	table.lock.Unlock()
-	return nil
-}
-
 type ddlTestWhereStrategy int
 
 const (
@@ -446,6 +429,23 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 	}
 	table.lock.Lock()
 	defer table.lock.Unlock()
+
+	if rand.Intn(2) == 0 {
+		state := sqlgen.NewState()
+		state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+		sql, err := sqlgen.CommonUpdate.Eval(state)
+		if err != nil {
+			return err
+		}
+		task := &dmlJobTask{
+			k:       dmlUpdate,
+			sql:     sql,
+			tblInfo: table,
+		}
+		taskCh <- task
+		return nil
+	}
+
 	pkColumns := table.filterColumns(table.predicatePrimaryKey)
 	nonPkColumnsAndCanBeWhere := table.filterColumns(table.predicateNonPrimaryKeyAndCanBeWhere)
 	nonPkColumnsAndNotGen := table.filterColumns(table.predicateNonPrimaryKeyAndNotGen)
@@ -508,38 +508,6 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 	return nil
 }
 
-func (c *testCase) doUpdateJob(task *dmlJobTask) error {
-	table := task.tblInfo
-	assigns := task.assigns
-	whereColumns := task.whereColumns
-
-	// update values
-	table.lock.RLock()
-	for i := 0; i < table.numberOfRows; i++ {
-		match := true
-		for _, cd := range whereColumns {
-			row := getRowFromArrayList(cd.column.rows, i)
-			if cd.value != row {
-				match = false
-				break
-			}
-		}
-		if match {
-			for _, cd := range assigns {
-				cd.column.rows.Set(i, cd.value)
-				if cd.column.hasGenerateCol() {
-					for _, col := range cd.column.dependenciedCols {
-						cd.column.rows.Set(i, cd.column.getDependenciedColsValue(col))
-					}
-				}
-			}
-		}
-	}
-	table.lock.RUnlock()
-	return nil
-
-}
-
 type ddlTestDeleteConfig struct {
 	whereStrategy ddlTestWhereStrategy // how "where" statement is generated
 }
@@ -565,62 +533,52 @@ func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error
 	}
 	table.lock.Lock()
 	defer table.lock.Unlock()
-	pkColumns := table.filterColumns(table.predicatePrimaryKey)
-	nonPkColumnsAndCanBeWhere := table.filterColumns(table.predicateNonPrimaryKeyAndCanBeWhere)
 
-	if table.numberOfRows == 0 {
-		return nil
+	state := sqlgen.NewState()
+	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+	sql, err := sqlgen.CommonDelete.Eval(state)
+	if err != nil {
+		return err
 	}
-
-	config := cfg.(ddlTestDeleteConfig)
-	whereColumns := c.buildWhereColumns(config.whereStrategy, pkColumns, nonPkColumnsAndCanBeWhere, table.numberOfRows)
-
-	// build SQL
-	sql := fmt.Sprintf("DELETE FROM `%s`", table.name)
-	if len(whereColumns) > 0 {
-		sql += " WHERE "
-		for i, cd := range whereColumns {
-			if i > 0 {
-				sql += " AND "
-			}
-			sql += cd.buildConditionSQL()
-		}
-	}
-
 	task := &dmlJobTask{
-		k:            dmlDelete,
-		tblInfo:      table,
-		sql:          sql,
-		whereColumns: whereColumns,
+		k:       dmlDelete,
+		sql:     sql,
+		tblInfo: table,
 	}
 	taskCh <- task
 	return nil
 }
 
-func (c *testCase) doDeleteJob(task *dmlJobTask) error {
-	table := task.tblInfo
-	whereColumns := task.whereColumns
-
-	// update values
-	table.lock.Lock()
-	for i := table.numberOfRows - 1; i >= 0; i-- {
-		match := true
-		for _, cd := range whereColumns {
-			row := getRowFromArrayList(cd.column.rows, i)
-			if cd.value != row {
-				match = false
-				break
-			}
-		}
-		if match {
-			// we must use `table.columns` here, since there might be new columns after deletion
-			for ite := table.columns.Iterator(); ite.Next(); {
-				column := ite.Value().(*ddlTestColumn)
-				column.rows.Remove(i)
-			}
-			table.numberOfRows--
-		}
+func (c *testCase) generateSelect() error {
+	for i := 0; i < dmlSizeEachRound; i++ {
+		c.dmlOps = append(c.dmlOps, dmlTestOpExecutor{c.prepareSelect, nil})
 	}
-	table.lock.Unlock()
+	return nil
+}
+
+func (c *testCase) prepareSelect(cfg interface{}, taskCh chan *dmlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+
+	state := sqlgen.NewState()
+	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+	//state.ReplaceRule(sqlgen.Query, sqlgen.CommonSelect)
+
+	query, err := sqlgen.SingleSelect.Eval(state)
+	if err != nil {
+		return err
+	}
+	log.Infof("query: %s", query)
+
+	task := &dmlJobTask{
+		k:       dmlSelect,
+		tblInfo: table,
+		sql:     query,
+	}
+	taskCh <- task
 	return nil
 }

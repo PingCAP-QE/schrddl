@@ -141,7 +141,12 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Data Too Long") ||
 		strings.Contains(errStr, "doesn't have a default value") ||
 		strings.Contains(errStr, "specified twice") ||
-		strings.Contains(errStr, "cannot convert datum from") {
+		strings.Contains(errStr, "cannot convert datum from") ||
+		strings.Contains(errStr, "sql_mode=only_full_group_by") ||
+		strings.Contains(errStr, "cannot be null") ||
+		strings.Contains(errStr, "Column count doesn't match value count") ||
+		strings.Contains(errStr, "Percentage value") ||
+		strings.Contains(errStr, "Index column") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -219,7 +224,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "not allowed type for this type of partitioning") ||
 		strings.Contains(errStr, "A PRIMARY KEY must include all columns in the table's partitioning function") ||
 		strings.Contains(errStr, "A UNIQUE INDEX must include all columns in the table's partitioning function") ||
-		strings.Contains(errStr, "cannot convert datum") {
+		strings.Contains(errStr, "cannot convert datum") ||
+		strings.Contains(errStr, "Duplicate entry") ||
+		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") {
 		return true
 	}
 	return false

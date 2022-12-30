@@ -994,18 +994,36 @@ func kToType(k int) sqlgen.ColumnType {
 	}
 }
 
-func toCollation() {
-
+func toCollation(coll string) *sqlgen.Collation {
+	switch coll {
+	case "utf8_general_ci":
+		return sqlgen.Collations[sqlgen.CollationUtf8GeneralCI]
+	case "utf8mb4_general_ci":
+		return sqlgen.Collations[sqlgen.CollationUtf8mb4GeneralCI]
+	case "utf8_bin":
+		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+	case "utf8mb4_bin":
+		return sqlgen.Collations[sqlgen.CollationUtf8mb4Bin]
+	case "ascii_bin":
+		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+	case "latin1_bin":
+		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+	case "gbk_bin":
+		return sqlgen.Collations[sqlgen.CollationGBKBin]
+	default:
+		return sqlgen.Collations[sqlgen.CollationUtf8mb4Bin]
+	}
 }
 
 func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 	tbl := &sqlgen.Table{
-		Name: table.name,
+		Name: fmt.Sprintf("`%s`", table.name),
 	}
+	tbl.Collate = toCollation(table.collate)
 	for i := 0; i < table.columns.Size(); i++ {
 		col := getColumnFromArrayList(table.columns, i)
 		toCol := &sqlgen.Column{
-			Name:       col.name,
+			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
 			Arg1:       col.filedTypeM,
@@ -1014,12 +1032,33 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
 			IsNotNull:  false,
 		}
+		if toCol.Tp == sqlgen.ColumnTypeBinary || toCol.Tp == sqlgen.ColumnTypeBlob || toCol.Tp == sqlgen.ColumnTypeVarBinary {
+			toCol.Collation = sqlgen.Collations[sqlgen.CollationBinary]
+		} else {
+			toCol.Collation = tbl.Collate
+		}
 		tbl.Columns = append(tbl.Columns, toCol)
 	}
 	for _, idx := range table.indexes {
 		toIdx := &sqlgen.Index{
-			Name: idx.name,
+			Name: fmt.Sprintf("`%s`", idx.name),
 		}
+		if idx.uniques {
+			toIdx.Tp = sqlgen.IndexTypeUnique
+		} else {
+			toIdx.Tp = sqlgen.IndexTypeNonUnique
+		}
+		for _, col := range idx.columns {
+			toIdxCol := tbl.Columns.Filter(func(c *sqlgen.Column) bool {
+				return c.Name == fmt.Sprintf("`%s`", col.name)
+			})
+			if len(toIdxCol) == 0 {
+				panic("should not happen")
+			}
+			toIdx.Columns = append(toIdx.Columns, toIdxCol[0])
+			toIdx.ColumnPrefix = append(toIdx.ColumnPrefix, 0)
+		}
+		tbl.Indexes = append(tbl.Indexes, toIdx)
 	}
-	tbl.Indexes
+	return tbl
 }

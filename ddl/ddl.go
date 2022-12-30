@@ -247,6 +247,7 @@ const (
 	dmlInsert DMLKind = iota
 	dmlUpdate
 	dmlDelete
+	dmlSelect
 )
 
 type dmlJobArg unsafe.Pointer
@@ -488,7 +489,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		var err2 error
 		for {
 			err2 = exeDMLFunc(c, c.dmlOps, func() error {
-				return c.executeVerifyIntegrity()
+				return nil
 			})
 			atomic.StoreInt32(&dmlAllComplete, 1)
 			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err2 != nil {
@@ -520,177 +521,6 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 	}
 
 	return nil
-}
-
-var selectID int32
-
-// executeVerifyIntegrity verifies the integrity of the data in the database
-// by comparing the data in memory (that we expected) with the data in the database.
-func (c *testCase) executeVerifyIntegrity() error {
-	log.Infof("[ddl] [instance %d] Verifying integrity...", c.caseIndex)
-	c.schemasLock.Lock()
-	defer c.schemasLock.Unlock()
-	tablesSnapshot := make([]*ddlTestTable, 0)
-	for _, table := range c.tables {
-		tablesSnapshot = append(tablesSnapshot, table)
-	}
-	gotTableTime := time.Now()
-
-	uniqID := atomic.AddInt32(&selectID, 1)
-
-	for _, table := range tablesSnapshot {
-		table.lock.RLock()
-		columnsSnapshot := table.filterColumns(table.predicateAll)
-		table.lock.RUnlock()
-
-		// build SQL
-		sql := "SELECT "
-		for i, column := range columnsSnapshot {
-			if i > 0 {
-				sql += ", "
-			}
-			sql += fmt.Sprintf("%s", column.getSelectName())
-		}
-		sql += fmt.Sprintf(" FROM `%s`", table.name)
-
-		dbIdx := rand.Intn(len(c.dbs))
-		db := c.dbs[dbIdx]
-
-		// execute
-		opStart := time.Now()
-		rows, err := db.Query(sql)
-		log.Infof("[ddl] [instance %d] %s, elapsed time:%v, got table time:%v, selectID:%v", c.caseIndex, sql, time.Since(opStart).Seconds(), gotTableTime, uniqID)
-		if err == nil {
-			defer rows.Close()
-		}
-		// When column is removed, SELECT statement may return error so that we ignore them here.
-		if table.isDeleted() {
-			return nil
-		}
-		for _, column := range columnsSnapshot {
-			if column.isDeleted() {
-				return nil
-			}
-		}
-		if err != nil {
-			return errors.Annotatef(err, "Error when executing SQL: %s\n%s", sql, table.debugPrintToString())
-		}
-
-		// Read all rows.
-		var actualRows [][]interface{}
-		for rows.Next() {
-			cols, err1 := rows.Columns()
-			if err1 != nil {
-				return errors.Trace(err)
-			}
-
-			log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v, selectID:%v", c.caseIndex, cols, len(cols), uniqID)
-
-			// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
-			rawResult := make([][]byte, len(cols))
-			result := make([]interface{}, len(cols))
-			dest := make([]interface{}, len(cols))
-			for i := range rawResult {
-				dest[i] = &rawResult[i]
-			}
-
-			err1 = rows.Scan(dest...)
-			if err1 != nil {
-				return errors.Trace(err)
-			}
-
-			for i, raw := range rawResult {
-				if raw == nil {
-					result[i] = ddlTestValueNull
-				} else {
-					result[i] = trimValue(columnsSnapshot[i].k, raw)
-				}
-			}
-
-			actualRows = append(actualRows, result)
-		}
-		if rows.Err() != nil {
-			return errors.Trace(rows.Err())
-		}
-
-		// Even if SQL executes successfully, column deletion will cause different data as well
-		if table.isDeleted() {
-			return nil
-		}
-		for _, column := range columnsSnapshot {
-			if column.isDeleted() {
-				return nil
-			}
-		}
-
-		// Make signatures for actual rows.
-		actualRowsMap := make(map[string]int)
-		for _, row := range actualRows {
-			rowString := ""
-			for _, col := range row {
-				rowString += fmt.Sprintf("%v,", col)
-			}
-			_, ok := actualRowsMap[rowString]
-			if !ok {
-				actualRowsMap[rowString] = 0
-			}
-			actualRowsMap[rowString]++
-		}
-
-		// Compare with expecting rows.
-		checkTime := time.Now()
-		for i := 0; i < table.numberOfRows; i++ {
-			rowString := ""
-			for _, column := range columnsSnapshot {
-				row := getRowFromArrayList(column.rows, i)
-				if row == nil {
-					rowString += fmt.Sprintf("NULL,")
-				} else {
-					rowString += fmt.Sprintf("%v,", row)
-				}
-			}
-			_, ok := actualRowsMap[rowString]
-			if !ok {
-				c.stopTest()
-				err = fmt.Errorf("Expecting row %s in table `%s` but not found, sql: %s, selectID:%v, checkTime:%v, rowErr:%v, actualRowsMap:%#v\n%s", rowString, table.name, sql, uniqID, checkTime, rows.Err(), actualRowsMap, table.debugPrintToString())
-				log.Infof("err: %v", err)
-				return errors.Trace(err)
-			}
-			actualRowsMap[rowString]--
-			if actualRowsMap[rowString] < 0 {
-				c.stopTest()
-				err = fmt.Errorf("Expecting row %s in table `%s` but not found, sql: %s, selectID:%v, checkTime:%v, rowErr:%v, actualRowsMap:%#v\n%s", rowString, table.name, sql, uniqID, checkTime, rows.Err(), actualRowsMap, table.debugPrintToString())
-				log.Infof("err: %v", err)
-				return errors.Trace(err)
-			}
-		}
-		for rowString, occurs := range actualRowsMap {
-			if occurs > 0 {
-				c.stopTest()
-				err = fmt.Errorf("Unexpected row %s in table `%s`, sql: %s, selectID:%v, checkTime:%v, rowErr:%v, actualRowsMap:%#v\n%s", rowString, table.name, sql, uniqID, checkTime, rows.Err(), actualRowsMap, table.debugPrintToString())
-				log.Infof("err: %v", err)
-				return errors.Trace(err)
-			}
-		}
-	}
-	return nil
-}
-
-func trimValue(tp int, val []byte) string {
-	// a='{"DnOJQOlx":52,"ZmvzPtdm":82}'
-	// eg: set a={"a":"b","b":"c"}
-	//     get a={"a": "b", "b": "c"} , so have to remove the space
-	if tp == KindJSON {
-		for i := 1; i < len(val)-2; i++ {
-			if val[i-1] == '"' && val[i] == ':' && val[i+1] == ' ' {
-				val = append(val[:i+1], val[i+2:]...)
-			}
-			if val[i-1] == ',' && val[i] == ' ' && val[i+1] == '"' {
-				val = append(val[:i], val[i+1:]...)
-			}
-		}
-	}
-	return string(val)
 }
 
 func (c *testCase) executeAdminCheck() error {
