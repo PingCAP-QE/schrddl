@@ -130,7 +130,7 @@ func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOptio
 	if forceTTLOption || rand.Intn(2) > 0 {
 		ttlCol := timeColumns[ttlColIndex]
 		expireIntervals := []string{"1", "1.2"}
-		expireIntervalUnits := []string{"HOUR", "DAY", "MONTH", "YEAR"}
+		expireIntervalUnits := []string{"MINUTE", "HOUR", "DAY", "MONTH", "YEAR"}
 
 		ttlExpr = fmt.Sprintf("TTL=`%s` + INTERVAL %s %s",
 			ttlCol.name,
@@ -144,7 +144,7 @@ func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOptio
 	}
 
 	if rand.Intn(2) > 0 {
-		scheduleIntervals := []string{"60", "60.2"}
+		scheduleIntervals := []string{"1", "1.2"}
 		scheduleUnit := []string{"m", "h", "d"}
 		ttlJobSchedule = fmt.Sprintf("TTL_JOB_SCHEDULE='%s%s'",
 			scheduleIntervals[rand.Intn(len(scheduleIntervals))],
