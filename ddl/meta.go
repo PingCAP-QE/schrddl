@@ -120,6 +120,14 @@ func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOptio
 		if checkColumnSupportTTL(col) {
 			timeColumns = append(timeColumns, col)
 		}
+
+		if col.isPrimaryKey {
+			ft := strings.ToLower(col.fieldType)
+			if strings.Contains(ft, "float") || strings.Contains(ft, "double") {
+				// TTL do not support double/float pk
+				return
+			}
+		}
 	}
 
 	ttlColIndex := rand.Intn(len(timeColumns) + 1)
