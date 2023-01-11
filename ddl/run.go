@@ -146,7 +146,17 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "cannot be null") ||
 		strings.Contains(errStr, "Column count doesn't match value count") ||
 		strings.Contains(errStr, "Percentage value") ||
-		strings.Contains(errStr, "Index column") {
+		strings.Contains(errStr, "Index column") ||
+		strings.Contains(errStr, "Illegal mix of collations") ||
+		strings.Contains(errStr, "Cannot convert string") ||
+		strings.Contains(errStr, "interface conversion") ||
+		strings.Contains(errStr, "invalid connection") ||
+		strings.Contains(errStr, "connection is already closed") ||
+		strings.Contains(errStr, "should contain a UNION") ||
+		strings.Contains(errStr, "have different column counts") ||
+		strings.Contains(errStr, "followed by one or more recursive ones") ||
+		strings.Contains(errStr, "Not unique table/alias") ||
+		strings.Contains(errStr, "have a different number of columns") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
