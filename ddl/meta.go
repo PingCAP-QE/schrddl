@@ -146,7 +146,7 @@ func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOptio
 	if rand.Intn(2) > 0 {
 		scheduleIntervals := []string{"1", "1.2"}
 		scheduleUnit := []string{"m", "h", "d"}
-		ttlJobSchedule = fmt.Sprintf("TTL_JOB_SCHEDULE='%s%s'",
+		ttlJobSchedule = fmt.Sprintf("TTL_JOB_INTERVAL='%s%s'",
 			scheduleIntervals[rand.Intn(len(scheduleIntervals))],
 			scheduleUnit[rand.Intn(len(scheduleUnit))],
 		)
