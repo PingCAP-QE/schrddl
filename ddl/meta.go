@@ -152,12 +152,15 @@ func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOptio
 	}
 
 	if rand.Intn(2) > 0 {
-		scheduleIntervals := []string{"1", "1.2"}
-		scheduleUnit := []string{"m", "h", "d"}
-		ttlJobSchedule = fmt.Sprintf("TTL_JOB_INTERVAL='%s%s'",
-			scheduleIntervals[rand.Intn(len(scheduleIntervals))],
-			scheduleUnit[rand.Intn(len(scheduleUnit))],
-		)
+		intervals := []string{"1h20m", "1d10h30m", "1d20m"}
+		for _, v := range []string{"1"} {
+			for _, u := range []string{"m", "h", "d"} {
+				intervals = append(intervals, v+u)
+			}
+		}
+
+		interval := intervals[rand.Intn(len(intervals))]
+		ttlJobSchedule = fmt.Sprintf("TTL_JOB_INTERVAL='%s'", interval)
 	}
 
 	return
