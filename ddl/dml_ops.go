@@ -47,10 +47,6 @@ func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dml
 	return nil
 }
 
-func (c *testCase) execDMLInLocal(task *dmlJobTask) error {
-	return nil
-}
-
 // execSerialDMLSQL gets a job from taskCh, and then executes the job.
 func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	if len(taskCh) == 0 {
@@ -74,10 +70,6 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	}
 	if task.err != nil {
 		return nil
-	}
-	err = c.execDMLInLocal(task)
-	if err != nil {
-		return fmt.Errorf("Error when executing SQL: %s\n local Err: %#v\n\n", task.sql, err)
 	}
 	return nil
 }
@@ -151,8 +143,6 @@ func (c *testCase) prepareInsert(cfg interface{}, taskCh chan *dmlJobTask) error
 	if table == nil {
 		return nil
 	}
-	table.lock.Lock()
-	defer table.lock.Unlock()
 
 	state := sqlgen.NewState()
 	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
@@ -179,15 +169,16 @@ func (c *testCase) generateUpdate() error {
 func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
-	table := c.pickupRandomTable()
-	if table == nil {
-		return nil
-	}
-	table.lock.Lock()
-	defer table.lock.Unlock()
 
 	state := sqlgen.NewState()
-	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+	for _, table := range c.tableMap {
+		state.Tables = append(state.Tables, table)
+	}
+
+	if len(state.Tables) == 0 {
+		return nil
+	}
+
 	sql, err := sqlgen.CommonUpdate.Eval(state)
 	if err != nil {
 		return err
@@ -195,7 +186,7 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 	task := &dmlJobTask{
 		k:       dmlUpdate,
 		sql:     sql,
-		tblInfo: table,
+		tblInfo: nil,
 	}
 	taskCh <- task
 	return nil
@@ -211,15 +202,16 @@ func (c *testCase) generateDelete() error {
 func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
-	table := c.pickupRandomTable()
-	if table == nil {
-		return nil
-	}
-	table.lock.Lock()
-	defer table.lock.Unlock()
 
 	state := sqlgen.NewState()
-	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
+	for _, table := range c.tableMap {
+		state.Tables = append(state.Tables, table)
+	}
+
+	if len(state.Tables) == 0 {
+		return nil
+	}
+
 	sql, err := sqlgen.CommonDelete.Eval(state)
 	if err != nil {
 		return err
@@ -227,7 +219,7 @@ func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error
 	task := &dmlJobTask{
 		k:       dmlDelete,
 		sql:     sql,
-		tblInfo: table,
+		tblInfo: nil,
 	}
 	taskCh <- task
 	return nil
@@ -254,8 +246,8 @@ func (c *testCase) prepareSelect(cfg interface{}, taskCh chan *dmlJobTask) error
 
 	state := sqlgen.NewState()
 	state.SetWeight(sqlgen.WindowFunctionOverW, 0)
-	for _, tbl := range c.tables {
-		state.Tables = append(state.Tables, tbl.mapTableToRandTestTable())
+	for _, table := range c.tableMap {
+		state.Tables = append(state.Tables, table)
 	}
 
 	query, err := sqlgen.Query.Eval(state)
