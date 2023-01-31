@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"sort"
 	"strings"
@@ -33,13 +34,8 @@ type testCase struct {
 	lastDDLID        int
 	charsets         []string
 	charsetsCollates map[string][]string
-}
 
-type ddlTestErrorConflict struct {
-}
-
-func (err ddlTestErrorConflict) Error() string {
-	return "Conflict operation"
+	tableMap map[string]*sqlgen.Table
 }
 
 func (c *testCase) stopTest() {
@@ -1015,14 +1011,23 @@ func toCollation(coll string) *sqlgen.Collation {
 	}
 }
 
+// FNV64a hashes using fnv32a algorithm
+func FNV64a(text string) int {
+	algorithm := fnv.New64a()
+	algorithm.Write([]byte(text))
+	return int(algorithm.Sum64())
+}
+
 func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 	tbl := &sqlgen.Table{
+		ID:   FNV64a(table.name),
 		Name: fmt.Sprintf("`%s`", table.name),
 	}
 	tbl.Collate = toCollation(table.collate)
 	for i := 0; i < table.columns.Size(); i++ {
 		col := getColumnFromArrayList(table.columns, i)
 		toCol := &sqlgen.Column{
+			ID:         FNV64a(table.name),
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
@@ -1061,4 +1066,8 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 		tbl.Indexes = append(tbl.Indexes, toIdx)
 	}
 	return tbl
+}
+
+func copyRowToRandTestTable(tbl *sqlgen.Table, Values [][]string) {
+	return
 }

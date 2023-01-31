@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 )
@@ -113,12 +114,6 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
 func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
-	for _, dbs := range dbss {
-		for _, db := range dbs {
-			enableTiKVGC(db)
-		}
-	}
-
 	log.Infof("[%s] start to test...", c)
 	defer func() {
 		log.Infof("[%s] test end...", c)
@@ -216,6 +211,7 @@ func NewDDLCase(cfg *DDLCaseConfig) *DDLCase {
 			dmlOps:    make([]dmlTestOpExecutor, 0),
 			caseIndex: i,
 			stop:      0,
+			tableMap:  make(map[string]*sqlgen.Table),
 		}
 	}
 	b := &DDLCase{

@@ -14,7 +14,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-var defaultPushMetricsInterval = 15 * time.Second
 var EnableTransactionTest = false
 var RCIsolation = false
 var Prepare = false
@@ -124,7 +123,7 @@ func dmlIgnoreError(err error) bool {
 	if strings.Contains(errStr, "invalid connection") {
 		return true
 	}
-	if strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "not found") ||
+	if strings.Contains(errStr, "doesn't exist") ||
 		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
 		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
@@ -150,13 +149,13 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Illegal mix of collations") ||
 		strings.Contains(errStr, "Cannot convert string") ||
 		strings.Contains(errStr, "interface conversion") ||
-		strings.Contains(errStr, "invalid connection") ||
 		strings.Contains(errStr, "connection is already closed") ||
 		strings.Contains(errStr, "should contain a UNION") ||
 		strings.Contains(errStr, "have different column counts") ||
 		strings.Contains(errStr, "followed by one or more recursive ones") ||
 		strings.Contains(errStr, "Not unique table/alias") ||
-		strings.Contains(errStr, "have a different number of columns") {
+		strings.Contains(errStr, "have a different number of columns") ||
+		strings.Contains(errStr, "Unsupported expression type MysqlEnum") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
