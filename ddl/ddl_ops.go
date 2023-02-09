@@ -678,7 +678,7 @@ var dbSchemaSyntax = [...]string{"DATABASE", "SCHEMA"}
 func (c *testCase) prepareCreateSchema(_ interface{}, taskCh chan *ddlJobTask) error {
 	charset, collate := c.pickupRandomCharsetAndCollate()
 	schema := ddlTestSchema{
-		name:    uuid.NewV4().String(),
+		name:    uuid.NewV4().String()[:8],
 		deleted: false,
 		charset: charset,
 		collate: collate,
@@ -770,12 +770,12 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	charset, collate := c.pickupRandomCharsetAndCollate()
 
 	tableInfo := ddlTestTable{
-		name:         uuid.NewV4().String(),
+		name:         uuid.NewV4().String()[:8],
 		columns:      tableColumns,
 		indexes:      make([]*ddlTestIndex, 0),
 		numberOfRows: 0,
 		deleted:      0,
-		comment:      uuid.NewV4().String(),
+		comment:      uuid.NewV4().String()[:8],
 		charset:      charset,
 		collate:      collate,
 		lock:         new(sync.RWMutex),
@@ -845,7 +845,7 @@ func (c *testCase) prepareRenameTable(_ interface{}, taskCh chan *ddlJobTask) er
 	// Shadow copy the table.
 	table.lock.Lock()
 	defer table.lock.Unlock()
-	newName := uuid.NewV4().String()
+	newName := uuid.NewV4().String()[:8]
 	sql := fmt.Sprintf("ALTER TABLE `%s` RENAME %s `%s`", table.name,
 		toAsSyntax[rand.Intn(len(toAsSyntax))], newName)
 	task := &ddlJobTask{
@@ -924,7 +924,7 @@ func (c *testCase) prepareModifyTableComment(_ interface{}, taskCh chan *ddlJobT
 	if table == nil {
 		return nil
 	}
-	newComm := uuid.NewV4().String()
+	newComm := uuid.NewV4().String()[:8]
 	sql := fmt.Sprintf("ALTER TABLE `%s` COMMENT '%s'", table.name, newComm)
 	task := &ddlJobTask{
 		k:       ddlModifyTableComment,
@@ -1152,7 +1152,7 @@ func (c *testCase) prepareCreateView(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 	view := &ddlTestView{
-		name:    uuid.NewV4().String(),
+		name:    uuid.NewV4().String()[:8],
 		columns: columns,
 		table:   table,
 	}
@@ -1221,7 +1221,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	strategy := rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
 	// build index definition
 	index := ddlTestIndex{
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		signature: "",
 		columns:   make([]*ddlTestColumn, 0),
 		uniques:   rand.Intn(3) == 0,
@@ -1349,7 +1349,7 @@ func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) 
 	}
 	loc := rand.Intn(len(table.indexes))
 	index := table.indexes[loc]
-	newIndex := uuid.NewV4().String()
+	newIndex := uuid.NewV4().String()[:8]
 	if !checkModifyIdx(ctx, index) {
 		return nil
 	}

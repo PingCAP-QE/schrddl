@@ -358,3 +358,26 @@ func NotAmbiguousTime(t time.Time) bool {
 	}
 	return ok
 }
+
+func typeNeedQuota(k int) bool {
+	switch k {
+	case KindChar,
+		KindVarChar,
+		KindBLOB,
+		KindTINYBLOB,
+		KindMEDIUMBLOB,
+		KindLONGBLOB,
+		KindTEXT,
+		KindTINYTEXT,
+		KindMEDIUMTEXT,
+		KindLONGTEXT,
+		KindDATE,
+		KindTIME,
+		KindDATETIME,
+		KindJSON,
+		KindEnum,
+		KindSet:
+		return true
+	}
+	return false
+}

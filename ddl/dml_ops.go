@@ -3,7 +3,6 @@ package ddl
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"math/rand"
 
 	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
@@ -118,10 +117,6 @@ func (c *testCase) execDMLInTransactionSQL(taskCh chan *dmlJobTask) error {
 		if task.err != nil {
 			continue
 		}
-		err = c.execDMLInLocal(task)
-		if err != nil {
-			return fmt.Errorf("Error when executing SQL: %s\n local Err: %#v\n\n", task.sql, err)
-		}
 	}
 	log.Infof("[dml] [instance %d] finish transaction dml", c.caseIndex)
 	return nil
@@ -235,10 +230,6 @@ func (c *testCase) generateSelect() error {
 func (c *testCase) prepareSelect(cfg interface{}, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
-	//table := c.pickupRandomTable()
-	//if table == nil {
-	//	return nil
-	//}
 
 	if len(c.tables) == 0 {
 		return nil
