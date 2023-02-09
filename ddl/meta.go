@@ -478,7 +478,7 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		fieldType: ALLFieldType[n],
 		rows:      arraylist.New(),
 		deleted:   0,
@@ -544,7 +544,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 	// Shadow copy of column col.
 	modifiedColumn := *col
 	if renameCol {
-		modifiedColumn.name = uuid.NewV4().String()
+		modifiedColumn.name = uuid.NewV4().String()[:8]
 	} else {
 		modifiedColumn.name = col.name
 	}
@@ -581,7 +581,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestColumn {
 	newColumn := getRandDDLTestColumn()
 	if renameCol {
-		newColumn.name = uuid.NewV4().String()
+		newColumn.name = uuid.NewV4().String()[:8]
 	} else {
 		newColumn.name = col.name
 	}
@@ -624,7 +624,7 @@ func getRandJsonCol() []*ddlTestColumn {
 
 	column := &ddlTestColumn{
 		k:         KindJSON,
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		fieldType: ALLFieldType[KindJSON],
 		rows:      arraylist.New(),
 		deleted:   0,

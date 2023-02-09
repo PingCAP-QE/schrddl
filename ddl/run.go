@@ -155,7 +155,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "followed by one or more recursive ones") ||
 		strings.Contains(errStr, "Not unique table/alias") ||
 		strings.Contains(errStr, "have a different number of columns") ||
-		strings.Contains(errStr, "Unsupported expression type MysqlEnum") {
+		strings.Contains(errStr, "Split table region lower value count") ||
+		strings.Contains(errStr, "Out Of Memory") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
