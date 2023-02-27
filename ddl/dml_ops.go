@@ -3,7 +3,11 @@ package ddl
 import (
 	"context"
 	"database/sql"
+	"math"
 	"math/rand"
+	"regexp"
+	"sort"
+	"strconv"
 
 	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
@@ -24,6 +28,10 @@ func (c *testCase) generateDMLOps() error {
 		return errors.Trace(err)
 	}
 	return nil
+}
+
+func sendQueryRequest(ctx context.Context, conn *sql.Conn, task *dmlJobTask) ([][]string, error) {
+	return readData(ctx, conn, task.sql)
 }
 
 func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dmlJobTask) error {
@@ -60,6 +68,60 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	}
 	defer conn.Close()
 	task := <-taskCh
+	// disable compare for now since it's not stable.
+	if task.k == dmlSelect && false {
+		if rand.Intn(5) == 0 {
+			r, _ := regexp.Compile("/\\*.*?\\*/")
+			var rows [][]string
+			// Check plan
+			_, err := conn.ExecContext(ctx, "begin")
+			if err != nil {
+				return err
+			}
+			defer func() {
+				conn.ExecContext(ctx, "commit")
+			}()
+			rows, err = sendQueryRequest(ctx, conn, task)
+			log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
+			if err != nil {
+				if dmlIgnoreError(err) {
+					return nil
+				}
+				return errors.Trace(err)
+			}
+
+			// Check no hint plan
+			origianlSql := task.sql
+			noHintSql := r.ReplaceAllString(task.sql, "")
+			task.sql = noHintSql
+			newRow, err := sendQueryRequest(ctx, conn, task)
+			log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			err = compareTwoRows(rows, newRow)
+			var ts [][]string
+			if err == nil {
+				return nil
+			}
+
+			// Make sure the query is stable itself.
+			task.sql = origianlSql
+			orignalRowToCheck, err2 := sendQueryRequest(ctx, conn, task)
+			if err2 != nil {
+				return nil
+			}
+			err2 = compareTwoRows(rows, orignalRowToCheck)
+			if err2 != nil {
+				// The query is not stable.
+				return nil
+			}
+
+			task.sql = "select @@tidb_current_ts"
+			ts, _ = sendQueryRequest(ctx, conn, task)
+			return errors.Errorf("[dml] [instance %d] found inconsistent data for two plans, sql-with-hint %s, sql-without-hint %s, %s, err: %v", c.caseIndex, origianlSql, noHintSql, ts[0][0], err)
+		}
+	}
 	err = c.sendDMLRequest(ctx, conn, task)
 	if err != nil {
 		if dmlIgnoreError(err) {
@@ -69,6 +131,49 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	}
 	if task.err != nil {
 		return nil
+	}
+	return nil
+}
+
+func compareTwoRows(rows1 [][]string, rows2 [][]string) error {
+	if len(rows1) != len(rows2) {
+		return errors.Errorf("rows1 and rows2 have different length, rows1: %v, rows2: %v", rows1, rows2)
+	}
+	sort.Slice(rows1, func(i, j int) bool {
+		colLen := len(rows1[i])
+		for ii := 0; ii < colLen; ii++ {
+			if rows1[i][ii] != rows1[j][ii] {
+				return rows1[i][ii] < rows1[j][ii]
+			}
+		}
+		return true
+	})
+	sort.Slice(rows2, func(i, j int) bool {
+		colLen := len(rows2[i])
+		for ii := 0; ii < colLen; ii++ {
+			if rows2[i][ii] != rows2[j][ii] {
+				return rows2[i][ii] < rows2[j][ii]
+			}
+		}
+		return true
+	})
+	for i := 0; i < len(rows1); i++ {
+		for j := 0; j < len(rows1[i]); j++ {
+			if rows1[i][j] != rows2[i][j] {
+				if f1, err := strconv.ParseFloat(rows1[i][j], 64); err == nil {
+					if f2, err := strconv.ParseFloat(rows2[i][j], 64); err == nil {
+						if math.Abs(f1-f2) < 0.001 {
+							continue
+						}
+						log.Errorf("f1: %v, f2: %v, abs: %v", f1, f2, math.Abs(f1-f2))
+					}
+					log.Errorf("err: %v", err)
+				} else {
+					log.Errorf("err: %v", err)
+				}
+				return errors.Errorf("rows1 and rows2 have different value, rows1: %v, rows2: %v. Full data: rows1 %v, rows2 %v", rows1[i][j], rows2[i][j], rows1, rows2)
+			}
+		}
 	}
 	return nil
 }

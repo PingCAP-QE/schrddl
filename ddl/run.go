@@ -156,7 +156,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Not unique table/alias") ||
 		strings.Contains(errStr, "have a different number of columns") ||
 		strings.Contains(errStr, "Split table region lower value count") ||
-		strings.Contains(errStr, "Out Of Memory") {
+		strings.Contains(errStr, "Out Of Memory") ||
+		strings.Contains(errStr, "invalid syntax") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -236,7 +237,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "A UNIQUE INDEX must include all columns in the table's partitioning function") ||
 		strings.Contains(errStr, "cannot convert datum") ||
 		strings.Contains(errStr, "Duplicate entry") ||
-		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") {
+		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
+		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") {
 		return true
 	}
 	return false
