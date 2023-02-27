@@ -537,6 +537,9 @@ func (c *testCase) readDataFromTiDB() error {
 		if err != nil {
 			return err
 		}
+		defer func() {
+			rows.Close()
+		}()
 		metaCols := make([]*ddlTestColumn, 0)
 		for ite := table.columns.Iterator(); ite.Next(); {
 			metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
@@ -582,6 +585,56 @@ func (c *testCase) readDataFromTiDB() error {
 	}
 
 	return nil
+}
+
+func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, error) {
+	rows, err := conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.Annotatef(err, "Error when executing SQL: %s\n%s", query)
+	}
+	defer func() {
+		rows.Close()
+	}()
+	//metaCols := make([]*ddlTestColumn, 0)
+	//for ite := table.columns.Iterator(); ite.Next(); {
+	//	metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
+	//}
+	// Read all rows.
+	var actualRows [][]string
+	for rows.Next() {
+		cols, err1 := rows.Columns()
+		if err1 != nil {
+			return nil, errors.Trace(err)
+		}
+
+		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
+		rawResult := make([][]byte, len(cols))
+		result := make([]string, len(cols))
+		dest := make([]interface{}, len(cols))
+		for i := range rawResult {
+			dest[i] = &rawResult[i]
+		}
+
+		err1 = rows.Scan(dest...)
+		if err1 != nil {
+			return nil, errors.Trace(err)
+		}
+
+		for i, raw := range rawResult {
+			if raw == nil {
+				result[i] = ddlTestValueNull
+			} else {
+				result[i] = fmt.Sprintf("'%s'", string(raw))
+				//if typeNeedQuota(metaCols[i].k) {
+				//	result[i] = fmt.Sprintf("'%s'", string(raw))
+				//}
+				//result[i] = string(raw)
+			}
+		}
+
+		actualRows = append(actualRows, result)
+	}
+	return actualRows, err
 }
 
 func trimValue(tp int, val []byte) string {
