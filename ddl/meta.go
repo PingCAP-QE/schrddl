@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"sort"
 	"strings"
@@ -33,13 +34,8 @@ type testCase struct {
 	lastDDLID        int
 	charsets         []string
 	charsetsCollates map[string][]string
-}
 
-type ddlTestErrorConflict struct {
-}
-
-func (err ddlTestErrorConflict) Error() string {
-	return "Conflict operation"
+	tableMap map[string]*sqlgen.Table
 }
 
 func (c *testCase) stopTest() {
@@ -538,7 +534,7 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		fieldType: ALLFieldType[n],
 		rows:      arraylist.New(),
 		deleted:   0,
@@ -604,7 +600,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 	// Shadow copy of column col.
 	modifiedColumn := *col
 	if renameCol {
-		modifiedColumn.name = uuid.NewV4().String()
+		modifiedColumn.name = uuid.NewV4().String()[:8]
 	} else {
 		modifiedColumn.name = col.name
 	}
@@ -641,7 +637,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestColumn {
 	newColumn := getRandDDLTestColumn()
 	if renameCol {
-		newColumn.name = uuid.NewV4().String()
+		newColumn.name = uuid.NewV4().String()[:8]
 	} else {
 		newColumn.name = col.name
 	}
@@ -684,7 +680,7 @@ func getRandJsonCol() []*ddlTestColumn {
 
 	column := &ddlTestColumn{
 		k:         KindJSON,
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		fieldType: ALLFieldType[KindJSON],
 		rows:      arraylist.New(),
 		deleted:   0,
@@ -1071,14 +1067,23 @@ func toCollation(coll string) *sqlgen.Collation {
 	}
 }
 
+// FNV64a hashes using fnv32a algorithm
+func FNV64a(text string) int {
+	algorithm := fnv.New64a()
+	algorithm.Write([]byte(text))
+	return int(algorithm.Sum64())
+}
+
 func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 	tbl := &sqlgen.Table{
+		ID:   FNV64a(table.name),
 		Name: fmt.Sprintf("`%s`", table.name),
 	}
 	tbl.Collate = toCollation(table.collate)
 	for i := 0; i < table.columns.Size(); i++ {
 		col := getColumnFromArrayList(table.columns, i)
 		toCol := &sqlgen.Column{
+			ID:         FNV64a(table.name),
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
@@ -1117,4 +1122,8 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 		tbl.Indexes = append(tbl.Indexes, toIdx)
 	}
 	return tbl
+}
+
+func copyRowToRandTestTable(tbl *sqlgen.Table, Values [][]string) {
+	return
 }

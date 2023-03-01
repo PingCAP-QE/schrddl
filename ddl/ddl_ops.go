@@ -681,7 +681,7 @@ var dbSchemaSyntax = [...]string{"DATABASE", "SCHEMA"}
 func (c *testCase) prepareCreateSchema(_ interface{}, taskCh chan *ddlJobTask) error {
 	charset, collate := c.pickupRandomCharsetAndCollate()
 	schema := ddlTestSchema{
-		name:    uuid.NewV4().String(),
+		name:    uuid.NewV4().String()[:8],
 		deleted: false,
 		charset: charset,
 		collate: collate,
@@ -774,12 +774,12 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	ttlExpr, ttlEnable, ttlSchedule := c.pickupRandomTTLOptions(tableColumns, true)
 
 	tableInfo := ddlTestTable{
-		name:           uuid.NewV4().String(),
+		name:           uuid.NewV4().String()[:8],
 		columns:        tableColumns,
 		indexes:        make([]*ddlTestIndex, 0),
 		numberOfRows:   0,
 		deleted:        0,
-		comment:        uuid.NewV4().String(),
+		comment:        uuid.NewV4().String()[:8],
 		charset:        charset,
 		collate:        collate,
 		lock:           new(sync.RWMutex),
@@ -840,6 +840,7 @@ func (c *testCase) addTableInfo(task *ddlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	c.tables[task.tblInfo.name] = task.tblInfo
+	c.tableMap[task.tblInfo.name] = task.tblInfo.mapTableToRandTestTable()
 	return nil
 }
 
@@ -862,7 +863,7 @@ func (c *testCase) prepareRenameTable(_ interface{}, taskCh chan *ddlJobTask) er
 	// Shadow copy the table.
 	table.lock.Lock()
 	defer table.lock.Unlock()
-	newName := uuid.NewV4().String()
+	newName := uuid.NewV4().String()[:8]
 	sql := fmt.Sprintf("ALTER TABLE `%s` RENAME %s `%s`", table.name,
 		toAsSyntax[rand.Intn(len(toAsSyntax))], newName)
 	task := &ddlJobTask{
@@ -883,7 +884,10 @@ func (c *testCase) renameTableJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
 	delete(c.tables, table.name)
+	delete(c.tableMap, table.name)
 	table.name = *(*string)(task.arg)
+	c.tables[table.name] = table
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
 	return nil
 }
 
@@ -938,7 +942,7 @@ func (c *testCase) prepareModifyTableComment(_ interface{}, taskCh chan *ddlJobT
 	if table == nil {
 		return nil
 	}
-	newComm := uuid.NewV4().String()
+	newComm := uuid.NewV4().String()[:8]
 	sql := fmt.Sprintf("ALTER TABLE `%s` COMMENT '%s'", table.name, newComm)
 	task := &ddlJobTask{
 		k:       ddlModifyTableComment,
@@ -1015,6 +1019,8 @@ func (c *testCase) prepareModifyTableCharsetAndCollate(_ interface{}, taskCh cha
 }
 
 func (c *testCase) modifyTableCharsetAndCollateJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	table := task.tblInfo
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
@@ -1022,6 +1028,7 @@ func (c *testCase) modifyTableCharsetAndCollateJob(task *ddlJobTask) error {
 	arg := (*ddlModifyTableCharsetAndCollateJob)(task.arg)
 	table.charset = arg.newCharset
 	table.collate = arg.newCollate
+	c.tableMap[table.name].Collate = toCollation(table.collate)
 	return nil
 }
 
@@ -1142,6 +1149,7 @@ func (c *testCase) dropTableJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", task.tblInfo.name)
 	}
 	delete(c.tables, task.tblInfo.name)
+	delete(c.tableMap, task.tblInfo.name)
 	return nil
 }
 
@@ -1162,7 +1170,7 @@ func (c *testCase) prepareCreateView(_ interface{}, taskCh chan *ddlJobTask) err
 		return nil
 	}
 	view := &ddlTestView{
-		name:    uuid.NewV4().String(),
+		name:    uuid.NewV4().String()[:8],
 		columns: columns,
 		table:   table,
 	}
@@ -1231,7 +1239,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	strategy := rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
 	// build index definition
 	index := ddlTestIndex{
-		name:      uuid.NewV4().String(),
+		name:      uuid.NewV4().String()[:8],
 		signature: "",
 		columns:   make([]*ddlTestColumn, 0),
 		uniques:   rand.Intn(3) == 0,
@@ -1315,6 +1323,9 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 }
 
 func (c *testCase) addIndexJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
+
 	jobArg := (*ddlIndexJobArg)(task.arg)
 	tblInfo := task.tblInfo
 
@@ -1331,6 +1342,9 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 	for _, column := range jobArg.index.columns {
 		column.indexReferences++
 	}
+	val := c.tableMap[tblInfo.name].Values
+	c.tableMap[tblInfo.name] = tblInfo.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[tblInfo.name], val)
 	return nil
 }
 
@@ -1353,7 +1367,7 @@ func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) 
 	}
 	loc := rand.Intn(len(table.indexes))
 	index := table.indexes[loc]
-	newIndex := uuid.NewV4().String()
+	newIndex := uuid.NewV4().String()[:8]
 	if !checkModifyIdx(ctx, index) {
 		return nil
 	}
@@ -1370,7 +1384,12 @@ func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) 
 }
 
 func (c *testCase) renameIndexJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	table := task.tblInfo
+	table.lock.Lock()
+	defer table.lock.Unlock()
+
 	arg := (*ddlRenameIndexArg)(task.arg)
 	if c.isTableDeleted(table) {
 		return fmt.Errorf("table %s is not exists", table.name)
@@ -1392,6 +1411,9 @@ func (c *testCase) renameIndexJob(task *ddlJobTask) error {
 	}
 
 	table.indexes[iOfRenameIndex].name = arg.newIndex
+	val := c.tableMap[table.name].Values
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[table.name], val)
 	return nil
 }
 
@@ -1429,8 +1451,12 @@ func (c *testCase) prepareDropIndex(ctx interface{}, taskCh chan *ddlJobTask) er
 }
 
 func (c *testCase) dropIndexJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	jobArg := (*ddlIndexJobArg)(task.arg)
 	tblInfo := task.tblInfo
+	tblInfo.lock.Lock()
+	defer tblInfo.lock.Unlock()
 
 	if c.isTableDeleted(tblInfo) {
 		return fmt.Errorf("table %s is not exists", tblInfo.name)
@@ -1458,6 +1484,9 @@ func (c *testCase) dropIndexJob(task *ddlJobTask) error {
 		}
 	}
 	tblInfo.indexes = append(tblInfo.indexes[:iOfDropIndex], tblInfo.indexes[iOfDropIndex+1:]...)
+	val := c.tableMap[tblInfo.name].Values
+	c.tableMap[tblInfo.name] = tblInfo.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[tblInfo.name], val)
 	return nil
 }
 
@@ -1536,6 +1565,8 @@ func (c *testCase) prepareAddColumn(ctx interface{}, taskCh chan *ddlJobTask) er
 }
 
 func (c *testCase) addColumnJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	jobArg := (*ddlColumnJobArg)(task.arg)
 	table := task.tblInfo
 	table.lock.Lock()
@@ -1571,6 +1602,9 @@ func (c *testCase) addColumnJob(task *ddlJobTask) error {
 		}
 		table.columns.Insert(insertAfterPosition+1, newColumn)
 	}
+	val := c.tableMap[table.name].Values
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[table.name], val)
 	return nil
 }
 
@@ -1759,6 +1793,8 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 }
 
 func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	table := task.tblInfo
 	table.lock.Lock()
 	defer table.lock.Unlock()
@@ -1810,6 +1846,9 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 	for _, idx := range table.indexes {
 		idx.signature = generateIndexSignture(*idx)
 	}
+	val := c.tableMap[table.name].Values
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[table.name], val)
 	return nil
 }
 
@@ -1881,6 +1920,8 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 }
 
 func (c *testCase) dropColumnJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	jobArg := (*ddlColumnJobArg)(task.arg)
 	table := task.tblInfo
 	table.lock.Lock()
@@ -1929,6 +1970,9 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 		}
 		col.dependenciedCols = append(col.dependenciedCols[:i], col.dependenciedCols[i+1:]...)
 	}
+	val := c.tableMap[table.name].Values
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[table.name], val)
 	return nil
 }
 
@@ -1978,6 +2022,8 @@ func (c *testCase) prepareSetDefaultValue(_ interface{}, taskCh chan *ddlJobTask
 }
 
 func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
 	table := task.tblInfo
 	table.lock.Lock()
 	defer table.lock.Unlock()
@@ -1989,6 +2035,9 @@ func (c *testCase) setDefaultValueJob(task *ddlJobTask) error {
 		return fmt.Errorf("column %s on table %s is not exists", arg.column.name, table.name)
 	}
 	arg.column.defaultValue = arg.newDefaultValue
+	val := c.tableMap[table.name].Values
+	c.tableMap[table.name] = table.mapTableToRandTestTable()
+	copyRowToRandTestTable(c.tableMap[table.name], val)
 	return nil
 }
 

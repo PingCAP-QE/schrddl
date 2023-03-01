@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 )
@@ -113,12 +114,6 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
 func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
-	for _, dbs := range dbss {
-		for _, db := range dbs {
-			enableTiKVGC(db)
-		}
-	}
-
 	log.Infof("[%s] start to test...", c)
 	defer func() {
 		log.Infof("[%s] test end...", c)
@@ -216,6 +211,7 @@ func NewDDLCase(cfg *DDLCaseConfig) *DDLCase {
 			dmlOps:    make([]dmlTestOpExecutor, 0),
 			caseIndex: i,
 			stop:      0,
+			tableMap:  make(map[string]*sqlgen.Table),
 		}
 	}
 	b := &DDLCase{
@@ -518,9 +514,144 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		if err != nil {
 			return errors.Trace(err)
 		}
+		err = c.readDataFromTiDB()
+		if err != nil {
+			return errors.Trace(err)
+		}
 	}
 
 	return nil
+}
+
+func (c *testCase) readDataFromTiDB() error {
+	if len(c.tables) == 0 {
+		return nil
+	}
+
+	sql := "select * from "
+	for _, table := range c.tables {
+		readSql := sql + fmt.Sprintf("`%s`", table.name)
+		dbIdx := rand.Intn(len(c.dbs))
+		db := c.dbs[dbIdx]
+		rows, err := db.Query(readSql)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			rows.Close()
+		}()
+		metaCols := make([]*ddlTestColumn, 0)
+		for ite := table.columns.Iterator(); ite.Next(); {
+			metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
+		}
+		// Read all rows.
+		var actualRows [][]string
+		for rows.Next() {
+			cols, err1 := rows.Columns()
+			if err1 != nil {
+				return errors.Trace(err)
+			}
+
+			log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
+
+			// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
+			rawResult := make([][]byte, len(cols))
+			result := make([]string, len(cols))
+			dest := make([]interface{}, len(cols))
+			for i := range rawResult {
+				dest[i] = &rawResult[i]
+			}
+
+			err1 = rows.Scan(dest...)
+			if err1 != nil {
+				return errors.Trace(err)
+			}
+
+			for i, raw := range rawResult {
+				if raw == nil {
+					result[i] = ddlTestValueNull
+				} else {
+					result[i] = fmt.Sprintf("'%s'", string(raw))
+					//if typeNeedQuota(metaCols[i].k) {
+					//	result[i] = fmt.Sprintf("'%s'", string(raw))
+					//}
+					//result[i] = string(raw)
+				}
+			}
+
+			actualRows = append(actualRows, result)
+		}
+		c.tableMap[table.name].Values = actualRows
+	}
+
+	return nil
+}
+
+func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, error) {
+	rows, err := conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.Annotatef(err, "Error when executing SQL: %s\n%s", query)
+	}
+	defer func() {
+		rows.Close()
+	}()
+	//metaCols := make([]*ddlTestColumn, 0)
+	//for ite := table.columns.Iterator(); ite.Next(); {
+	//	metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
+	//}
+	// Read all rows.
+	var actualRows [][]string
+	for rows.Next() {
+		cols, err1 := rows.Columns()
+		if err1 != nil {
+			return nil, errors.Trace(err)
+		}
+
+		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
+		rawResult := make([][]byte, len(cols))
+		result := make([]string, len(cols))
+		dest := make([]interface{}, len(cols))
+		for i := range rawResult {
+			dest[i] = &rawResult[i]
+		}
+
+		err1 = rows.Scan(dest...)
+		if err1 != nil {
+			return nil, errors.Trace(err)
+		}
+
+		for i, raw := range rawResult {
+			if raw == nil {
+				result[i] = ddlTestValueNull
+			} else {
+				result[i] = fmt.Sprintf("'%s'", string(raw))
+				//if typeNeedQuota(metaCols[i].k) {
+				//	result[i] = fmt.Sprintf("'%s'", string(raw))
+				//}
+				//result[i] = string(raw)
+			}
+		}
+
+		actualRows = append(actualRows, result)
+	}
+	return actualRows, err
+}
+
+func trimValue(tp int, val []byte) string {
+	// a='{"DnOJQOlx":52,"ZmvzPtdm":82}'
+	// eg: set a={"a":"b","b":"c"}
+	//     get a={"a": "b", "b": "c"} , so have to remove the space
+	if tp == KindJSON {
+		for i := 1; i < len(val)-2; i++ {
+			if val[i-1] == '"' && val[i] == ':' && val[i+1] == ' ' {
+				val = append(val[:i+1], val[i+2:]...)
+			}
+			if val[i-1] == ',' && val[i] == ' ' && val[i+1] == '"' {
+				val = append(val[:i], val[i+1:]...)
+			}
+		}
+	}
+	return string(val)
 }
 
 func (c *testCase) executeAdminCheck() error {

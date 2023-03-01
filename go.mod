@@ -3,7 +3,7 @@ module github.com/PingCAP-QE/schrddl
 go 1.16
 
 require (
-	github.com/PingCAP-QE/clustered-index-rand-test v0.0.0-20221227034504-c80aec107007
+	github.com/PingCAP-QE/clustered-index-rand-test v0.0.0-20230109063808-5eed2c61bca0
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/emirpasic/gods v1.12.0
 	github.com/go-sql-driver/mysql v1.6.0
