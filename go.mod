@@ -20,6 +20,8 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/net v0.0.0-20210508051633-16afe75a6701
+	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
 	gopkg.in/stretchr/testify.v1 v1.2.2 // indirect
 )
+
+replace github.com/PingCAP-QE/clustered-index-rand-test => github.com/xiongjiwei/clustered-index-rand-test v0.0.0-20230308073147-b64bf880f36d

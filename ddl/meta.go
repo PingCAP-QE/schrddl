@@ -601,17 +601,9 @@ func getRandDDLTestColumnForJson() *ddlTestColumn {
 
 func getRandDDLTestColumns() []*ddlTestColumn {
 	n := RandDataType()
-	cols := make([]*ddlTestColumn, 0)
-
-	if n == KindJSON {
-		// Json column itself doesn't mean a lot, it's value is in generated column.
-		// eg: create table t(a json, b int as(json_extract(`a`, '$.haha'))).
-		// for this instance: a is the target column, b is depending on column a.
-		cols = getRandJsonCol()
-	} else {
-		column := getDDLTestColumn(n)
-		cols = append(cols, column)
-	}
+	cols := make([]*ddlTestColumn, 0, 1)
+	column := getDDLTestColumn(n)
+	cols = append(cols, column)
 	return cols
 }
 
@@ -804,7 +796,7 @@ func (col *ddlTestColumn) randValueUnique(rows *arraylist.List) (interface{}, bo
 }
 
 func (col *ddlTestColumn) canBePrimary() bool {
-	return col.canBeIndex() && col.notGenerated()
+	return col.canBeIndex() && col.notGenerated() && col.k != KindJSON
 }
 
 func (col *ddlTestColumn) canBeIndex() bool {
@@ -815,7 +807,7 @@ func (col *ddlTestColumn) canBeIndex() bool {
 		} else {
 			return true
 		}
-	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT, KindJSON:
+	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
 		return false
 	default:
 		return true
@@ -846,10 +838,11 @@ func (col *ddlTestColumn) canHaveDefaultValue() bool {
 }
 
 type ddlTestIndex struct {
-	name      string
-	signature string
-	columns   []*ddlTestColumn
-	uniques   bool
+	name            string
+	signature       string
+	columns         []*ddlTestColumn
+	uniques         bool
+	expressionIndex bool
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {

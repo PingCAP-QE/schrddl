@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
@@ -39,8 +40,8 @@ var (
 	prepare         = flag.Bool("prepare", false, "use prepare statement")
 )
 
-func prepareEnv() {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
+func prepareEnv(s string) {
+	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", s, *dbName)
 	tiDb, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
@@ -85,6 +86,6 @@ func main() {
 	default:
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
-	prepareEnv()
+	prepareEnv(strings.Split(*dbAddr, ",")[0])
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }
