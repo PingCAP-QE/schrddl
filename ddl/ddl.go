@@ -3,6 +3,7 @@ package ddl
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
+	"github.com/pingcap/tidb/parser/model"
 )
 
 // The DDL test case is intended to test the correctness of DDL operations. It
@@ -61,6 +63,72 @@ type DDLCase struct {
 
 func (c *DDLCase) String() string {
 	return "ddl"
+}
+
+func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
+	tk := time.NewTicker(100 * time.Millisecond)
+	var jobmeta []byte
+	lastInternalJobId := int64(0)
+
+	rows, err := db.QueryContext(context.Background(), "select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' order by ddl_jobs.job_id desc limit 1;")
+	if err != nil {
+		return
+	}
+	if rows.Next() {
+		err = rows.Scan(&jobmeta)
+		if err != nil {
+			return
+		}
+		var job model.Job
+		err = json.Unmarshal(jobmeta, &job)
+		if err != nil {
+			log.Infof("unmarshal error %s", err.Error())
+		}
+		lastInternalJobId = job.ID
+	}
+
+	err = rows.Close()
+	if err != nil {
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("Time is up, exit schrddl")
+			return
+		case <-tk.C:
+		}
+		rows, err := db.QueryContext(context.Background(), fmt.Sprintf("select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' and ddl_jobs.job_id > %d order by ddl_jobs.job_id limit 1;", lastInternalJobId))
+		if err != nil {
+			return
+		}
+		if !rows.Next() {
+			continue
+		}
+		err = rows.Scan(&jobmeta)
+		if err != nil {
+			return
+		}
+		err = rows.Close()
+		if err != nil {
+			return
+		}
+
+		var job model.Job
+		err = json.Unmarshal(jobmeta, &job)
+		if err != nil {
+			log.Infof("unmarshal error %s", err.Error())
+		}
+		seq := job.SeqNum
+		globalDDLSeqNumMu.Lock()
+		log.Warn("update seq", seq, globalDDLSeqNum, job.ID, lastInternalJobId)
+		if seq == globalDDLSeqNum+1 {
+			globalDDLSeqNum = seq
+			lastInternalJobId = job.ID
+		}
+		globalDDLSeqNumMu.Unlock()
+	}
 }
 
 func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
@@ -122,6 +190,10 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 	wg.Add(1)
 	go func() {
 		backgroundCheckDDLFinish(ctx, c.cases[0].dbs[0], c.cfg.Concurrency)
+		wg.Done()
+	}()
+	go func() {
+		backgroundUpdateSeq(ctx, c.cases[0].dbs[0])
 		wg.Done()
 	}()
 	for i := 0; i < c.cfg.Concurrency; i++ {
