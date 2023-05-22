@@ -157,7 +157,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "have a different number of columns") ||
 		strings.Contains(errStr, "Split table region lower value count") ||
 		strings.Contains(errStr, "Out Of Memory") ||
-		strings.Contains(errStr, "invalid syntax") {
+		strings.Contains(errStr, "invalid syntax") ||
+		strings.Contains(errStr, "newer than query schema version") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
