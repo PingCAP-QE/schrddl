@@ -132,14 +132,14 @@ func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
 }
 
 func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
-	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
+	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency)*time.Second + CheckDDLExtraTimeout)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("Time is up, exit schrddl")
 			return
 		case <-tk.C:
-			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
+			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency)*time.Second + CheckDDLExtraTimeout)
 		}
 		if rand.Intn(3) != 0 {
 			continue
