@@ -26,17 +26,18 @@ import (
 )
 
 var (
-	dbAddr          = flag.String("addr", "127.0.0.1:4000", "database address")
-	dbName          = flag.String("db", "test", "database name")
-	mode            = flag.String("mode", "serial", "test mode: serial, parallel")
-	concurrency     = flag.Int("concurrency", 20, "concurrency")
-	tablesToCreate  = flag.Int("tables", 1, "the number of the tables to create")
-	mysqlCompatible = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
-	testTime        = flag.Duration("time", 2*time.Hour, "test time")
-	output          = flag.String("output", "", "output file")
-	txn             = flag.Bool("txn", false, "enable txn dml")
-	rc              = flag.Bool("rc-txn", false, "read-committed isolation")
-	prepare         = flag.Bool("prepare", false, "use prepare statement")
+	dbAddr               = flag.String("addr", "127.0.0.1:4000", "database address")
+	dbName               = flag.String("db", "test", "database name")
+	mode                 = flag.String("mode", "serial", "test mode: serial, parallel")
+	concurrency          = flag.Int("concurrency", 20, "concurrency")
+	tablesToCreate       = flag.Int("tables", 1, "the number of the tables to create")
+	mysqlCompatible      = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
+	testTime             = flag.Duration("time", 2*time.Hour, "test time")
+	output               = flag.String("output", "", "output file")
+	txn                  = flag.Bool("txn", false, "enable txn dml")
+	rc                   = flag.Bool("rc-txn", false, "read-committed isolation")
+	prepare              = flag.Bool("prepare", false, "use prepare statement")
+	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
 )
 
 func prepareEnv() {
@@ -74,6 +75,9 @@ func main() {
 	}
 	if *prepare {
 		Prepare = true
+	}
+	if *checkDDLExtraTimeout > 0 {
+		CheckDDLExtraTimeout = *checkDDLExtraTimeout
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType

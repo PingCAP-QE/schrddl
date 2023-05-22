@@ -17,6 +17,7 @@ import (
 var EnableTransactionTest = false
 var RCIsolation = false
 var Prepare = false
+var CheckDDLExtraTimeout = 0 * time.Second
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
