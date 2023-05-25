@@ -132,14 +132,14 @@ func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
 }
 
 func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
-	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency)*time.Second + CheckDDLExtraTimeout)
+	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("Time is up, exit schrddl")
 			return
 		case <-tk.C:
-			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency)*time.Second + CheckDDLExtraTimeout)
+			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
 		}
 		if rand.Intn(3) != 0 {
 			continue
@@ -169,7 +169,7 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 			if jobCnt == 0 {
 				break
 			}
-			timeout := time.Duration(concurrency*120) * time.Second
+			timeout := time.Duration(concurrency*120)*time.Second + CheckDDLExtraTimeout
 			if time.Since(startTime) > timeout && preJobCnt == jobCnt {
 				log.Fatalf("cannot finish all DDL in %f seconds", timeout.Seconds())
 			}
