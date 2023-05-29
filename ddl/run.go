@@ -159,7 +159,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Split table region lower value count") ||
 		strings.Contains(errStr, "Out Of Memory") ||
 		strings.Contains(errStr, "invalid syntax") ||
-		strings.Contains(errStr, "newer than query schema version") {
+		strings.Contains(errStr, "newer than query schema version") ||
+		strings.Contains(errStr, "PD server timeout") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -240,7 +241,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "cannot convert datum") ||
 		strings.Contains(errStr, "Duplicate entry") ||
 		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
-		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") {
+		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") ||
+		strings.Contains(errStr, "PD server timeout") {
 		return true
 	}
 	return false
