@@ -588,7 +588,9 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		}
 		err = c.readDataFromTiDB()
 		if err != nil {
-			return errors.Trace(err)
+			if !dmlIgnoreError(err) {
+				return errors.Trace(err)
+			}
 		}
 	}
 
