@@ -160,7 +160,9 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Out Of Memory") ||
 		strings.Contains(errStr, "invalid syntax") ||
 		strings.Contains(errStr, "newer than query schema version") ||
-		strings.Contains(errStr, "PD server timeout") {
+		strings.Contains(errStr, "PD server timeout") ||
+		strings.Contains(errStr, "Information schema is out of date") ||
+		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -242,7 +244,8 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Duplicate entry") ||
 		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
 		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") ||
-		strings.Contains(errStr, "PD server timeout") {
+		strings.Contains(errStr, "PD server timeout") ||
+		strings.Contains(errStr, "Information schema is out of date") {
 		return true
 	}
 	return false
