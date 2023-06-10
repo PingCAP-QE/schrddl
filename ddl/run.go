@@ -3,6 +3,7 @@ package ddl
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
@@ -39,15 +40,18 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
+	dbDSN := make([]string, 0, 4)
+	for _, s := range strings.Split(dbAddr, ",") {
+		dbDSN = append(dbDSN, fmt.Sprintf("root:@tcp(%s)/%s", s, dbName))
+	}
 	for i := 0; i < concurrency; i++ {
 		dbs := make([]*sql.DB, 0, 2)
 		// Parallel send DDL request need more connection to send DDL request concurrently
-		db0, err := OpenDB(dbDSN, 20)
+		db0, err := OpenDB(dbDSN[rand.Intn(len(dbDSN))], 20)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
-		db1, err := OpenDB(dbDSN, 1)
+		db1, err := OpenDB(dbDSN[rand.Intn(len(dbDSN))], 1)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
@@ -124,6 +128,25 @@ func dmlIgnoreError(err error) bool {
 	if strings.Contains(errStr, "invalid connection") {
 		return true
 	}
+	if strings.Contains(errStr, "cannot be pushed down") {
+		return true
+	}
+	if strings.Contains(errStr, "Invalid JSON text") {
+		return true
+	}
+	if strings.Contains(errStr, "Invalid JSON value for CAST for expression index") {
+		return true
+	}
+	if strings.Contains(errStr, "Invalid data type for JSON data in argument 1 to function cast_as_array") {
+		return true
+	}
+	if strings.Contains(errStr, "Value is out of range for expression index") {
+		return true
+	}
+	if strings.Contains(errStr, "This version of TiDB doesn't yet support 'CAST-ing JSON") {
+		return true
+	}
+
 	if strings.Contains(errStr, "doesn't exist") ||
 		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
 		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
@@ -192,6 +215,24 @@ func ddlIgnoreError(err error) bool {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported shard_row_id_bits for table with primary key as row id") {
+		return true
+	}
+	if strings.Contains(errStr, "Invalid JSON value for CAST for expression index") {
+		return true
+	}
+	if strings.Contains(errStr, "can't find column") {
+		return true
+	}
+	if strings.Contains(errStr, "This version of TiDB doesn't yet support 'CAST-ing JSON") {
+		return true
+	}
+	if strings.Contains(errStr, "has an expression index dependency and cannot be dropped or renamed") {
+		return true
+	}
+	if strings.Contains(errStr, "more than one multi-valued key part per index") {
+		return true
+	}
+	if strings.Contains(errStr, "Invalid data type for JSON data in argument 1 to function cast_as_array") {
 		return true
 	}
 	// Ignore Column Type Change error.

@@ -3,11 +3,13 @@ package ddl
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"math/rand"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
 	"github.com/juju/errors"
@@ -69,20 +71,57 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	defer conn.Close()
 	task := <-taskCh
 	// disable compare for now since it's not stable.
-	if task.k == dmlSelect && false {
-		if rand.Intn(5) == 0 {
-			r, _ := regexp.Compile("/\\*.*?\\*/")
+	_, err = conn.ExecContext(ctx, "begin")
+	if err != nil {
+		return err
+	}
+	err = compareXPlans(ctx, task, conn, c.caseIndex)
+	if err != nil {
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Trace(err)
+	}
+	_, _ = conn.ExecContext(ctx, "commit")
+	err = c.sendDMLRequest(ctx, conn, task)
+	if err != nil {
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Trace(err)
+	}
+	if task.err != nil {
+		return nil
+	}
+	return nil
+}
+
+func printPlans(ctx context.Context, conn *sql.Conn, s string) error {
+	exp := fmt.Sprintf("explain %s", s)
+	rows, err := readData(ctx, conn, exp)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Infof("check plan: %v", exp)
+	for _, row := range rows {
+		log.Infof("explain: %v", row)
+	}
+	return nil
+}
+
+func compareXPlans(ctx context.Context, task *dmlJobTask, conn *sql.Conn, caseIndex int) error {
+	if task.k == dmlSelect && !strings.Contains(task.sql, "limit") {
+		if true {
+			log.Infof("[check plan] [instance %d] %s, ", caseIndex, task.sql)
+			err := printPlans(ctx, conn, task.sql)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			r, _ := regexp.Compile("/\\*.*?\\((.*)\\).*?\\*/")
 			var rows [][]string
 			// Check plan
-			_, err := conn.ExecContext(ctx, "begin")
-			if err != nil {
-				return err
-			}
-			defer func() {
-				conn.ExecContext(ctx, "commit")
-			}()
 			rows, err = sendQueryRequest(ctx, conn, task)
-			log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
+			log.Infof("[dml] [instance %d] %s, err: %v", caseIndex, task.sql, err)
 			if err != nil {
 				if dmlIgnoreError(err) {
 					return nil
@@ -92,10 +131,14 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 
 			// Check no hint plan
 			origianlSql := task.sql
-			noHintSql := r.ReplaceAllString(task.sql, "")
+			noHintSql := r.ReplaceAllString(task.sql, "/*+ use_index(${1},) */")
 			task.sql = noHintSql
+			err = printPlans(ctx, conn, task.sql)
+			if err != nil {
+				return errors.Trace(err)
+			}
 			newRow, err := sendQueryRequest(ctx, conn, task)
-			log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
+			log.Infof("[dml] [instance %d] %s, err: %v", caseIndex, task.sql, err)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -106,31 +149,21 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 			}
 
 			// Make sure the query is stable itself.
-			task.sql = origianlSql
-			orignalRowToCheck, err2 := sendQueryRequest(ctx, conn, task)
-			if err2 != nil {
-				return nil
-			}
-			err2 = compareTwoRows(rows, orignalRowToCheck)
-			if err2 != nil {
-				// The query is not stable.
-				return nil
-			}
+			//task.sql = origianlSql
+			//orignalRowToCheck, err2 := sendQueryRequest(ctx, conn, task)
+			//if err2 != nil {
+			//	return nil
+			//}
+			//err2 = compareTwoRows(rows, orignalRowToCheck)
+			//if err2 != nil {
+			//	// The query is not stable.
+			//	return nil
+			//}
 
 			task.sql = "select @@tidb_current_ts"
 			ts, _ = sendQueryRequest(ctx, conn, task)
-			return errors.Errorf("[dml] [instance %d] found inconsistent data for two plans, sql-with-hint %s, sql-without-hint %s, %s, err: %v", c.caseIndex, origianlSql, noHintSql, ts[0][0], err)
+			return errors.Errorf("[dml] [instance %d] found inconsistent data for two plans, sql-with-hint %s, sql-without-hint %s, %s, err: %v", caseIndex, origianlSql, noHintSql, ts[0][0], err)
 		}
-	}
-	err = c.sendDMLRequest(ctx, conn, task)
-	if err != nil {
-		if dmlIgnoreError(err) {
-			return nil
-		}
-		return errors.Trace(err)
-	}
-	if task.err != nil {
-		return nil
 	}
 	return nil
 }
@@ -183,7 +216,7 @@ func (c *testCase) execDMLInTransactionSQL(taskCh chan *dmlJobTask) error {
 	tasksLen := len(taskCh)
 
 	ctx := context.Background()
-	conn, err := c.dbs[1].Conn(ctx)
+	conn, err := c.dbs[rand.Intn(len(c.dbs))].Conn(ctx)
 	if err != nil {
 		return nil
 	}
@@ -198,31 +231,37 @@ func (c *testCase) execDMLInTransactionSQL(taskCh chan *dmlJobTask) error {
 	tasks := make([]*dmlJobTask, 0, tasksLen)
 	for i := 0; i < tasksLen; i++ {
 		task := <-taskCh
+		err := compareXPlans(ctx, task, conn, c.caseIndex)
+		if err != nil {
+			task.err = err
+			tasks = append(tasks, task)
+			continue
+		}
 		err = c.sendDMLRequest(ctx, conn, task)
 		tasks = append(tasks, task)
 	}
 
-	_, err = conn.ExecContext(ctx, "commit")
-	log.Infof("[dml] [instance %d] commit error: %v", c.caseIndex, err)
+	if rand.Intn(10) == 0 {
+		_, err = conn.ExecContext(ctx, "rollback")
+		log.Infof("[dml] [instance %d] rollback error: %v", c.caseIndex, err)
+	} else {
+		_, err = conn.ExecContext(ctx, "commit")
+		log.Infof("[dml] [instance %d] commit error: %v", c.caseIndex, err)
+	}
+	for i := 0; i < tasksLen; i++ {
+		task := tasks[i]
+		if task.err != nil && dmlIgnoreError(err) {
+			continue
+		}
+		return errors.Annotatef(err, "Error when executing SQL: %s, %d of %d in %d", task.sql, i, tasksLen, c.caseIndex)
+	}
 	if err != nil {
 		if dmlIgnoreError(err) {
 			return nil
 		}
-		for i := 0; i < tasksLen; i++ {
-			task := tasks[i]
-			if task.err == nil {
-				return nil
-			}
-		}
 		return errors.Annotatef(err, "Error when executing SQL: %s", "commit")
 	}
 
-	for i := 0; i < tasksLen; i++ {
-		task := tasks[i]
-		if task.err != nil {
-			continue
-		}
-	}
 	log.Infof("[dml] [instance %d] finish transaction dml", c.caseIndex)
 	return nil
 }

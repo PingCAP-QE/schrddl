@@ -433,6 +433,9 @@ func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
 		if err != nil {
 			return err
 		}
+		if idx.expressionIndex {
+			continue
+		}
 		if idx.signature != columnNames {
 			return errors.Errorf("table index columns doesn't match, index name: %s, expected: %s, got: %s", idx.name, idx.signature, columnNames)
 		}
@@ -563,8 +566,8 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 				log.Infof("seq:%d, query:%s, task.sql:%s", seqNum, query, task.sql)
 			}
 
+			log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 			if !ddlIgnoreError(ddlErr) {
-				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
 				task.err = ddlErr
 				unExpectedErr = ddlErr
 				// No need to update schema.
@@ -1254,9 +1257,16 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 			numberOfColumns = 10
 		}
 		perm := rand.Perm(table.columns.Size())[:numberOfColumns]
+		hasJSON := false
 		for _, idx := range perm {
 			column := getColumnFromArrayList(table.columns, idx)
 			if column.canBeIndex() {
+				if column.k == KindJSON {
+					if hasJSON && rand.Intn(10) != 0 {
+						continue
+					}
+					hasJSON = true
+				}
 				index.columns = append(index.columns, column)
 			}
 		}
@@ -1285,12 +1295,18 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		uniqueString = "unique"
 	}
 	// build SQL
+	randTp := []string{"SIGNED", "UNSIGNED", "DOUBLE", "CHAR(64)", "binary(64)", "SIGNED", "UNSIGNED", "DOUBLE", "CHAR(64)", "binary(64)", "date", "datetime", "time"}
 	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (", table.name, uniqueString, index.name)
 	for i, column := range index.columns {
 		if i > 0 {
 			sql += ", "
 		}
-		sql += fmt.Sprintf("`%s`", column.name)
+		if column.k == KindJSON {
+			index.expressionIndex = true
+			sql += fmt.Sprintf("(cast(`%s` as %s array))", column.name, randTp[rand.Intn(len(randTp))])
+		} else {
+			sql += fmt.Sprintf("`%s`", column.name)
+		}
 	}
 	sql += ")"
 
