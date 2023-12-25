@@ -69,7 +69,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		os.Exit(0)
 	}()
 
-	cfg := DDLCaseConfig{
+	cfg := CaseConfig{
 		Concurrency:     concurrency,
 		TablesToCreate:  tablesToCreate,
 		MySQLCompatible: mysqlCompatible,
@@ -100,11 +100,53 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 }
 
+var dmlIgnoreList = []string{
+	"Table has no partition",
+	"can't have a default value",
+	"Invalid JSON bytes",
+
+	// bug
+	"slice bounds out of range",
+	"index out of range",
+	"writing inconsistent data in table",
+	"should ensure all columns have the same length",
+
+	"Can't find a proper physical plan for this query",
+	"Your query has been cancelled due to exceeding the allowed memory limit",
+	"Cant peek from empty bytes",
+}
+
+var ddlIgnoreList = []string{
+	"already exists",
+	"A PRIMARY must include all columns",
+	"has an expression index dependency and cannot",
+	"Multiple definition of same constant",
+	"VALUES LESS THAN value must be strictly increasing for each partition",
+	"please split table instead",
+	"should less than the upper value",
+	"A primary key index cannot be invisible",
+	"Unsupported modify change collate",
+	"Failed to split region ranges: the region size is too small",
+	"Can't find dropped/truncated table",
+	"Can't find localTemporary/dropped/truncated",
+	"can't be flashback repeatedly",
+	"Invalid gbk character string",
+	"secondary index",
+	"cannot be used in key specification",
+	"Adding clustered primary key",
+	"Invalid use of NULL value",
+}
+
 func dmlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
 	errStr := err.Error()
+	for _, ignore := range dmlIgnoreList {
+		if strings.Contains(errStr, ignore) {
+			return true
+		}
+	}
 	if strings.Contains(errStr, "Information schema is changed") && !RCIsolation {
 		return true
 	}
@@ -162,7 +204,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "newer than query schema version") ||
 		strings.Contains(errStr, "PD server timeout") ||
 		strings.Contains(errStr, "Information schema is out of date") ||
-		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") {
+		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") ||
+		strings.Contains(errStr, "Value is out of range") {
 		return true
 	}
 	if strings.Contains(errStr, "Unsupported multi schema change") {
@@ -180,6 +223,11 @@ func ddlIgnoreError(err error) bool {
 	}
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
+	for _, ignore := range ddlIgnoreList {
+		if strings.Contains(errStr, ignore) {
+			return true
+		}
+	}
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
 	}
@@ -245,7 +293,11 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
 		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") ||
 		strings.Contains(errStr, "PD server timeout") ||
-		strings.Contains(errStr, "Information schema is out of date") {
+		strings.Contains(errStr, "Information schema is out of date") ||
+		strings.Contains(errStr, "Invalid JSON data provided") ||
+		strings.Contains(errStr, "Invalid JSON value for CAST") ||
+		strings.Contains(errStr, "Invalid JSON text") ||
+		strings.Contains(errStr, "doesn't yet support") {
 		return true
 	}
 	return false

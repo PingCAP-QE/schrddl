@@ -7,19 +7,20 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
+	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/twinj/uuid"
 )
 
 type testCase struct {
-	cfg              *DDLCaseConfig
+	cfg              *CaseConfig
 	initDB           string
 	dbs              []*sql.DB
 	caseIndex        int
@@ -35,7 +36,8 @@ type testCase struct {
 	charsets         []string
 	charsetsCollates map[string][]string
 
-	tableMap map[string]*sqlgen.Table
+	tableMap     map[string]*sqlgenerator.Table
+	outputWriter *os.File
 }
 
 func (c *testCase) stopTest() {
@@ -927,87 +929,87 @@ func getCharsetLen(cs string) int {
 	}
 }
 
-func kToType(k int) sqlgen.ColumnType {
+func kToType(k int) sqlgenerator.ColumnType {
 	switch k {
 	case KindTINYINT:
-		return sqlgen.ColumnTypeTinyInt
+		return sqlgenerator.ColumnTypeTinyInt
 	case KindSMALLINT:
-		return sqlgen.ColumnTypeSmallInt
+		return sqlgenerator.ColumnTypeSmallInt
 	case KindMEDIUMINT:
-		return sqlgen.ColumnTypeMediumInt
+		return sqlgenerator.ColumnTypeMediumInt
 	case KindInt32:
-		return sqlgen.ColumnTypeInt
+		return sqlgenerator.ColumnTypeInt
 	case KindBigInt:
-		return sqlgen.ColumnTypeBigInt
+		return sqlgenerator.ColumnTypeBigInt
 	case KindBit:
-		return sqlgen.ColumnTypeBit
+		return sqlgenerator.ColumnTypeBit
 	case KindFloat:
-		return sqlgen.ColumnTypeFloat
+		return sqlgenerator.ColumnTypeFloat
 	case KindDouble:
-		return sqlgen.ColumnTypeDouble
+		return sqlgenerator.ColumnTypeDouble
 	case KindDECIMAL:
-		return sqlgen.ColumnTypeDecimal
+		return sqlgenerator.ColumnTypeDecimal
 	case KindChar:
-		return sqlgen.ColumnTypeChar
+		return sqlgenerator.ColumnTypeChar
 	case KindVarChar:
-		return sqlgen.ColumnTypeVarchar
+		return sqlgenerator.ColumnTypeVarchar
 	case KindBLOB:
-		return sqlgen.ColumnTypeBlob
+		return sqlgenerator.ColumnTypeBlob
 	case KindTINYBLOB:
-		return sqlgen.ColumnTypeBlob
+		return sqlgenerator.ColumnTypeBlob
 	case KindMEDIUMBLOB:
-		return sqlgen.ColumnTypeBlob
+		return sqlgenerator.ColumnTypeBlob
 	case KindLONGBLOB:
-		return sqlgen.ColumnTypeBlob
+		return sqlgenerator.ColumnTypeBlob
 	case KindTEXT:
-		return sqlgen.ColumnTypeText
+		return sqlgenerator.ColumnTypeText
 	case KindTINYTEXT:
-		return sqlgen.ColumnTypeText
+		return sqlgenerator.ColumnTypeText
 	case KindMEDIUMTEXT:
-		return sqlgen.ColumnTypeText
+		return sqlgenerator.ColumnTypeText
 	case KindLONGTEXT:
-		return sqlgen.ColumnTypeText
+		return sqlgenerator.ColumnTypeText
 	case KindBool:
-		return sqlgen.ColumnTypeBoolean
+		return sqlgenerator.ColumnTypeBoolean
 	case KindDATE:
-		return sqlgen.ColumnTypeDate
+		return sqlgenerator.ColumnTypeDate
 	case KindTIME:
-		return sqlgen.ColumnTypeTime
+		return sqlgenerator.ColumnTypeTime
 	case KindDATETIME:
-		return sqlgen.ColumnTypeDatetime
+		return sqlgenerator.ColumnTypeDatetime
 	case KindTIMESTAMP:
-		return sqlgen.ColumnTypeTimestamp
+		return sqlgenerator.ColumnTypeTimestamp
 	case KindYEAR:
-		return sqlgen.ColumnTypeYear
+		return sqlgenerator.ColumnTypeYear
 	case KindJSON:
-		return sqlgen.ColumnTypeJSON
+		return sqlgenerator.ColumnTypeJSON
 	case KindEnum:
-		return sqlgen.ColumnTypeEnum
+		return sqlgenerator.ColumnTypeEnum
 	case KindSet:
-		return sqlgen.ColumnTypeSet
+		return sqlgenerator.ColumnTypeSet
 	default:
 		panic("should not happen")
 	}
 }
 
-func toCollation(coll string) *sqlgen.Collation {
+func toCollation(coll string) *sqlgenerator.Collation {
 	switch coll {
 	case "utf8_general_ci":
-		return sqlgen.Collations[sqlgen.CollationUtf8GeneralCI]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8GeneralCI]
 	case "utf8mb4_general_ci":
-		return sqlgen.Collations[sqlgen.CollationUtf8mb4GeneralCI]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8mb4GeneralCI]
 	case "utf8_bin":
-		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8Bin]
 	case "utf8mb4_bin":
-		return sqlgen.Collations[sqlgen.CollationUtf8mb4Bin]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8mb4Bin]
 	case "ascii_bin":
-		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8Bin]
 	case "latin1_bin":
-		return sqlgen.Collations[sqlgen.CollationUtf8Bin]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8Bin]
 	case "gbk_bin":
-		return sqlgen.Collations[sqlgen.CollationGBKBin]
+		return sqlgenerator.Collations[sqlgenerator.CollationGBKBin]
 	default:
-		return sqlgen.Collations[sqlgen.CollationUtf8mb4Bin]
+		return sqlgenerator.Collations[sqlgenerator.CollationUtf8mb4Bin]
 	}
 }
 
@@ -1018,15 +1020,15 @@ func FNV64a(text string) int {
 	return int(algorithm.Sum64())
 }
 
-func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
-	tbl := &sqlgen.Table{
+func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
+	tbl := &sqlgenerator.Table{
 		ID:   FNV64a(table.name),
 		Name: fmt.Sprintf("`%s`", table.name),
 	}
 	tbl.Collate = toCollation(table.collate)
 	for i := 0; i < table.columns.Size(); i++ {
 		col := getColumnFromArrayList(table.columns, i)
-		toCol := &sqlgen.Column{
+		toCol := &sqlgenerator.Column{
 			ID:         FNV64a(table.name),
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
@@ -1037,24 +1039,24 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
 			IsNotNull:  false,
 		}
-		if toCol.Tp == sqlgen.ColumnTypeBinary || toCol.Tp == sqlgen.ColumnTypeBlob || toCol.Tp == sqlgen.ColumnTypeVarBinary {
-			toCol.Collation = sqlgen.Collations[sqlgen.CollationBinary]
+		if toCol.Tp == sqlgenerator.ColumnTypeBinary || toCol.Tp == sqlgenerator.ColumnTypeBlob || toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
+			toCol.Collation = sqlgenerator.Collations[sqlgenerator.CollationBinary]
 		} else {
 			toCol.Collation = tbl.Collate
 		}
 		tbl.Columns = append(tbl.Columns, toCol)
 	}
 	for _, idx := range table.indexes {
-		toIdx := &sqlgen.Index{
+		toIdx := &sqlgenerator.Index{
 			Name: fmt.Sprintf("`%s`", idx.name),
 		}
 		if idx.uniques {
-			toIdx.Tp = sqlgen.IndexTypeUnique
+			toIdx.Tp = sqlgenerator.IndexTypeUnique
 		} else {
-			toIdx.Tp = sqlgen.IndexTypeNonUnique
+			toIdx.Tp = sqlgenerator.IndexTypeNonUnique
 		}
 		for _, col := range idx.columns {
-			toIdxCol := tbl.Columns.Filter(func(c *sqlgen.Column) bool {
+			toIdxCol := tbl.Columns.Filter(func(c *sqlgenerator.Column) bool {
 				return c.Name == fmt.Sprintf("`%s`", col.name)
 			})
 			if len(toIdxCol) == 0 {
@@ -1068,6 +1070,6 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgen.Table {
 	return tbl
 }
 
-func copyRowToRandTestTable(tbl *sqlgen.Table, Values [][]string) {
+func copyRowToRandTestTable(tbl *sqlgenerator.Table, Values [][]string) {
 	return
 }

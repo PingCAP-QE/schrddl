@@ -5,16 +5,23 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/PingCAP-QE/schrddl/reduce"
+	"github.com/pingcap/tidb/pkg/parser"
+	"github.com/pingcap/tidb/pkg/parser/format"
+	"go.uber.org/zap"
 	"math/rand"
+	"os"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
-	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
+	"github.com/PingCAP-QE/schrddl/mutation"
+	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
-	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/pkg/parser/model"
+	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
 
 // The DDL test case is intended to test the correctness of DDL operations. It
@@ -39,11 +46,11 @@ import (
 // in such scenarios. In addition, the data in memory is stored by column instead
 // of by row to minimize data conflicts in adding and removing columns.
 
-type DDLCaseConfig struct {
-	Concurrency     int         `toml:"concurrency"`
-	MySQLCompatible bool        `toml:"mysql_compactible"`
-	TablesToCreate  int         `toml:"tables_to_create"`
-	TestTp          DDLTestType `toml:"test_type"`
+type CaseConfig struct {
+	Concurrency     int
+	MySQLCompatible bool
+	TablesToCreate  int
+	TestTp          DDLTestType
 }
 
 type DDLTestType int
@@ -57,7 +64,7 @@ type ExecuteDDLFunc func(*testCase, []ddlTestOpExecutor, func() error) error
 type ExecuteDMLFunc func(*testCase, []dmlTestOpExecutor, func() error) error
 
 type DDLCase struct {
-	cfg   *DDLCaseConfig
+	cfg   *CaseConfig
 	cases []*testCase
 }
 
@@ -187,15 +194,6 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 		log.Infof("[%s] test end...", c)
 	}()
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		backgroundCheckDDLFinish(ctx, c.cases[0].dbs[0], c.cfg.Concurrency)
-		wg.Done()
-	}()
-	go func() {
-		backgroundUpdateSeq(ctx, c.cases[0].dbs[0])
-		wg.Done()
-	}()
 	for i := 0; i < c.cfg.Concurrency; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -271,19 +269,25 @@ func getAllCharsetAndCollates(db *sql.DB) ([]string, map[string][]string, error)
 }
 
 // NewDDLCase returns a DDLCase, which contains specified `testCase`s.
-func NewDDLCase(cfg *DDLCaseConfig) *DDLCase {
+func NewDDLCase(cfg *CaseConfig) *DDLCase {
 	cases := make([]*testCase, cfg.Concurrency)
+	fileName := "result-" + time.Now().Format("2006-01-02-15-04-05")
+	outputfile, err := os.Create(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for i := 0; i < cfg.Concurrency; i++ {
 		cases[i] = &testCase{
-			cfg:       cfg,
-			tables:    make(map[string]*ddlTestTable),
-			schemas:   make(map[string]*ddlTestSchema),
-			views:     make(map[string]*ddlTestView),
-			ddlOps:    make([]ddlTestOpExecutor, 0),
-			dmlOps:    make([]dmlTestOpExecutor, 0),
-			caseIndex: i,
-			stop:      0,
-			tableMap:  make(map[string]*sqlgen.Table),
+			cfg:          cfg,
+			tables:       make(map[string]*ddlTestTable),
+			schemas:      make(map[string]*ddlTestSchema),
+			views:        make(map[string]*ddlTestView),
+			ddlOps:       make([]ddlTestOpExecutor, 0),
+			dmlOps:       make([]dmlTestOpExecutor, 0),
+			caseIndex:    i,
+			stop:         0,
+			tableMap:     make(map[string]*sqlgenerator.Table),
+			outputWriter: outputfile,
 		}
 	}
 	b := &DDLCase{
@@ -490,92 +494,209 @@ func SerialExecuteDML(c *testCase, ops []dmlTestOpExecutor, postOp func() error)
 	return nil
 }
 
+func (c *testCase) checkError(err error) error {
+	if err != nil {
+		if c.cfg.MySQLCompatible {
+			if strings.Contains(err.Error(), "Duplicate entry") {
+				return nil
+			}
+		}
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (c *testCase) execSQL(sql string) error {
+	_, err := c.dbs[0].Exec(sql)
+	if err != nil && dmlIgnoreError(err) || ddlIgnoreError(err) {
+		return nil
+	}
+	return err
+}
+
+func (c *testCase) execQuery(sql string) ([][]string, error) {
+	rows, err := c.dbs[0].Query(sql)
+	if err != nil {
+		return nil, err
+	}
+	// Read all rows.
+	var actualRows [][]string
+	for rows.Next() {
+		cols, err1 := rows.Columns()
+		if err1 != nil {
+			return nil, err
+		}
+
+		//log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
+
+		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
+		rawResult := make([][]byte, len(cols))
+		result := make([]string, len(cols))
+		dest := make([]interface{}, len(cols))
+		for i := range rawResult {
+			dest[i] = &rawResult[i]
+		}
+
+		err1 = rows.Scan(dest...)
+		if err1 != nil {
+			return nil, err
+		}
+
+		for i, raw := range rawResult {
+			if raw == nil {
+				result[i] = ddlTestValueNull
+			} else {
+				result[i] = fmt.Sprintf("'%s'", string(raw))
+				//if typeNeedQuota(metaCols[i].k) {
+				//	result[i] = fmt.Sprintf("'%s'", string(raw))
+				//}
+				//result[i] = string(raw)
+			}
+		}
+
+		actualRows = append(actualRows, result)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	rows.Close()
+
+	return actualRows, nil
+}
+
 // execute iterates over two list of operations concurrently, one is
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
 // When both of them ONCE complete, it exits.
 func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
-	var (
-		ddlAllComplete int32 = 0
-		dmlAllComplete int32 = 0
-	)
+	state := sqlgenerator.NewState()
+	state.SetWeight(sqlgenerator.WindowFunction, 0)
+	state.SetWeight(sqlgenerator.WindowClause, 0)
+	state.SetWeight(sqlgenerator.WindowFunctionOverW, 0)
+	state.SetWeight(sqlgenerator.JSONPredicate, 0)
+	state.SetWeight(sqlgenerator.WhereClause, 1)
+	state.SetWeight(sqlgenerator.Limit, 0)
+	state.SetWeight(sqlgenerator.UnionSelect, 0)
+	state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
+	state.SetWeight(sqlgenerator.PartitionDefinitionList, 1000)
+	state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
 
-	err := parallel(func() error {
-		var err1 error
-		for {
-			go func() {
-				tk := time.Tick(time.Second)
-				select {
-				case <-ctx.Done():
-					return
-				case <-tk:
-					rs, err := c.dbs[0].Query("select `job_id` from information_schema.ddl_jobs")
-					if err == nil {
-						jobID := 0
-						rs.Next()
-						err = rs.Scan(&jobID)
-						if err != nil {
-							log.Errorf("unexpected error when scan", err)
-							return
-						}
-						err = rs.Close()
-						if err != nil {
-							log.Errorf("unexpected error when close", err)
-							return
-						}
-						globalCancelMu.Lock()
-						_, err := c.dbs[0].Exec(fmt.Sprintf("admin cancel ddl jobs %d", jobID))
-						globalCancelMu.Unlock()
-						if err != nil {
-							log.Errorf("unexpected error when execute cancel ddl", err)
-							return
-						}
-					}
-					_, err = c.dbs[0].Exec("admin show ddl jobs")
-					if err != nil {
-						log.Errorf("unexpected error when execute admin show ddl jobs", err)
-						return
+	// Sub query is hard for NoREC
+	state.SetWeight(sqlgenerator.SubSelect, 0)
+
+	// bug
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesEnum, 0)
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesSet, 0)
+
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
+
+	prepareStmtCnt := 50
+	for i := 0; i < prepareStmtCnt; i++ {
+		startSQL, err := sqlgenerator.Start.Eval(state)
+		if err != nil {
+			return err
+		}
+		err = c.execSQL(startSQL)
+		println(fmt.Sprintf("%s;", startSQL))
+		if err != nil {
+			return err
+		}
+	}
+
+	tidbParser := parser.New()
+
+	for {
+		// NoREC
+		rewriter := &mutation.NoRecRewriter{}
+		var sb strings.Builder
+
+		doDML := rand.Intn(2) == 0
+		if doDML {
+			dmlSQL, err := sqlgenerator.DMLStmt.Eval(state)
+			if err != nil {
+				return err
+			}
+			err = c.execSQL(dmlSQL)
+			if err != nil {
+				return err
+			}
+		} else {
+			var cntOfOld, cntOfNew int
+			var newQuery string
+
+			checker := func(sql string) (bool, error) {
+				// reset some env variables.
+				cntOfOld = 0
+				cntOfNew = 0
+
+				querySQL := sql
+				stmts, _, err := tidbParser.Parse(querySQL, "", "")
+				if err != nil {
+					return false, err
+				}
+				stmt := stmts[0]
+				newStmt, _ := stmt.Accept(rewriter)
+				if newStmt == nil {
+					// No predicate, continue
+					return false, nil
+				}
+				sb.Reset()
+				err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags, &sb))
+				if err != nil {
+					return false, err
+				}
+				newQuery = sb.String()
+
+				// send queries to tidb and check the result
+				rs1, err := c.execQuery(querySQL)
+				println(fmt.Sprintf("%s;", querySQL))
+				if err != nil {
+					if dmlIgnoreError(err) {
+						return false, nil
+					} else {
+						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
+						return false, err
 					}
 				}
-			}()
-			c.schemasLock.Lock()
-			err1 = executeDDL(c, c.ddlOps, nil)
-			atomic.StoreInt32(&ddlAllComplete, 1)
-			c.schemasLock.Unlock()
-			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err1 != nil {
-				break
-			}
-			select {
-			case <-ctx.Done():
-				log.Infof("Time is up, exit schrddl")
-				return nil
-			default:
-			}
-		}
-		return errors.Trace(err1)
-	}, func() error {
-		var err2 error
-		for {
-			err2 = exeDMLFunc(c, c.dmlOps, func() error {
-				return nil
-			})
-			atomic.StoreInt32(&dmlAllComplete, 1)
-			if atomic.LoadInt32(&ddlAllComplete) != 0 && atomic.LoadInt32(&dmlAllComplete) != 0 || err2 != nil {
-				break
-			}
-			select {
-			case <-ctx.Done():
-				log.Infof("Time is up, exit schrddl")
-				return nil
-			default:
-			}
-		}
-		return errors.Trace(err2)
-	})
+				cntOfOld = len(rs1)
+				rs2, err := c.execQuery(newQuery)
+				println(fmt.Sprintf("%s;", newQuery))
+				if err != nil {
+					if dmlIgnoreError(err) {
+						return false, nil
+					} else {
+						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
+						return false, err
+					}
+				}
+				for _, row := range rs2 {
+					if row[0] == "'1'" {
+						cntOfNew++
+					}
+				}
 
-	if err != nil {
-		ddlFailedCounter.Inc()
-		return errors.Trace(err)
+				return cntOfOld != cntOfNew, nil
+			}
+
+			querySQL, err := sqlgenerator.Query.Eval(state)
+			if err != nil {
+				return err
+			}
+
+			found, err := checker(querySQL)
+			if err != nil {
+				return err
+			}
+			if found {
+				reduceSQL := reduce.ReduceSQL(checker, querySQL)
+				checker(reduceSQL)
+				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
+				if err != nil {
+					return err
+				}
+				break
+			}
+		}
 	}
 
 	log.Infof("[ddl] [instance %d] Round completed", c.caseIndex)
