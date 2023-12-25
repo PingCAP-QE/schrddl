@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/PingCAP-QE/schrddl/dump"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/format"
@@ -52,6 +53,8 @@ type CaseConfig struct {
 	TablesToCreate  int
 	TestTp          DDLTestType
 }
+
+var globalBugSeqNum int64 = 0
 
 type DDLTestType int
 
@@ -691,9 +694,15 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				reduceSQL := reduce.ReduceSQL(checker, querySQL)
 				checker(reduceSQL)
 				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
+				globalBugSeqNum++
+				num := globalBugSeqNum
+
+				// Dump data.
+				tblNames, err := dump.ExtraFromSQL(reduceSQL)
 				if err != nil {
 					return err
 				}
+				dump.DumpToFile("test", tblNames, fmt.Sprintf("bug-%s-%d", time.Now().Format("2006-01-02T15:04:05"), num))
 				break
 			}
 		}
