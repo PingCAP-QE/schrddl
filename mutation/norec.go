@@ -5,10 +5,30 @@ import (
 )
 
 type NoRecRewriter struct {
-	pred []ast.Node
+	pred      []ast.Node
+	invalid   bool
+	ctes      []string
+	insideCte bool
 }
 
-func (nr NoRecRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
+func (nr *NoRecRewriter) Reset() {
+	nr.invalid = false
+	nr.ctes = make([]string, 0)
+	nr.insideCte = false
+}
+
+func (nr *NoRecRewriter) Valid() bool {
+	return !nr.invalid
+}
+
+func (nr *NoRecRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
+	switch v := n.(type) {
+	case *ast.WithClause:
+		for _, cte := range v.CTEs {
+			nr.ctes = append(nr.ctes, cte.Name.String())
+		}
+		nr.insideCte = true
+	}
 	return n, false
 }
 
@@ -39,14 +59,21 @@ func detectAgg(sel *ast.SelectStmt) bool {
 	return false
 }
 
-func (nr NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
+func (nr *NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 	switch v := n.(type) {
+	case *ast.WithClause:
+		nr.insideCte = false
 	case *ast.SelectStmt:
+		if nr.insideCte {
+			// Do not rewrite CTE
+			return n, true
+		}
 		hasAgg := detectAgg(v)
 		if !hasAgg {
 			whereNode := v.Where
 			if whereNode == nil {
-				return nil, true
+				nr.invalid = true
+				return n, true
 			}
 			pExpr := &ast.ParenthesesExpr{Expr: whereNode}
 			newExpr := ast.IsTruthExpr{Expr: pExpr, Not: false, True: 1}
@@ -61,7 +88,8 @@ func (nr NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 			v.OrderBy = nil
 		} else {
 			if v.Having == nil {
-				return nil, true
+				nr.invalid = true
+				return n, true
 			}
 			havingExpr := v.Having.Expr
 			pExpr := &ast.ParenthesesExpr{Expr: havingExpr}

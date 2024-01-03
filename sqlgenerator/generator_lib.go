@@ -210,15 +210,74 @@ func Num(v int) string {
 	return strconv.FormatInt(int64(v), 10)
 }
 
+var UbigInt = []uint64{
+	0, 1, 2, 9223372036854775807, 9223372036854775808, 18446744073709551615,
+}
+
+var CornerCaseUnsignedNumMap = map[int64][]int64{
+	// Unsigned
+	255:        {0, 1, 2, 127, 128, 255},
+	65535:      {0, 1, 2, 32767, 32768, 65535},
+	16777215:   {0, 1, 2, 8388607, 8388608, 16777215},
+	4294967295: {0, 1, 2, 2147483647, 2147483648, 4294967295},
+
+	// Signed
+	127:                 {-128, -127, -1, 0, 1, 2, 127},
+	32767:               {-32768, -32767, -1, 0, 1, 2, 32767},
+	8388607:             {-8388608, -8388607, -1, 0, 1, 2, 8388607},
+	2147483647:          {-2147483648, -2147483647, -1, 0, 1, 2, 2147483647},
+	9223372036854775807: {-9223372036854775808, -9223372036854775807, -1, 0, 1, 2, 9223372036854775807},
+}
+
+func Int63nWithSpecialValue(low, high int64) int64 {
+	if rand.Intn(10) != 0 {
+		if high == 9223372036854775807 {
+			return rand.Int63()
+		}
+		return rand.Int63n(high-low+1) + low
+	}
+	cases, ok := CornerCaseUnsignedNumMap[high]
+	if !ok {
+		if rand.Intn(1) == 0 {
+			return low
+		} else {
+			return high
+		}
+	}
+	return cases[rand.Intn(len(cases))]
+}
+
+func Int63nWithSpecialValueUBig() uint64 {
+	if rand.Intn(10) != 0 {
+		return rand.Uint64()
+	}
+	return UbigInt[rand.Intn(len(UbigInt))]
+}
+
 func RandomNum(low, high int64) string {
-	num := rand.Int63n(high - low + 1)
+	num := Int63nWithSpecialValue(low, high)
 	return strconv.FormatInt(num+low, 10)
+}
+
+func RandomNumsUBig(count int) []string {
+	nums := make([]uint64, count)
+	for i := 0; i < count; i++ {
+		nums[i] = Int63nWithSpecialValueUBig()
+	}
+	sort.Slice(nums, func(i, j int) bool {
+		return nums[i] < nums[j]
+	})
+	result := make([]string, count)
+	for i := 0; i < count; i++ {
+		result[i] = strconv.FormatUint(nums[i], 10)
+	}
+	return result
 }
 
 func RandomNums(low, high int64, count int) []string {
 	nums := make([]int64, count)
 	for i := 0; i < count; i++ {
-		nums[i] = low + rand.Int63n(high-low+1)
+		nums[i] = Int63nWithSpecialValue(low, high)
 	}
 	sort.Slice(nums, func(i, j int) bool {
 		return nums[i] < nums[j]

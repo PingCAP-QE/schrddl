@@ -9,11 +9,13 @@ import (
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/format"
+	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
 	"math/rand"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -55,6 +57,8 @@ type CaseConfig struct {
 }
 
 var globalBugSeqNum int64 = 0
+var globalRunQueryCnt atomic.Int64
+var globalSuccessQueryCnt atomic.Int64
 
 type DDLTestType int
 
@@ -190,9 +194,22 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 	}
 }
 
+func statloop() {
+	tick := time.NewTicker(10 * time.Second)
+	for {
+		select {
+		case <-tick.C:
+			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()))
+		}
+	}
+}
+
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
 func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
 	log.Infof("[%s] start to test...", c)
+	go func() {
+		statloop()
+	}()
 	defer func() {
 		log.Infof("[%s] test end...", c)
 	}()
@@ -522,6 +539,10 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		rows.Close()
+	}()
+
 	// Read all rows.
 	var actualRows [][]string
 	for rows.Next() {
@@ -562,7 +583,6 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 	if rows.Err() != nil {
 		return nil, rows.Err()
 	}
-	rows.Close()
 
 	return actualRows, nil
 }
@@ -580,9 +600,11 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 	state.SetWeight(sqlgenerator.WhereClause, 1)
 	state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
-	state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
-	state.SetWeight(sqlgenerator.PartitionDefinitionList, 1000)
-	state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
+	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
+	//state.SetWeight(sqlgenerator.PartitionDefinitionList, 1000)
+	//state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
+
+	//state.SetWeight(sqlgenerator.AggSelect, 0)
 
 	// Sub query is hard for NoREC
 	state.SetWeight(sqlgenerator.SubSelect, 0)
@@ -600,7 +622,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 			return err
 		}
 		err = c.execSQL(startSQL)
-		println(fmt.Sprintf("%s;", startSQL))
+		//println(fmt.Sprintf("%s;", startSQL))
 		if err != nil {
 			return err
 		}
@@ -638,21 +660,23 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 					return false, err
 				}
 				stmt := stmts[0]
+				rewriter.Reset()
 				newStmt, _ := stmt.Accept(rewriter)
-				if newStmt == nil {
+				if !rewriter.Valid() {
 					// No predicate, continue
 					return false, nil
 				}
 				sb.Reset()
-				err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags, &sb))
+				err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags|format.RestoreStringWithoutDefaultCharset, &sb))
 				if err != nil {
 					return false, err
 				}
 				newQuery = sb.String()
 
 				// send queries to tidb and check the result
+				globalRunQueryCnt.Add(1)
 				rs1, err := c.execQuery(querySQL)
-				println(fmt.Sprintf("%s;", querySQL))
+				//println(fmt.Sprintf("%s;", querySQL))
 				if err != nil {
 					if dmlIgnoreError(err) {
 						return false, nil
@@ -661,9 +685,10 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 						return false, err
 					}
 				}
+				globalSuccessQueryCnt.Add(1)
 				cntOfOld = len(rs1)
 				rs2, err := c.execQuery(newQuery)
-				println(fmt.Sprintf("%s;", newQuery))
+				//println(fmt.Sprintf("%s;", newQuery))
 				if err != nil {
 					if dmlIgnoreError(err) {
 						return false, nil
@@ -681,16 +706,20 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				return cntOfOld != cntOfNew, nil
 			}
 
-			querySQL, err := sqlgenerator.Query.Eval(state)
+			querySQL, err := sqlgenerator.CTEQueryStatement.Eval(state)
 			if err != nil {
 				return err
 			}
+
+			//println(fmt.Sprintf("%s;", querySQL))
 
 			found, err := checker(querySQL)
 			if err != nil {
 				return err
 			}
 			if found {
+				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s", cntOfOld, cntOfNew, querySQL, newQuery))
+
 				reduceSQL := reduce.ReduceSQL(checker, querySQL)
 				checker(reduceSQL)
 				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
@@ -702,7 +731,8 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				if err != nil {
 					return err
 				}
-				dump.DumpToFile("test", tblNames, fmt.Sprintf("bug-%s-%d", time.Now().Format("2006-01-02T15:04:05"), num))
+				pwd := os.Getenv("PWD")
+				dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num))
 				break
 			}
 		}

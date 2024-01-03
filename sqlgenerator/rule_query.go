@@ -8,6 +8,13 @@ import (
 	"github.com/cznic/mathutil"
 )
 
+var QueryOrCTE = NewFn(func(state *State) Fn {
+	return Or(
+		Query,
+		CTEQueryStatement,
+	)
+})
+
 var Query = NewFn(func(state *State) Fn {
 	return Or(
 		SingleSelect,
@@ -366,7 +373,7 @@ var Predicates = NewFn(func(state *State) Fn {
 		if state.env.QState != nil {
 			state.env.Table = state.env.QState.GetRandTable()
 		} else if state.env.Table == nil {
-			state.env.Table = state.Tables.Rand()
+			state.env.Table = state.GetRandTableOrCTE()
 		}
 		state.env.Column = state.env.Table.Columns.Rand()
 		p, err := Predicate.Eval(state)

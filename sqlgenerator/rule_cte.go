@@ -10,6 +10,16 @@ import (
 var CTEQueryStatementReplacement Fn
 
 var CTEQueryStatement = NewFn(func(state *State) Fn {
+	tbl := state.Tables.Rand()
+	state.env.QState = &QueryState{
+		SelectedCols: map[*Table]QueryStateColumns{
+			tbl: {
+				Columns: tbl.Columns,
+				Attr:    make([]string, len(tbl.Columns)),
+			},
+		},
+		AggCols: make(map[*Table]Columns),
+	}
 	return And(WithClause, SimpleCTEQuery)
 })
 
@@ -24,6 +34,16 @@ var CTEDMLStatement = NewFn(func(state *State) Fn {
 var SimpleCTEQuery = NewFn(func(state *State) Fn {
 	parentCTE := state.ParentCTE()
 	ctes := state.PopCTE()
+
+	state.env.QState.SelectedCols = map[*Table]QueryStateColumns{}
+	for _, cte := range ctes {
+		state.env.QState.SelectedCols[cte] = QueryStateColumns{
+			Columns: cte.Columns,
+			Attr:    make([]string, len(cte.Columns)),
+		}
+	}
+
+	state.env.QState.CTEs = ctes
 	if rand.Intn(10) == 0 {
 		c := rand.Intn(len(ctes))
 		for i := 0; i < c; i++ {
@@ -42,14 +62,14 @@ var SimpleCTEQuery = NewFn(func(state *State) Fn {
 	colNames := make([]string, 0)
 	colNames = append(colNames, "1")
 	for i := range ctes {
-		ctes[i].AsName = fmt.Sprintf("cte_as_%d", state.alloc.AllocCTEID())
-		cteNames = append(cteNames, fmt.Sprintf("%s as %s", ctes[i].Name, ctes[i].AsName))
+		//ctes[i].AsName = fmt.Sprintf("cte_as_%d", state.alloc.AllocCTEID())
+		cteNames = append(cteNames, fmt.Sprintf("%s", ctes[i].Name))
 		for _, col := range ctes[i].Columns {
 			if _, ok := colsInfo[col.Tp]; !ok {
 				colsInfo[col.Tp] = make([]string, 0)
 			}
-			colsInfo[col.Tp] = append(colsInfo[col.Tp], fmt.Sprintf("%s.%s", ctes[i].AsName, col.Name))
-			colNames = append(colNames, fmt.Sprintf("%s.%s", ctes[i].AsName, col.Name))
+			colsInfo[col.Tp] = append(colsInfo[col.Tp], fmt.Sprintf("%s", col.Name))
+			colNames = append(colNames, fmt.Sprintf("%s", col.Name))
 		}
 	}
 
@@ -74,39 +94,42 @@ var SimpleCTEQuery = NewFn(func(state *State) Fn {
 		Str(strings.Join(colNames, ",")),
 		Str("from"),
 		Str(strings.Join(cteNames, ",")),
-		If(rand.Intn(10) == 0,
-			And(
-				Str("where exists ("),
-				Query,
-				Str(")"),
-			),
-		),
+		Str("where"),
+		Predicates,
+		//If(rand.Intn(10) == 0,
+		//	And(
+		//		Str("where exists ("),
+		//		Query,
+		//		Str(")"),
+		//	),
+		//),
 		If(parentCTE == nil,
 			And(
 				Str("order by"),
 				Str(strings.Join(orderByFields, ",")),
 			),
 		),
-		And(Str("limit"), Str(RandomNum(0, 20))),
+		Opt(Limit),
 		Str(")"),
 	)
 })
 
 var WithClause = NewFn(func(state *State) Fn {
-	validSQLPercent := 75
+	//validSQLPercent := 75
 	state.IncCTEDeep()
 	return And(
 		Str("with"),
-		Or(
-			If(ShouldValid(validSQLPercent), Str("recursive")),
-			Str("recursive"),
-		),
-		Repeat(CTEDefinition.R(1, 3), Str(",")),
+		//Or(
+		//	If(ShouldValid(validSQLPercent), Str("recursive")),
+		//	Str("recursive"),
+		//),
+		//Repeat(CTEDefinition.R(1, 3), Str(",")),
+		CTEDefinition,
 	)
 })
 
 var CTEDefinition = NewFn(func(state *State) Fn {
-	validSQLPercent := 75
+	validSQLPercent := 100
 	cte := state.GenNewCTE()
 	colCnt := state.ParentCTEColCount()
 	if colCnt == 0 {
@@ -134,7 +157,7 @@ var CTEDefinition = NewFn(func(state *State) Fn {
 })
 
 var CTESeedPart = NewFn(func(state *State) Fn {
-	validSQLPercent := 75
+	validSQLPercent := 100
 	tbl := state.Tables.Rand()
 	currentCTE := state.CurrentCTE()
 	fields := make([]string, len(currentCTE.Columns)-1)
@@ -212,13 +235,13 @@ var CTEExpressionParens = NewFn(func(state *State) Fn {
 	return And(
 		Str("("),
 		CTESeedPart,
-		Opt(
-			And(
-				Str("UNION"),
-				UnionOption,
-				CTERecursivePart,
-			),
-		),
+		//Opt(
+		//	And(
+		//		Str("UNION"),
+		//		UnionOption,
+		//		CTERecursivePart,
+		//	),
+		//),
 		Str(")"))
 })
 

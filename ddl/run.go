@@ -135,6 +135,7 @@ var ddlIgnoreList = []string{
 	"cannot be used in key specification",
 	"Adding clustered primary key",
 	"Invalid use of NULL value",
+	"can not get 'tikv_gc_safe_point'",
 }
 
 func dmlIgnoreError(err error) bool {

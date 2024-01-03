@@ -199,11 +199,17 @@ type QueryState struct {
 	AggCols      map[*Table]Columns
 	IsAgg        bool
 	FieldNumHint int
+	CTEs         []*Table
 }
 
 type QueryStateColumns struct {
 	Columns
 	Attr []string
+}
+
+func (q QueryState) GetRandCTETable() *Table {
+	idx := rand.Intn(len(q.CTEs))
+	return q.CTEs[idx]
 }
 
 func (q QueryState) GetRandTable() *Table {

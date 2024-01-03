@@ -17,7 +17,7 @@ func DumpToFile(dbName string, tblName []string, fileName string) error {
 		ns[i] = fmt.Sprintf("%s.%s", dbName, v)
 	}
 	var err error
-	conf.TableFilter, err = export.ParseTableFilter(ns, []string{export.DefaultTableFilter})
+	conf.TableFilter, err = export.ParseTableFilter(ns, []string{"*.*", export.DefaultTableFilter})
 	if err != nil {
 		logutil.BgLogger().Warn("failed to parse filter", zap.Error(err))
 		return err

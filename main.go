@@ -18,6 +18,8 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
@@ -90,5 +92,9 @@ func main() {
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
 	prepareEnv()
+	go func() {
+		http.ListenAndServe("127.0.0.1:6060", nil)
+	}()
+
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }

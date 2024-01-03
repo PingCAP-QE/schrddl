@@ -17,16 +17,13 @@ func tryARule(check func(sql string) (bool, error), sql string, r rule, s *reduc
 	if err != nil {
 		return sql, err
 	}
-	ok := r.apply(&n)
-	if !ok {
-		s.ruleState[r] = true
-		return "", nil
-	}
+	more := r.apply(&n)
+	s.ruleState[r] = more
 	trySQL, err := util.Ast2SQL(n)
 	if err != nil {
 		return "", err
 	}
-	ok, err = check(trySQL)
+	ok, err := check(trySQL)
 	if err != nil {
 		return "", err
 	}

@@ -46,7 +46,7 @@ func TestNoRecSimple(t *testing.T) {
 	stmt := stmts[0]
 	newStmt, _ := stmt.Accept(rewriter)
 	sb.Reset()
-	err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags, &sb))
+	err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags|format.RestoreStringWithoutDefaultCharset, &sb))
 	require.NoError(t, err)
 	newQuery := sb.String()
 	println("", newQuery)

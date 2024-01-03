@@ -222,7 +222,7 @@ func (c *Column) RandomValuesAsc(count int) []string {
 		case ColumnTypeInt:
 			return RandomNums(0, 4294967295, count)
 		case ColumnTypeBigInt:
-			return RandomNums(0, 9223372036854775806, count)
+			return RandomNumsUBig(count)
 		}
 	}
 	switch c.Tp {
@@ -235,7 +235,7 @@ func (c *Column) RandomValuesAsc(count int) []string {
 	case ColumnTypeInt:
 		return RandomNums(-2147483648, 2147483647, count)
 	case ColumnTypeBigInt:
-		return RandBigInts(count)
+		return RandomNums(-9223372036854775808, 9223372036854775807, count)
 	case ColumnTypeBoolean:
 		return RandomNums(0, 1, count)
 	case ColumnTypeFloat, ColumnTypeDouble:

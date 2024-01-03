@@ -58,7 +58,8 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("ord([%fn])", s1),
 		Strf("position([%fn] in [%fn])", s1, s2),
 		Strf("quote([%fn])", s1),
-		Strf("repeat([%fn], [%fn])", s1, i1),
+		// TODO: fix OOM.
+		//Strf("repeat([%fn], [%fn])", s1, i1),
 		Strf("replace([%fn], [%fn], [%fn])", s1, s2, s1),
 		Strf("reverse([%fn])", s1),
 		Strf("right([%fn], [%fn])", s1, n1),

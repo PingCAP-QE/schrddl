@@ -49,7 +49,8 @@ func simpleExprRule(node *ast.ExprNode) bool {
 			exprNode := v.L.(ast.ExprNode)
 			// Recursively apply the rule.
 			if _, ok := exprNode.(*ast.BinaryOperationExpr); ok && rand.Intn(2) == 0 {
-				return simpleExprRule(&exprNode)
+				simpleExprRule(&exprNode)
+				return true
 			}
 			node = &exprNode
 			return true
@@ -57,7 +58,8 @@ func simpleExprRule(node *ast.ExprNode) bool {
 			exprNode := v.R.(ast.ExprNode)
 			// Recursively apply the rule.
 			if _, ok := exprNode.(*ast.BinaryOperationExpr); ok && rand.Intn(2) == 0 {
-				return simpleExprRule(&exprNode)
+				simpleExprRule(&exprNode)
+				return true
 			}
 			node = &exprNode
 			return true
