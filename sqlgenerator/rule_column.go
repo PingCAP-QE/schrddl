@@ -357,5 +357,8 @@ var ColumnDefinitionTypesJSON = NewFn(func(state *State) Fn {
 	}
 	col := state.env.Column
 	col.Tp = ColumnTypeJSON
+	// TODO: support non-array JSON column.
+	col.Array = true
+	col.SubType = randArrayTp[rand.Intn(len(randArrayTp))]
 	return Str("json")
 })

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/PingCAP-QE/schrddl/dump"
+	"github.com/PingCAP-QE/schrddl/norec"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/format"
@@ -13,13 +14,14 @@ import (
 	"go.uber.org/zap"
 	"math/rand"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
-	"github.com/PingCAP-QE/schrddl/mutation"
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
@@ -79,136 +81,35 @@ func (c *DDLCase) String() string {
 	return "ddl"
 }
 
-func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
-	tk := time.NewTicker(100 * time.Millisecond)
-	var jobmeta []byte
-	lastInternalJobId := int64(0)
-
-	rows, err := db.QueryContext(context.Background(), "select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' order by ddl_jobs.job_id desc limit 1;")
-	if err != nil {
-		return
-	}
-	if rows.Next() {
-		err = rows.Scan(&jobmeta)
-		if err != nil {
-			return
-		}
-		var job model.Job
-		err = json.Unmarshal(jobmeta, &job)
-		if err != nil {
-			log.Infof("unmarshal error %s", err.Error())
-		}
-		lastInternalJobId = job.ID
-	}
-
-	err = rows.Close()
-	if err != nil {
-		return
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Infof("Time is up, exit schrddl")
-			return
-		case <-tk.C:
-		}
-		rows, err := db.QueryContext(context.Background(), fmt.Sprintf("select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' and ddl_jobs.job_id > %d order by ddl_jobs.job_id limit 1;", lastInternalJobId))
-		if err != nil {
-			return
-		}
-		if !rows.Next() {
-			continue
-		}
-		err = rows.Scan(&jobmeta)
-		if err != nil {
-			return
-		}
-		err = rows.Close()
-		if err != nil {
-			return
-		}
-
-		var job model.Job
-		err = json.Unmarshal(jobmeta, &job)
-		if err != nil {
-			log.Infof("unmarshal error %s", err.Error())
-		}
-		seq := job.SeqNum
-		globalDDLSeqNumMu.Lock()
-		log.Warn("update seq", seq, globalDDLSeqNum, job.ID, lastInternalJobId)
-		if seq == globalDDLSeqNum+1 {
-			globalDDLSeqNum = seq
-			lastInternalJobId = job.ID
-		}
-		globalDDLSeqNumMu.Unlock()
-	}
-}
-
-func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
-	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
-	for {
-		select {
-		case <-ctx.Done():
-			log.Infof("Time is up, exit schrddl")
-			return
-		case <-tk.C:
-			tk.Reset(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
-		}
-		if rand.Intn(3) != 0 {
-			continue
-		}
-		log.Info("[ddl] check ddl jobs")
-		// Stop new ddl.
-		globalCheckDDLMu.Lock()
-		startTime := time.Now()
-		preJobCnt := 0
-		for {
-			row, err := db.Query("select count(*) from mysql.tidb_ddl_job")
-			if err != nil {
-				log.Warnf("read tidb_ddl_job failed", err)
-				break
-			}
-			row.Next()
-			var jobCnt int
-			err = row.Scan(&jobCnt)
-			if err != nil {
-				log.Fatal("read job cnt from row failed")
-			}
-			err = row.Close()
-			if err != nil {
-				log.Warnf("close query failed", err)
-				break
-			}
-			if jobCnt == 0 {
-				break
-			}
-			timeout := time.Duration(concurrency*120)*time.Second + CheckDDLExtraTimeout
-			if time.Since(startTime) > timeout && preJobCnt == jobCnt {
-				log.Fatalf("cannot finish all DDL in %f seconds", timeout.Seconds())
-			}
-			preJobCnt = jobCnt
-			time.Sleep(3 * time.Second)
-		}
-		globalCheckDDLMu.Unlock()
-	}
-}
-
-func statloop() {
+func (c *DDLCase) statloop() {
 	tick := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-tick.C:
-			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()))
+			subcaseStat := make([]string, 20)
+			for _, c := range c.cases {
+				subcaseStat = append(subcaseStat, fmt.Sprintf("%d", len(c.queryPlanMap)))
+				//i := 0
+				//for k, v := range c.queryPlanMap {
+				//	logutil.BgLogger().Warn("sample query plan", zap.String("plan", k), zap.String("query", v))
+				//	i++
+				//	if i >= 10 {
+				//		break
+				//	}
+				//}
+			}
+
+			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()), zap.Int64("fetch json row val:", sqlgenerator.GlobalFetchJsonRowValCnt.Load()),
+				zap.Strings("unique query plan", subcaseStat))
 		}
 	}
 }
 
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
-func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
+func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB) error {
 	log.Infof("[%s] start to test...", c)
 	go func() {
-		statloop()
+		c.statloop()
 	}()
 	defer func() {
 		log.Infof("[%s] test end...", c)
@@ -219,7 +120,7 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 		go func(i int) {
 			defer wg.Done()
 			for {
-				err := c.cases[i].execute(ctx, exeDDLFunc, exeDMLFunc)
+				err := c.cases[i].execute(ctx)
 				if err != nil {
 					for _, dbs := range dbss {
 						for _, db := range dbs {
@@ -308,6 +209,7 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 			stop:         0,
 			tableMap:     make(map[string]*sqlgenerator.Table),
 			outputWriter: outputfile,
+			queryPlanMap: make(map[string]string),
 		}
 	}
 	b := &DDLCase{
@@ -356,30 +258,8 @@ type dmlJobTask struct {
 // initialize generates possible DDL and DML operations for one `testCase`.
 // Different `testCase`s will be run in parallel according to the concurrent configuration.
 func (c *testCase) initialize(dbs []*sql.DB) error {
-	var err error
+	//var err error
 	c.dbs = dbs
-	if err = c.generateDDLOps(); err != nil {
-		return errors.Trace(err)
-	}
-	if err = c.generateDMLOps(); err != nil {
-		return errors.Trace(err)
-	}
-	// Create 2 table before executes DDL & DML
-	taskCh := make(chan *ddlJobTask, 2)
-	c.prepareAddTable(nil, taskCh)
-	c.prepareAddTable(nil, taskCh)
-	if c.cfg.TestTp == SerialDDLTest {
-		err = c.execSerialDDLSQL(taskCh)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		err = c.execSerialDDLSQL(taskCh)
-	} else {
-		err = c.execParaDDLSQL(taskCh, len(taskCh))
-	}
-	if err != nil {
-		return errors.Trace(err)
-	}
 	return nil
 }
 
@@ -387,131 +267,6 @@ func (c *testCase) initialize(dbs []*sql.DB) error {
 func (c *testCase) setCharsetsAndCollates(charsets []string, charsetsCollates map[string][]string) {
 	c.charsets = charsets
 	c.charsetsCollates = charsetsCollates
-}
-
-/*
-ParallelExecuteOperations executes process:
-1. Generate many kind of DDL SQLs
-2. Parallel send every kind of DDL request to TiDB
-3. Wait all DDL SQLs request finish
-4. Send `admin show ddl jobs` request to TiDB to confirm parallel DDL requests execute order
-5. Do the same DDL change on local with the same DDL requests executed order of TiDB
-6. Judge the every DDL execution result of TiDB and local. If both of local and TiDB execute result are no wrong, or both are wrong it will be ok. Otherwise, It must be something wrong.
-*/
-func ParallelExecuteOperations(c *testCase, ops []ddlTestOpExecutor, postOp func() error) error {
-	perm := rand.Perm(len(ops))
-	taskCh := make(chan *ddlJobTask, len(ops))
-	for _, idx := range perm {
-		if c.isStop() {
-			return nil
-		}
-		op := ops[idx]
-		if rand.Float64() > mapOfDDLKindProbability[op.ddlKind] {
-			continue
-		}
-		op.executeFunc(op.config, taskCh)
-	}
-	err := c.execParaDDLSQL(taskCh, len(taskCh))
-	if err != nil {
-		return errors.Trace(err)
-	}
-	close(taskCh)
-	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-	return nil
-}
-
-func SerialExecuteOperations(c *testCase, ops []ddlTestOpExecutor, postOp func() error) error {
-	perm := rand.Perm(len(ops))
-	taskCh := make(chan *ddlJobTask, 1)
-	for _, idx := range perm {
-		if c.isStop() {
-			return nil
-		}
-		op := ops[idx]
-		// Test case weight.
-		if rand.Float64() > mapOfDDLKindProbability[op.ddlKind] {
-			continue
-		}
-		op.executeFunc(op.config, taskCh)
-		err := c.execSerialDDLSQL(taskCh)
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
-	close(taskCh)
-	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-	return nil
-}
-
-func TransactionExecuteOperations(c *testCase, ops []dmlTestOpExecutor, postOp func() error) error {
-	transactionOpsLen := rand.Intn(len(ops))
-	if transactionOpsLen < 1 {
-		transactionOpsLen = 1
-	}
-	taskCh := make(chan *dmlJobTask, len(ops))
-	opNum := 0
-	perm := rand.Perm(len(ops))
-	for i, idx := range perm {
-		if c.isStop() {
-			return nil
-		}
-		op := ops[idx]
-		err := op.prepareFunc(op.config, taskCh)
-		if err != nil {
-			if err.Error() != "Conflict operation" {
-				return errors.Trace(err)
-			}
-			continue
-		}
-		opNum++
-		if opNum >= transactionOpsLen {
-			err = c.execDMLInTransactionSQL(taskCh)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			transactionOpsLen = rand.Intn(len(ops))
-			if transactionOpsLen < 1 {
-				transactionOpsLen = 1
-			}
-			if transactionOpsLen > (len(ops) - i) {
-				transactionOpsLen = len(ops) - i
-			}
-			opNum = 0
-			if postOp != nil && rand.Intn(5) == 0 {
-				err = postOp()
-				if err != nil {
-					return errors.Trace(err)
-				}
-			}
-			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-		}
-	}
-	return nil
-}
-
-func SerialExecuteDML(c *testCase, ops []dmlTestOpExecutor, postOp func() error) error {
-	perm := rand.Perm(len(ops))
-	taskCh := make(chan *dmlJobTask, 1)
-	for _, idx := range perm {
-		if c.isStop() {
-			return nil
-		}
-		op := ops[idx]
-		err := op.prepareFunc(op.config, taskCh)
-		if err != nil {
-			if err.Error() != "Conflict operation" {
-				return errors.Trace(err)
-			}
-			continue
-		}
-		err = c.execSerialDMLSQL(taskCh)
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
-	close(taskCh)
-	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-	return nil
 }
 
 func (c *testCase) checkError(err error) error {
@@ -531,7 +286,25 @@ func (c *testCase) execSQL(sql string) error {
 	if err != nil && dmlIgnoreError(err) || ddlIgnoreError(err) {
 		return nil
 	}
-	return err
+	return errors.Trace(err)
+}
+
+func (c *testCase) execQueryForCnt(sql string) (int, error) {
+	rows, err := c.dbs[0].Query(sql)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		rows.Close()
+	}()
+	rs := 0
+	for rows.Next() {
+		rs++
+	}
+	if rows.Err() != nil {
+		return 0, rows.Err()
+	}
+	return rs, nil
 }
 
 func (c *testCase) execQuery(sql string) ([][]string, error) {
@@ -591,17 +364,17 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
 // When both of them ONCE complete, it exits.
-func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
+func (c *testCase) execute(ctx context.Context) error {
 	state := sqlgenerator.NewState()
+	state.SetWeight(sqlgenerator.RenameColumn, 0)
 	state.SetWeight(sqlgenerator.WindowFunction, 0)
 	state.SetWeight(sqlgenerator.WindowClause, 0)
 	state.SetWeight(sqlgenerator.WindowFunctionOverW, 0)
-	state.SetWeight(sqlgenerator.JSONPredicate, 0)
 	state.SetWeight(sqlgenerator.WhereClause, 1)
 	state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
-	//state.SetWeight(sqlgenerator.PartitionDefinitionList, 1000)
+	state.SetWeight(sqlgenerator.PartitionDefinitionList, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
 
 	//state.SetWeight(sqlgenerator.AggSelect, 0)
@@ -612,8 +385,12 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 	// bug
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesEnum, 0)
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesSet, 0)
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesYear, 0)
+
+	//state.Hook().Append(sqlgenerator.NewFnHookDebug())
 
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
+	state.SetWeight(sqlgenerator.JSONPredicate, 0)
 
 	prepareStmtCnt := 50
 	for i := 0; i < prepareStmtCnt; i++ {
@@ -628,18 +405,72 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		}
 	}
 
+	err := c.execSQL("set @@max_execution_time=3000")
+	if err != nil {
+		return err
+	}
+
+	tableMetas := make([]*model.TableInfo, 0)
+	for i := 0; i < len(state.Tables); i++ {
+		path := fmt.Sprintf("127.0.0.1:10080/schema/%s/%s", c.initDB, state.Tables[i].Name)
+		rawMeta, err := exec.Command("curl", path).Output()
+		if err != nil {
+			log.Infof("curl error %s", err.Error())
+			continue
+		}
+		var meta model.TableInfo
+		err = json.Unmarshal(rawMeta, &meta)
+		if err != nil {
+			logutil.BgLogger().Warn("unmarshal error", zap.Error(err), zap.String("table name", state.Tables[i].Name))
+			state.Tables = append(state.Tables[:i], state.Tables[i+1:]...)
+			i--
+			continue
+		}
+		tableMetas = append(tableMetas, &meta)
+	}
+	for _, table := range tableMetas {
+		log.Infof("table %s", table.Name.O)
+	}
+	log.Infof("tableMetas %d", len(tableMetas))
+	state.SetTableMeta(tableMetas)
+
 	tidbParser := parser.New()
+	cnt := 0
 
 	for {
+		cnt++
+		if cnt%10000 == 0 {
+			err := c.executeAdminCheck()
+			if err != nil {
+				return errors.Trace(err)
+			}
+			err = c.readDataFromTiDB()
+			if err != nil {
+				if !dmlIgnoreError(err) {
+					return errors.Trace(err)
+				}
+			}
+		}
+		if cnt%20000 == 0 && rand.Intn(2) == 0 {
+			break
+		}
+
 		// NoREC
-		rewriter := &mutation.NoRecRewriter{}
+		rewriter := &norec.NoRecRewriter{}
 		var sb strings.Builder
 
 		doDML := rand.Intn(2) == 0
 		if doDML {
 			dmlSQL, err := sqlgenerator.DMLStmt.Eval(state)
+			//println(fmt.Sprintf("%s;", dmlSQL))
 			if err != nil {
 				return err
+			}
+			if rand.Intn(100) == 0 {
+				dmlSQL, err = sqlgenerator.NonDDLMutator[rand.Intn(len(sqlgenerator.NonDDLMutator))].Eval(state)
+				if err != nil {
+					return err
+				}
 			}
 			err = c.execSQL(dmlSQL)
 			if err != nil {
@@ -657,7 +488,8 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				querySQL := sql
 				stmts, _, err := tidbParser.Parse(querySQL, "", "")
 				if err != nil {
-					return false, err
+					logutil.BgLogger().Error("parse error", zap.String("sql", querySQL), zap.Error(err))
+					return false, errors.Trace(err)
 				}
 				stmt := stmts[0]
 				rewriter.Reset()
@@ -666,27 +498,33 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 					// No predicate, continue
 					return false, nil
 				}
+				isAgg := rewriter.IsAgg()
 				sb.Reset()
 				err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags|format.RestoreStringWithoutDefaultCharset, &sb))
 				if err != nil {
-					return false, err
+					return false, errors.Trace(err)
 				}
 				newQuery = sb.String()
 
 				// send queries to tidb and check the result
 				globalRunQueryCnt.Add(1)
-				rs1, err := c.execQuery(querySQL)
+				rs1, err := c.execQueryForCnt(querySQL)
 				//println(fmt.Sprintf("%s;", querySQL))
 				if err != nil {
 					if dmlIgnoreError(err) {
 						return false, nil
 					} else {
 						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
-						return false, err
+						return false, errors.Trace(err)
 					}
 				}
 				globalSuccessQueryCnt.Add(1)
-				cntOfOld = len(rs1)
+				plan, err := c.getQueryPlan(querySQL)
+				if err != nil {
+					return false, errors.Trace(err)
+				}
+				c.queryPlanMap[plan] = querySQL
+				cntOfOld = rs1
 				rs2, err := c.execQuery(newQuery)
 				//println(fmt.Sprintf("%s;", newQuery))
 				if err != nil {
@@ -697,28 +535,39 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 						return false, err
 					}
 				}
-				for _, row := range rs2 {
-					if row[0] == "'1'" {
-						cntOfNew++
+				if isAgg {
+					for _, row := range rs2 {
+						if row[0] != "'0'" && row[0] != ddlTestValueNull {
+							cntOfNew++
+						}
 					}
+				} else if rs2[0][0] == ddlTestValueNull {
+					cntOfNew = 0
+				} else {
+					cn, err := strconv.Atoi(strings.Trim(rs2[0][0], "'"))
+					if err != nil {
+						logutil.BgLogger().Error("convert error", zap.Error(err))
+						return false, err
+					}
+					cntOfNew = cn
 				}
 
 				return cntOfOld != cntOfNew, nil
 			}
 
-			querySQL, err := sqlgenerator.CTEQueryStatement.Eval(state)
+			querySQL, err := sqlgenerator.Query.Eval(state)
 			if err != nil {
-				return err
+				return errors.Trace(err)
 			}
 
 			//println(fmt.Sprintf("%s;", querySQL))
 
 			found, err := checker(querySQL)
 			if err != nil {
-				return err
+				return errors.Trace(err)
 			}
 			if found {
-				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s", cntOfOld, cntOfNew, querySQL, newQuery))
+				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s  ", cntOfOld, cntOfNew, querySQL, newQuery))
 
 				reduceSQL := reduce.ReduceSQL(checker, querySQL)
 				checker(reduceSQL)
@@ -732,7 +581,10 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 					return err
 				}
 				pwd := os.Getenv("PWD")
-				dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num))
+				err = dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num))
+				if err != nil {
+					return err
+				}
 				break
 			}
 		}
@@ -824,7 +676,7 @@ func (c *testCase) readDataFromTiDB() error {
 func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, error) {
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Error when executing SQL: %s\n%s", query)
+		return nil, errors.Annotatef(err, "Error when executing SQL: %s\n", query)
 	}
 	defer func() {
 		rows.Close()

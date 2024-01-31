@@ -38,6 +38,8 @@ type testCase struct {
 
 	tableMap     map[string]*sqlgenerator.Table
 	outputWriter *os.File
+
+	queryPlanMap map[string]string
 }
 
 func (c *testCase) stopTest() {

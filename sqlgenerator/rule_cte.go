@@ -2,6 +2,14 @@ package sqlgenerator
 
 import (
 	"fmt"
+	"github.com/pingcap/tidb/pkg/expression"
+	"github.com/pingcap/tidb/pkg/parser"
+	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/model"
+	"github.com/pingcap/tidb/pkg/types"
+	"github.com/pingcap/tidb/pkg/util/logutil"
+	"github.com/pingcap/tidb/pkg/util/mock"
+	"go.uber.org/zap"
 	"math/rand"
 	"strings"
 )
@@ -43,7 +51,6 @@ var SimpleCTEQuery = NewFn(func(state *State) Fn {
 		}
 	}
 
-	state.env.QState.CTEs = ctes
 	if rand.Intn(10) == 0 {
 		c := rand.Intn(len(ctes))
 		for i := 0; i < c; i++ {
@@ -123,22 +130,22 @@ var WithClause = NewFn(func(state *State) Fn {
 		//	If(ShouldValid(validSQLPercent), Str("recursive")),
 		//	Str("recursive"),
 		//),
-		//Repeat(CTEDefinition.R(1, 3), Str(",")),
-		CTEDefinition,
+		Repeat(CTEDefinition.R(1, 2), Str(",")),
+		//CTEDefinition,
 	)
 })
 
 var CTEDefinition = NewFn(func(state *State) Fn {
 	validSQLPercent := 100
 	cte := state.GenNewCTE()
-	colCnt := state.ParentCTEColCount()
-	if colCnt == 0 {
-		colCnt = 2
-	}
-	cte.AppendColumn(state.GenNewColumnWithType(ColumnTypeInt))
-	for i := 0; i < colCnt+rand.Intn(2); i++ {
-		cte.AppendColumn(state.GenNewColumnWithType(ColumnTypeInt, ColumnTypeChar))
-	}
+	//colCnt := state.ParentCTEColCount()
+	//if colCnt == 0 {
+	//	colCnt = 2
+	//}
+	//cte.AppendColumn(state.GenNewColumnWithType(ColumnTypeInt))
+	//for i := 0; i < colCnt+rand.Intn(2); i++ {
+	//	cte.AppendColumn(state.GenNewColumnWithType(ColumnTypeInt, ColumnTypeChar))
+	//}
 	if !ShouldValid(validSQLPercent) {
 		if RandomBool() && state.GetCTECount() != 0 {
 			cte.Name = state.GetRandomCTE().Name
@@ -148,54 +155,166 @@ var CTEDefinition = NewFn(func(state *State) Fn {
 	}
 	state.PushCTE(cte)
 
+	tbl1 := state.Tables.Rand()
+	state.env.QState = &QueryState{
+		SelectedCols: map[*Table]QueryStateColumns{
+			tbl1: {
+				Columns: tbl1.Columns,
+				Attr:    make([]string, len(tbl1.Columns)),
+			},
+		}, AggCols: make(map[*Table]Columns),
+	}
+	if rand.Intn(2) == 0 {
+		tbl2 := state.Tables.Rand()
+		state.env.QState.SelectedCols[tbl2] = QueryStateColumns{
+			Columns: tbl2.Columns,
+			Attr:    make([]string, len(tbl2.Columns)),
+		}
+	}
+
+	ctedef, err := CTEExpressionParens.Eval(state)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+
 	return And(
 		Str(cte.Name),
 		Strs("(", PrintColumnNamesWithoutPar(cte.Columns, ""), ")"),
 		Str("AS"),
-		CTEExpressionParens,
+		Str(ctedef),
 	)
 })
 
-var CTESeedPart = NewFn(func(state *State) Fn {
-	validSQLPercent := 100
-	tbl := state.Tables.Rand()
-	currentCTE := state.CurrentCTE()
-	fields := make([]string, len(currentCTE.Columns)-1)
-	for i := range fields {
-		switch rand.Intn(4) {
-		case 0, 3:
-			cols := tbl.Columns.Filter(func(column *Column) bool {
-				return column.Tp == currentCTE.Columns[i+1].Tp
-			})
-			if len(cols) != 0 {
-				fields[i] = cols[rand.Intn(len(cols))].Name
-				continue
-			}
-			fallthrough
-		case 1:
-			fields[i] = currentCTE.Columns[i+1].RandomValue()
-		case 2:
-			if ShouldValid(validSQLPercent) {
-				fields[i] = PrintConstantWithFunction(currentCTE.Columns[i+1].Tp)
-			} else {
-				fields[i] = fmt.Sprintf("a") // for unknown column
-			}
+func evalTypeToColumnType(evalType types.EvalType) ColumnType {
+	switch evalType {
+	case types.ETInt:
+		return ColumnTypeBigInt
+	case types.ETReal:
+		return ColumnTypeDouble
+	case types.ETDecimal:
+		return ColumnTypeDecimal
+	case types.ETString:
+		return ColumnTypeVarchar
+	case types.ETDatetime:
+		return ColumnTypeDatetime
+	case types.ETTimestamp:
+		return ColumnTypeTimestamp
+	case types.ETDuration:
+		return ColumnTypeTime
+	case types.ETJson:
+		return ColumnTypeJSON
+	default:
+		panic(fmt.Sprintf("unknown eval type %d", evalType))
+	}
+}
+
+func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo) ([]ColumnType, error) {
+	cols := make([]*expression.Column, 0)
+	var names types.NameSlice
+	for _, tbl := range schemas {
+		column, name, err := expression.ColumnInfos2ColumnsAndNames(mock.NewContext(), model.NewCIStr(dbName), tbl.Name, tbl.Cols(), tbl)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, column...)
+		for _, n := range name {
+			names = append(names, n)
 		}
 	}
-
-	if !ShouldValid(validSQLPercent) {
-		fields = append(fields, "1")
+	stmts, _, err := parser.New().ParseSQL(sql)
+	if err != nil {
+		return nil, err
 	}
 
-	return Or(
-		And(
-			Str("select 1,"),
-			Str(strings.Join(fields, ",")),
-			Str("from"),
-			Str(tbl.Name), // todo: it can refer the exist cte and the common table
-		).W(5),
-		CTEQueryStatementReplacement,
-	)
+	ts := make([]ColumnType, 0)
+	fields := stmts[0].(*ast.SelectStmt).Fields.Fields
+	for _, field := range fields {
+		expr, err := expression.RewriteSimpleExprWithNames(mock.NewContext(), field.Expr, expression.NewSchema(cols...), names)
+		if err != nil {
+			return nil, err
+		}
+		ts = append(ts, evalTypeToColumnType(expr.GetType().EvalType()))
+	}
+	return ts, nil
+}
+
+var CTESeedPart = NewFn(func(state *State) Fn {
+	//validSQLPercent := 100
+	//tbl := state.Tables.Rand()
+	currentCTE := state.CurrentCTE()
+
+	var cteDef string
+	var err error
+	var ts []ColumnType
+	maxTry := 100
+	for i := 0; i < maxTry; i++ {
+		cteDef, err = CommonSelect.Eval(state)
+		//logutil.BgLogger().Warn("cte seed part", zap.String("cteDef", cteDef))
+		if err != nil {
+			continue
+		}
+		ts, err = getTypeOfExpressions(cteDef, "test", state.tableMeta)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		logutil.BgLogger().Warn("cte seed part", zap.String("cteDef", cteDef))
+		return NoneBecauseOf(err)
+	}
+	//cteDef, err := CommonSelect.Eval(state)
+	////logutil.BgLogger().Warn("cte seed part", zap.String("cteDef", cteDef))
+	//if err != nil {
+	//	return NoneBecauseOf(err)
+	//}
+	//ts, err := getTypeOfExpressions(cteDef, "test", state.tableMeta)
+	//if err != nil {
+	//	logutil.BgLogger().Warn("get type of expressions failed", zap.String("cteDef", cteDef))
+	//	return NoneBecauseOf(err)
+	//}
+	for _, t := range ts {
+		currentCTE.AppendColumn(state.GenNewColumnWithType(t))
+	}
+
+	//fields := make([]string, len(currentCTE.Columns)-1)
+	//for i := range fields {
+	//	switch rand.Intn(4) {
+	//	case 0, 3:
+	//		cols := tbl.Columns.Filter(func(column *Column) bool {
+	//			return column.Tp == currentCTE.Columns[i+1].Tp
+	//		})
+	//		if len(cols) != 0 {
+	//			fields[i] = cols[rand.Intn(len(cols))].Name
+	//			continue
+	//		}
+	//		fallthrough
+	//	case 1:
+	//		fields[i] = currentCTE.Columns[i+1].RandomValue()
+	//	case 2:
+	//		if ShouldValid(validSQLPercent) {
+	//			fields[i] = PrintConstantWithFunction(currentCTE.Columns[i+1].Tp)
+	//		} else {
+	//			fields[i] = fmt.Sprintf("a") // for unknown column
+	//		}
+	//	}
+	//}
+	//
+	//if !ShouldValid(validSQLPercent) {
+	//	fields = append(fields, "1")
+	//}
+
+	return Str(cteDef)
+
+	//return Or(
+	//	//CommonSelect,
+	//	And(
+	//		Str("select 1,"),
+	//		Str(strings.Join(fields, ",")),
+	//		Str("from"),
+	//		Str(tbl.Name), // todo: it can refer the exist cte and the common table
+	//	).W(5),
+	//	CTEQueryStatementReplacement,
+	//)
 })
 
 var CTERecursivePart = NewFn(func(state *State) Fn {

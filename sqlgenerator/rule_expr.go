@@ -75,7 +75,7 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("ucase([%fn])", s1),
 		Strf("unhex([%fn])", s1),
 		Strf("upper([%fn])", s1),
-		Strf("weight_string([%fn])", s1),
+		//Strf("weight_string([%fn])", s1), bug
 	)
 })
 

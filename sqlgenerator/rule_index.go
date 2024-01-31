@@ -102,14 +102,15 @@ var IndexDefinitionColumnCheckLen = NewFn(func(state *State) Fn {
 	)
 })
 
-var randTp = []string{"SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "date", "datetime", "time"}
+// var randArrayTp = []string{"SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "date", "datetime", "time", "double"}
+var randArrayTp = []string{"SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "SIGNED", "UNSIGNED", "CHAR(64)", "binary(64)", "double"}
 
 var IndexDefinitionColumnNoPrefix = NewFn(func(state *State) Fn {
 	idx := state.env.Index
 	col := state.env.IdxColumn
 	idx.AppendColumn(col, 0)
 	if col.Tp == ColumnTypeJSON {
-		return Str(fmt.Sprintf("(cast(%s as %s array))", col.Name, randTp[rand.Intn(len(randTp))]))
+		return Str(fmt.Sprintf("(cast(%s as %s array))", col.Name, col.SubType))
 	}
 	return Str(col.Name)
 }).P(func(state *State) bool {

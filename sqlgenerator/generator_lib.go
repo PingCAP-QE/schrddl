@@ -31,7 +31,7 @@ func And(fns ...Fn) Fn {
 		var resStr strings.Builder
 		for i, f := range fns {
 			Assert(state.GetPrerequisite(f)(state))
-			if i != 0 {
+			if i != 0 && !f.Equal(PostHandleWith) {
 				resStr.WriteString(" ")
 			}
 			res, err := f.Eval(state)
@@ -39,7 +39,9 @@ func And(fns ...Fn) Fn {
 				log.L().Debug("and() error", zap.String("fn", f.Info), zap.Error(err))
 				return "", err
 			}
-			resStr.WriteString(strings.Trim(res, " "))
+			if !f.Equal(PostHandleWith) {
+				resStr.WriteString(strings.Trim(res, " "))
+			}
 		}
 		return resStr.String(), nil
 	}
@@ -54,6 +56,9 @@ func Or(fns ...Fn) Fn {
 		var errs []error
 		for len(fns) > 0 {
 			chosenFnIdx := randSelectByWeight(state, fns)
+			if chosenFnIdx == -1 {
+				return NoneBecauseOf(fmt.Errorf("or exhausted")).Eval(state)
+			}
 			chosenFn := fns[chosenFnIdx]
 			rs, err := chosenFn.Eval(state)
 			if err != nil {

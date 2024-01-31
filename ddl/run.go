@@ -76,14 +76,6 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		TestTp:          testTp,
 	}
 	ddl := NewDDLCase(&cfg)
-	exeDDLFunc := SerialExecuteOperations
-	if cfg.TestTp == ParallelDDLTest {
-		exeDDLFunc = ParallelExecuteOperations
-	}
-	execDMLFunc := SerialExecuteDML
-	if EnableTransactionTest {
-		execDMLFunc = TransactionExecuteOperations
-	}
 	var err error
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
@@ -95,7 +87,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)
 	}
-	if err := ddl.Execute(ctx, dbss, exeDDLFunc, execDMLFunc); err != nil {
+	if err := ddl.Execute(ctx, dbss); err != nil {
 		log.Fatalf("[ddl] execute error %v", err)
 	}
 }
@@ -104,16 +96,24 @@ var dmlIgnoreList = []string{
 	"Table has no partition",
 	"can't have a default value",
 	"Invalid JSON bytes",
+	"Invalid JSON data provided to function",
+	"Invalid JSON value for CAST",
+	"Invalid JSON text",
+	"Data too long",
 
 	// bug
 	"slice bounds out of range",
 	"index out of range",
 	"writing inconsistent data in table",
 	"should ensure all columns have the same length",
+	"expected integer",
+	"invalid memory address or nil pointer dereference",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
 	"Cant peek from empty bytes",
+
+	"maximum statement execution time exceeded",
 }
 
 var ddlIgnoreList = []string{

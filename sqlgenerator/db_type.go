@@ -1,6 +1,7 @@
 package sqlgenerator
 
 import (
+	"github.com/pingcap/tidb/pkg/parser/model"
 	"math/rand"
 )
 
@@ -19,6 +20,8 @@ type State struct {
 	env *Env
 
 	prepareStmts []*Prepare
+
+	tableMeta []*model.TableInfo
 
 	fnStack string
 }
@@ -52,6 +55,10 @@ type Column struct {
 	IsUnsigned bool
 	Arg1       int // optional
 	Arg2       int // optional
+
+	// for ColumnTypeJSON
+	Array   bool
+	SubType string
 
 	Args       []string // for ColumnTypeSet and ColumnTypeEnum
 	DefaultVal string
@@ -199,17 +206,11 @@ type QueryState struct {
 	AggCols      map[*Table]Columns
 	IsAgg        bool
 	FieldNumHint int
-	CTEs         []*Table
 }
 
 type QueryStateColumns struct {
 	Columns
 	Attr []string
-}
-
-func (q QueryState) GetRandCTETable() *Table {
-	idx := rand.Intn(len(q.CTEs))
-	return q.CTEs[idx]
 }
 
 func (q QueryState) GetRandTable() *Table {
@@ -245,4 +246,8 @@ func (m *MultiObjs) SameObject(name string) bool {
 
 func (m *MultiObjs) AddName(name string) {
 	m.items = append(m.items, name)
+}
+
+func (s *State) SetTableMeta(tableMeta []*model.TableInfo) {
+	s.tableMeta = tableMeta
 }

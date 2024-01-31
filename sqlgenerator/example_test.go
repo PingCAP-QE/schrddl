@@ -259,7 +259,7 @@ func TestCTE(t *testing.T) {
 		fmt.Println(";")
 	}
 	for i := 0; i < 100; i++ {
-		sql, err := sqlgenerator.CTEQueryStatement.Eval(state)
+		sql, err := sqlgenerator.CTESelect.Eval(state)
 		require.NoError(t, err)
 		fmt.Print(sql)
 		fmt.Println(";")

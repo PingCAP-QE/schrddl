@@ -18,7 +18,7 @@ func tryARule(check func(sql string) (bool, error), sql string, r rule, s *reduc
 		return sql, err
 	}
 	more := r.apply(&n)
-	s.ruleState[r] = more
+	s.ruleState[r] = !more
 	trySQL, err := util.Ast2SQL(n)
 	if err != nil {
 		return "", err
@@ -49,7 +49,7 @@ func ReduceSQL(check func(sql string) (bool, error), sql string) string {
 		return newestSQL
 	}
 
-	maxStep := 30
+	maxStep := 200
 
 	s := &reduceState{
 		ruleState: make(map[rule]bool),

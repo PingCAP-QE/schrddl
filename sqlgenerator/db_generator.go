@@ -273,7 +273,8 @@ func (c *Column) RandomValuesAsc(count int) []string {
 	case ColumnTypeYear:
 		return RandYear(count)
 	case ColumnTypeJSON:
-		return RandJsons(count)
+		return RandArrayJsonsWithType(count, c.SubType)
+		//return RandJsons(count)
 	default:
 		log.Fatalf("invalid column type %v", c.Tp)
 		return nil
@@ -390,6 +391,19 @@ func randFloat64(_ bytes.Buffer) string {
 	return strconv.FormatFloat(float64(rand.Intn(2147483647*2)-2147483648)/float64(rand.Intn(30000)), 'f', -1, 64)
 }
 
+func RandArrayJsonsWithType(count int, tp string) []string {
+	res := make([]string, count)
+	for i := range res {
+		json, err := randomArrayJSON(rand.Intn(5)+1, tp)
+		if err != nil {
+			panic(err)
+		}
+		//json = strings.Replace(json, "\"", "\\\"", -1)
+		res[i] = "'" + json + "'"
+	}
+	return res
+}
+
 func RandJsons(count int) []string {
 	res := make([]string, count)
 	for i := range res {
@@ -437,7 +451,7 @@ func RandNumRunes(n int) string {
 func RandStrings(strLen int, count int, mixCNChar bool) []string {
 	result := make([]string, count)
 	for i := 0; i < count; i++ {
-		result[i] = fmt.Sprintf("\"%s\"", RandStringRunes(rand.Intn(strLen), mixCNChar))
+		result[i] = fmt.Sprintf("'%s'", RandStringRunes(rand.Intn(strLen), mixCNChar))
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i] < result[j]

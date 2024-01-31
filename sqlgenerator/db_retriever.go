@@ -2,12 +2,18 @@ package sqlgenerator
 
 import (
 	"fmt"
+	"github.com/pingcap/tidb/pkg/util/logutil"
 	"github.com/twinj/uuid"
+	"go.uber.org/zap"
 	"math"
 	"math/rand"
+	"strings"
+	"sync/atomic"
 
 	"github.com/cznic/mathutil"
 )
+
+var GlobalFetchJsonRowValCnt atomic.Int64
 
 type Tables []*Table
 
@@ -128,10 +134,63 @@ func (t *Table) GetRandRowVal(col *Column) string {
 	randRow := t.Values[rand.Intn(len(t.Values))]
 	for i, c := range t.Columns {
 		if c.ID == col.ID {
+			if i >= len(randRow) {
+				return ""
+			}
 			return randRow[i]
 		}
 	}
 	return "GetRandRowVal: column not found"
+}
+
+func arrayExtract(js string) string {
+	js = strings.TrimLeft(js, "'")
+	js = strings.TrimLeft(js, "[")
+	js = strings.TrimRight(js, "'")
+	js = strings.TrimRight(js, "]")
+	ss := strings.Split(js, ",")
+
+	return ss[rand.Intn(len(ss))]
+}
+
+func (t *Table) GetRandArraySubVal(col *Column) string {
+	if col.Tp != ColumnTypeJSON {
+		return "GetRandArraySubVal: not json column"
+	}
+	if len(t.Values) == 0 {
+		return ""
+	}
+
+	var rawJson string
+	randRow := t.Values[rand.Intn(len(t.Values))]
+	for i, c := range t.Columns {
+		if c.ID == col.ID {
+			if i >= len(randRow) {
+				logutil.BgLogger().Warn("1")
+
+				return ""
+			}
+			rawJson = randRow[i]
+		}
+	}
+
+	if rawJson == "" {
+		return ""
+	}
+
+	//log.Println("rawJson:", rawJson)
+	GlobalFetchJsonRowValCnt.Add(1)
+	if !strings.Contains(rawJson, "'[") && !strings.Contains(rawJson, "NULL") && !strings.Contains(rawJson, "null") {
+		logutil.BgLogger().Error("arrayExtract: invalid json", zap.String("js", rawJson))
+		for i, c := range t.Columns {
+			if i >= len(randRow) {
+				logutil.BgLogger().Warn("row data", zap.Int("i", i), zap.String("c", c.Name))
+			} else {
+				logutil.BgLogger().Warn("row data", zap.Int("i", i), zap.String("c", c.Name), zap.String("v", randRow[i]))
+			}
+		}
+	}
+	return arrayExtract(rawJson)
 }
 
 func (t *Table) CloneCreateTableLike(state *State) *Table {

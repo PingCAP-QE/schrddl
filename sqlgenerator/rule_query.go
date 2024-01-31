@@ -3,6 +3,7 @@ package sqlgenerator
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 
 	"github.com/cznic/mathutil"
@@ -82,6 +83,36 @@ var SingleSelect = NewFn(func(state *State) Fn {
 	return CommonSelect
 })
 
+var PostHandleWith = NewFn(func(state *State) Fn {
+	ctes := state.PopCTE()
+
+	state.env.QState.SelectedCols = map[*Table]QueryStateColumns{}
+
+	// TODO: Pick all the CTEs now, support picking random CTEs later.
+	for _, cte := range ctes {
+		state.env.QState.SelectedCols[cte] = QueryStateColumns{
+			Columns: cte.Columns,
+			Attr:    make([]string, len(cte.Columns)),
+		}
+	}
+
+	return Empty
+})
+
+var CTESelect = NewFn(func(state *State) Fn {
+	tbl := state.Tables.Rand()
+	state.env.QState = &QueryState{
+		SelectedCols: map[*Table]QueryStateColumns{
+			tbl: {
+				Columns: tbl.Columns,
+				Attr:    make([]string, len(tbl.Columns)),
+			},
+		},
+		AggCols: make(map[*Table]Columns),
+	}
+	return And(WithClause, PostHandleWith, CommonSelect)
+})
+
 var MultiSelect = NewFn(func(state *State) Fn {
 	tbl1 := state.Tables.Rand()
 	tbl2 := state.Tables.Rand()
@@ -103,9 +134,9 @@ var MultiSelect = NewFn(func(state *State) Fn {
 
 var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin,
+		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin, HintNPlan,
 		SelectFields, Str("from"), TableReference,
-		WhereClause, Opt(OrderByLimit), ForUpdateOpt,
+		WhereClause, Opt(OrderByLimit),
 	)
 })
 
@@ -133,9 +164,9 @@ var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.AggCols[tbl] = groupByCols
 
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin,
+		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin, HintNPlan,
 		SelectFields, Str("from"), TableReference,
-		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderByLimit), ForUpdateOpt,
+		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderByLimit),
 	)
 })
 
@@ -266,6 +297,11 @@ var WhereClause = NewFn(func(state *State) Fn {
 	)
 })
 
+var HintNPlan = NewFn(func(state *State) Fn {
+	i := strconv.Itoa(rand.Intn(10))
+	return Or(Empty, Str("/*+ nth_plan("+i+") */"))
+})
+
 var HintJoin = NewFn(func(state *State) Fn {
 	queryState := state.env.QState
 	if len(queryState.SelectedCols) != 2 {
@@ -393,21 +429,27 @@ var HavingPredicate = NewFn(func(state *State) Fn {
 	}
 	// choose a table with agg columns.
 	for len(state.env.QState.AggCols[state.env.Table]) == 0 {
-		state.env.Table = state.Tables.Rand()
+		state.env.Table = state.env.QState.GetRandTable()
 	}
 	state.env.Column = state.env.QState.AggCols[state.env.Table].Rand()
 	tbl := state.env.Table
 	randCol := state.env.Column
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
-	pre := Or(
-		Or(
-			And(Str(colName), CompareSymbol, RandVal),
-			And(Str(colName), Str("in"), Str("("), InValues, Str(")")),
-			And(Str("IsNull("), Str(colName), Str(")")),
-			And(Str(colName), Str("between"), RandVal, Str("and"), RandVal),
-		),
-		JSONPredicate,
+	var pre Fn
+	noJsonPre := Or(
+		And(Str(colName), CompareSymbol, RandVal),
+		And(Str(colName), Str("in"), Str("("), InValues, Str(")")),
+		And(Str("IsNull("), Str(colName), Str(")")),
+		And(Str(colName), Str("between"), RandVal, Str("and"), RandVal),
 	)
+	if state.env.Column.Tp == ColumnTypeJSON {
+		pre = Or(
+			And(Str(colName), CompareSymbol, RandVal),
+			JSONPredicate,
+		)
+	} else {
+		pre = noJsonPre
+	}
 	return Or(
 		pre.W(5),
 		And(Str("not("), pre, Str(")")),
@@ -456,15 +498,21 @@ var Predicate = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	randCol := state.env.Column
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
-	pre := Or(
-		Or(
-			And(Str(colName), CompareSymbol, RandVal),
-			And(Str(colName), Str("in"), Str("("), InValues, Str(")")),
-			And(Str("IsNull("), Str(colName), Str(")")),
-			And(Str(colName), Str("between"), RandVal, Str("and"), RandVal),
-		),
-		JSONPredicate,
+	var pre Fn
+	noJsonPre := Or(
+		And(Str(colName), CompareSymbol, RandVal),
+		And(Str(colName), Str("in"), Str("("), InValues, Str(")")),
+		And(Str("IsNull("), Str(colName), Str(")")),
+		And(Str(colName), Str("between"), RandVal, Str("and"), RandVal),
 	)
+	if state.env.Column.Tp == ColumnTypeJSON {
+		pre = Or(
+			And(Str(colName), CompareSymbol, RandVal),
+			JSONPredicate,
+		)
+	} else {
+		pre = noJsonPre
+	}
 	return Or(
 		pre.W(5),
 		And(Str("not("), pre, Str(")")),
@@ -475,12 +523,18 @@ var JSONPredicate = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	randCol := state.env.Column
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
+	arv, err := ArrayRandVal.Eval(state)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	jsContainVal := "'" + strings.Trim(arv, "'") + "'"
+
 	pre := Or(
-		And(RandVal, Str("MEMBER OF"), Str("("), Str(colName), Str(")")),
-		And(Str("JSON_CONTAINS("), Str(colName), Str(","), RandVal, Str(")")),
-		And(Str("JSON_CONTAINS("), RandVal, Str(","), Str(colName), Str(")")),
+		And(Str(arv), Str("MEMBER OF"), Str("("), Str(colName), Str(")")),
+		And(Str("JSON_CONTAINS("), Str(colName), Str(","), Str(jsContainVal), Str(")")),
+		//And(Str("JSON_CONTAINS("), ArrayRandVal, Str(","), Str(colName), Str(")")),
 		And(Str("JSON_OVERLAPS("), Str(colName), Str(","), RandVal, Str(")")),
-		And(Str("JSON_OVERLAPS("), RandVal, Str(","), Str(colName), Str(")")),
+		//And(Str("JSON_OVERLAPS("), RandVal, Str(","), Str(colName), Str(")")),
 		And(Str("IsNull("), Str("JSON_OVERLAPS("), RandVal, Str(","), Str(colName), Str(")"), Str(")")),
 	)
 	return Or(
@@ -503,6 +557,21 @@ var RandColVals = NewFn(func(state *State) Fn {
 	return Repeat(RandVal.R(1, 5), Str(","))
 })
 
+var ArrayRandVal = NewFn(func(state *State) Fn {
+	tbl := state.env.Table
+	randCol := state.env.Column
+	var v string
+	if len(tbl.Values) == 0 || rand.Intn(3) == 0 {
+		v = randomArrayJSONSubValue(randCol.SubType)
+	} else {
+		v = tbl.GetRandArraySubVal(randCol)
+	}
+	if len(v) == 0 {
+		v = randomArrayJSONSubValue(randCol.SubType)
+	}
+	return Str(v)
+})
+
 var RandVal = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	randCol := state.env.Column
@@ -511,6 +580,9 @@ var RandVal = NewFn(func(state *State) Fn {
 		v = randCol.RandomValue()
 	} else {
 		v = tbl.GetRandRowVal(randCol)
+	}
+	if len(v) == 0 {
+		v = randCol.RandomValue()
 	}
 	return Str(v)
 })

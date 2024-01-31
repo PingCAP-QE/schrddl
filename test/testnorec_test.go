@@ -1,7 +1,7 @@
 package test
 
 import (
-	"github.com/PingCAP-QE/schrddl/mutation"
+	"github.com/PingCAP-QE/schrddl/norec"
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/format"
@@ -34,7 +34,7 @@ func TestNoRecSimple(t *testing.T) {
 		println("", sql)
 	}
 
-	rewriter := &mutation.NoRecRewriter{}
+	rewriter := &norec.NoRecRewriter{}
 	var sb strings.Builder
 
 	querySQL, err := sqlgenerator.SingleSelect.Eval(state)

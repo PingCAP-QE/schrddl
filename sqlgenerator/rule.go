@@ -20,7 +20,7 @@ var Start = NewFn(func(state *State) Fn {
 		AnalyzeTable.W(0).P(HasTables),
 		// PrepareStmt.W(2).P(HasTables),
 		// DeallocPrepareStmt.W(1).P(HasTables),
-		FlashBackTable.W(1).P(HasDroppedTables),
+		//FlashBackTable.W(1).P(HasDroppedTables),
 		// SelectIntoOutFile.W(1).P(HasTables),
 		// LoadTable.W(1).P(HasTables),
 		DropTable.W(1).P(HasTables),
@@ -57,11 +57,11 @@ var AlterTableChangeMulti = NewFn(func(state *State) Fn {
 
 var AlterTableChangeSingle = NewFn(func(state *State) Fn {
 	return Or(
-		AddColumn,
+		//AddColumn,
 		AddIndex,
-		DropColumn,
+		//DropColumn,
 		DropIndex,
-		AlterColumn,
+		//AlterColumn,
 		AlterIndex,
 		RenameColumn,
 		RenameIndex,
@@ -225,6 +225,7 @@ var MultipleRowVals = NewFn(func(state *State) Fn {
 	cols := state.env.Columns
 	var rowVal = NewFn(func(state *State) Fn {
 		vs := tbl.GenRandValues(cols)
+		tbl.Values = append(tbl.Values, vs)
 		return Strs("(", PrintRandValues(vs), ")")
 	})
 	return Repeat(rowVal.R(1, 7), Str(","))
