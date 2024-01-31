@@ -1,4 +1,4 @@
-package ddl
+package framework
 
 import (
 	"database/sql"
@@ -77,11 +77,6 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		TestTp:          testTp,
 	}
 	ddl := NewDDLCase(&cfg)
-	var err error
-	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
-	if err != nil {
-		log.Fatalf("[ddl] get start ddl seq num error %v", err)
-	}
 	if RCIsolation {
 		dbss[0][0].Exec("set global transaction_isolation='read-committed'")
 	}

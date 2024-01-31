@@ -22,7 +22,7 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	. "github.com/PingCAP-QE/schrddl/ddl"
+	. "github.com/PingCAP-QE/schrddl/framework"
 	"github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 )

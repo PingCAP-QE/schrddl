@@ -6,4 +6,4 @@
 // stage2. mutation. Note that a sql statement can have multiple mutations.
 //
 // You can use the implication oracle to detect logical bugs.
-package mutation
+package pinolo

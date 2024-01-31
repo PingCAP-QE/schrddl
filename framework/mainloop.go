@@ -1,4 +1,4 @@
-package ddl
+package framework
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/PingCAP-QE/schrddl/dump"
-	"github.com/PingCAP-QE/schrddl/mutation/stage2"
 	"github.com/PingCAP-QE/schrddl/norec"
+	"github.com/PingCAP-QE/schrddl/pinolo/stage2"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/format"
@@ -69,9 +69,6 @@ const (
 	SerialDDLTest DDLTestType = iota
 	ParallelDDLTest
 )
-
-type ExecuteDDLFunc func(*testCase, []ddlTestOpExecutor, func() error) error
-type ExecuteDMLFunc func(*testCase, []dmlTestOpExecutor, func() error) error
 
 type DDLCase struct {
 	cfg   *CaseConfig
@@ -204,8 +201,6 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 			tables:       make(map[string]*ddlTestTable),
 			schemas:      make(map[string]*ddlTestSchema),
 			views:        make(map[string]*ddlTestView),
-			ddlOps:       make([]ddlTestOpExecutor, 0),
-			dmlOps:       make([]dmlTestOpExecutor, 0),
 			caseIndex:    i,
 			stop:         0,
 			tableMap:     make(map[string]*sqlgenerator.Table),
@@ -224,17 +219,6 @@ const (
 	ddlTestValueNull    string = "NULL"
 	ddlTestValueInvalid int32  = -99
 )
-
-type ddlTestOpExecutor struct {
-	executeFunc func(interface{}, chan *ddlJobTask) error
-	config      interface{}
-	ddlKind     DDLKind
-}
-
-type dmlTestOpExecutor struct {
-	prepareFunc func(interface{}, chan *dmlJobTask) error
-	config      interface{}
-}
 
 type DMLKind int
 
