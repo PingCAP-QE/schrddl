@@ -18,6 +18,7 @@ var EnableTransactionTest = false
 var RCIsolation = false
 var Prepare = false
 var CheckDDLExtraTimeout = 0 * time.Second
+var EnableApproximateQuerySynthesis = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -108,6 +109,8 @@ var dmlIgnoreList = []string{
 	"should ensure all columns have the same length",
 	"expected integer",
 	"invalid memory address or nil pointer dereference",
+	"encoding failed",
+	"invalid input value",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",

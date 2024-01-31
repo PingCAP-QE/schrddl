@@ -3,13 +3,14 @@ package stage2
 import (
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	_ "github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/pkg/errors"
 	"math/rand"
 	"reflect"
 )
 
 // checkRdMLikeL: return "": pass, otherwise error
-func checkRdMLikeL(in *ast.PatternLikeExpr) string {
+func checkRdMLikeL(in *ast.PatternLikeOrIlikeExpr) string {
 	if t, ok := (in.Expr).(*test_driver.ValueExpr); !ok {
 		return "!(in.Expr).(*test_driver.ValueExpr)"
 	} else {
@@ -39,7 +40,7 @@ func checkRdMLikeL(in *ast.PatternLikeExpr) string {
 }
 
 // addRdMLikeL: RdMLikeL, *ast.PatternLikeExpr: '%' -> '_'
-func (v *MutateVisitor) addRdMLikeL(in *ast.PatternLikeExpr, flag int) {
+func (v *MutateVisitor) addRdMLikeL(in *ast.PatternLikeOrIlikeExpr, flag int) {
 	if checkRdMLikeL(in) == "" {
 		v.addCandidate(RdMLikeL, 0, in, flag)
 	}
@@ -49,8 +50,8 @@ func (v *MutateVisitor) addRdMLikeL(in *ast.PatternLikeExpr, flag int) {
 func doRdMLikeL(rootNode ast.Node, in ast.Node, seed int64) ([]byte, error) {
 	rander := rand.New(rand.NewSource(seed))
 	switch in.(type) {
-	case *ast.PatternLikeExpr:
-		like := in.(*ast.PatternLikeExpr)
+	case *ast.PatternLikeOrIlikeExpr:
+		like := in.(*ast.PatternLikeOrIlikeExpr)
 		// check
 		ck := checkRdMLikeL(like)
 		if ck != "" {

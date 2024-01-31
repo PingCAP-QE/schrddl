@@ -2,6 +2,7 @@ package stage2
 
 import (
 	_ "github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/test_driver"
 	"math/rand"
 )
 

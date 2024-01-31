@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/PingCAP-QE/schrddl/dump"
+	"github.com/PingCAP-QE/schrddl/mutation/stage2"
 	"github.com/PingCAP-QE/schrddl/norec"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
@@ -389,8 +390,8 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	//state.Hook().Append(sqlgenerator.NewFnHookDebug())
 
-	state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
-	state.SetWeight(sqlgenerator.JSONPredicate, 0)
+	//state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
+	//state.SetWeight(sqlgenerator.JSONPredicate, 0)
 
 	prepareStmtCnt := 50
 	for i := 0; i < prepareStmtCnt; i++ {
@@ -486,6 +487,56 @@ func (c *testCase) execute(ctx context.Context) error {
 				cntOfNew = 0
 
 				querySQL := sql
+
+				// send queries to tidb and check the result
+				globalRunQueryCnt.Add(1)
+				rs1, err := c.execQueryForCnt(querySQL)
+				//println(fmt.Sprintf("%s;", querySQL))
+				if err != nil {
+					if dmlIgnoreError(err) {
+						return false, nil
+					} else {
+						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
+						return false, errors.Trace(err)
+					}
+				}
+				globalSuccessQueryCnt.Add(1)
+				plan, err := c.getQueryPlan(querySQL)
+				if err != nil {
+					return false, errors.Trace(err)
+				}
+				c.queryPlanMap[plan] = querySQL
+
+				if EnableApproximateQuerySynthesis {
+					mr := stage2.MutateAll(querySQL, 1234)
+					if mr.Err != nil {
+						logutil.BgLogger().Error("mutate error", zap.String("sql", querySQL), zap.Error(mr.Err))
+						return false, errors.Trace(mr.Err)
+					}
+					for _, r := range mr.MutateUnits {
+						if r.Err == nil {
+							rs2, err := c.execQueryForCnt(r.Sql)
+							if err != nil {
+								if dmlIgnoreError(err) {
+									//logutil.BgLogger().Warn("ignore error", zap.String("query", r.Sql), zap.Error(err))
+									return false, nil
+								} else {
+									logutil.BgLogger().Error("unexpected error", zap.String("query", r.Sql), zap.Error(err))
+									return false, errors.Trace(err)
+								}
+							}
+
+							if (r.IsUpper && rs2 < rs1) || (!r.IsUpper && rs2 > rs1) {
+								cntOfOld = rs1
+								cntOfNew = rs2
+								newQuery = r.Sql
+								return true, nil
+							}
+						}
+					}
+					return false, nil
+				}
+
 				stmts, _, err := tidbParser.Parse(querySQL, "", "")
 				if err != nil {
 					logutil.BgLogger().Error("parse error", zap.String("sql", querySQL), zap.Error(err))
@@ -506,24 +557,6 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 				newQuery = sb.String()
 
-				// send queries to tidb and check the result
-				globalRunQueryCnt.Add(1)
-				rs1, err := c.execQueryForCnt(querySQL)
-				//println(fmt.Sprintf("%s;", querySQL))
-				if err != nil {
-					if dmlIgnoreError(err) {
-						return false, nil
-					} else {
-						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
-						return false, errors.Trace(err)
-					}
-				}
-				globalSuccessQueryCnt.Add(1)
-				plan, err := c.getQueryPlan(querySQL)
-				if err != nil {
-					return false, errors.Trace(err)
-				}
-				c.queryPlanMap[plan] = querySQL
 				cntOfOld = rs1
 				rs2, err := c.execQuery(newQuery)
 				//println(fmt.Sprintf("%s;", newQuery))

@@ -40,6 +40,7 @@ var (
 	rc                   = flag.Bool("rc-txn", false, "read-committed isolation")
 	prepare              = flag.Bool("prepare", false, "use prepare statement")
 	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
+	aqs                  = flag.Bool("aqs", false, "enable Approximate Query Synthesis")
 )
 
 func prepareEnv() {
@@ -80,6 +81,9 @@ func main() {
 	}
 	if *checkDDLExtraTimeout > 0 {
 		CheckDDLExtraTimeout = *checkDDLExtraTimeout
+	}
+	if *aqs {
+		EnableApproximateQuerySynthesis = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
