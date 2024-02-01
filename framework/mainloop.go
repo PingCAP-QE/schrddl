@@ -13,6 +13,7 @@ import (
 	"github.com/pingcap/tidb/pkg/parser/format"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
+	crc322 "hash/crc32"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -292,6 +293,65 @@ func (c *testCase) execQueryForCnt(sql string) (int, error) {
 		return 0, rows.Err()
 	}
 	return rs, nil
+}
+
+func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
+	rows, err := c.dbs[0].Query(sql)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		rows.Close()
+	}()
+
+	// Read all rows.
+	crc32s := make(map[uint32]struct{}, 0)
+
+	for rows.Next() {
+		cols, err1 := rows.Columns()
+		if err1 != nil {
+			return nil, err
+		}
+
+		//log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
+
+		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
+		rawResult := make([][]byte, len(cols))
+		result := make([]string, len(cols))
+		dest := make([]interface{}, len(cols))
+		for i := range rawResult {
+			dest[i] = &rawResult[i]
+		}
+
+		err1 = rows.Scan(dest...)
+		if err1 != nil {
+			return nil, err
+		}
+
+		for i, raw := range rawResult {
+			if raw == nil {
+				result[i] = ddlTestValueNull
+			} else {
+				result[i] = fmt.Sprintf("'%s'", string(raw))
+				//if typeNeedQuota(metaCols[i].k) {
+				//	result[i] = fmt.Sprintf("'%s'", string(raw))
+				//}
+				//result[i] = string(raw)
+			}
+		}
+
+		crc32 := crc322.NewIEEE()
+		for _, r := range result {
+			crc32.Write([]byte(r))
+		}
+
+		crc32s[crc32.Sum32()] = struct{}{}
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return crc32s, nil
 }
 
 func (c *testCase) execQuery(sql string) ([][]string, error) {
