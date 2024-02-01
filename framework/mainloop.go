@@ -85,8 +85,10 @@ func (c *DDLCase) statloop() {
 		select {
 		case <-tick.C:
 			subcaseStat := make([]string, 20)
+			subcaseUseMvindex := make([]string, 20)
 			for _, c := range c.cases {
 				subcaseStat = append(subcaseStat, fmt.Sprintf("%d", len(c.queryPlanMap)))
+				subcaseUseMvindex = append(subcaseUseMvindex, fmt.Sprintf("%d", c.planUseMvIndex))
 				//i := 0
 				//for k, v := range c.queryPlanMap {
 				//	logutil.BgLogger().Warn("sample query plan", zap.String("plan", k), zap.String("query", v))
@@ -98,7 +100,7 @@ func (c *DDLCase) statloop() {
 			}
 
 			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()), zap.Int64("fetch json row val:", sqlgenerator.GlobalFetchJsonRowValCnt.Load()),
-				zap.Strings("unique query plan", subcaseStat))
+				zap.Strings("unique query plan", subcaseStat), zap.Strings("use mv index", subcaseUseMvindex))
 		}
 	}
 }
@@ -356,7 +358,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	state.SetWeight(sqlgenerator.WindowClause, 0)
 	state.SetWeight(sqlgenerator.WindowFunctionOverW, 0)
 	state.SetWeight(sqlgenerator.WhereClause, 1)
-	state.SetWeight(sqlgenerator.Limit, 0)
+	//state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
 	state.SetWeight(sqlgenerator.PartitionDefinitionList, 0)
@@ -485,11 +487,14 @@ func (c *testCase) execute(ctx context.Context) error {
 					}
 				}
 				globalSuccessQueryCnt.Add(1)
-				plan, err := c.getQueryPlan(querySQL)
+				pd, err := c.getQueryPlan(querySQL)
 				if err != nil {
 					return false, errors.Trace(err)
 				}
-				c.queryPlanMap[plan] = querySQL
+				c.queryPlanMap[pd.plan] = querySQL
+				if pd.useMvIndex {
+					c.planUseMvIndex++
+				}
 
 				if EnableApproximateQuerySynthesis {
 					mr := stage2.MutateAll(querySQL, 1234)
@@ -572,7 +577,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				return cntOfOld != cntOfNew, nil
 			}
 
-			querySQL, err := sqlgenerator.Query.Eval(state)
+			querySQL, err := sqlgenerator.QueryOrCTE.Eval(state)
 			if err != nil {
 				return errors.Trace(err)
 			}

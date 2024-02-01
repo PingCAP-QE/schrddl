@@ -43,7 +43,7 @@ func randomArrayJSONSubValue(dataType string) string {
 	case dtDouble:
 		val = rand.Float64()
 	default:
-		panic("unsupported data type")
+		panic(fmt.Sprintf("unsupported data type, %v", dataType))
 	}
 	return fmt.Sprintf("%v", val)
 }

@@ -256,7 +256,7 @@ var CommonUpdate = NewFn(func(state *State) Fn {
 		Repeat(AssignClause.R(1, 3), Str(",")),
 		Str("where"),
 		Predicates,
-		Opt(OrderByLimit),
+		Opt(OrderBy), Opt(Limit),
 	)
 })
 
@@ -378,7 +378,8 @@ var CommonDelete = NewFn(func(state *State) Fn {
 				Str(")")),
 			And(Str(col.Name), Str("is null")),
 		),
-		Opt(OrderByLimit),
+		Opt(OrderBy),
+		Opt(Limit),
 	)
 })
 

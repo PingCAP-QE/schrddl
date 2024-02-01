@@ -36,7 +36,8 @@ type testCase struct {
 	tableMap     map[string]*sqlgenerator.Table
 	outputWriter *os.File
 
-	queryPlanMap map[string]string
+	queryPlanMap   map[string]string
+	planUseMvIndex int
 }
 
 func (c *testCase) stopTest() {

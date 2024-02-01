@@ -5,11 +5,13 @@ import (
 	"unicode/utf8"
 )
 
-func simplifyQueryPlan(s []string) string {
+func simplifyQueryPlan(s []string) *planDetail {
 	// state
 	enterPartitionUnion := false
 	canPrintInPartitionUnion := false
 	idxRuneForPartitionUnion := 0
+
+	rs := &planDetail{}
 
 	simpleRow := func(s string) string {
 		if strings.Contains(s, "PartitionUnion") {
@@ -39,18 +41,30 @@ func simplifyQueryPlan(s []string) string {
 	for _, r := range s {
 		totalPlan += simpleRow(r)
 	}
-	return totalPlan
+	rs.plan = totalPlan
+	return rs
 }
 
-func (c *testCase) getQueryPlan(query string) (string, error) {
+type planDetail struct {
+	plan       string
+	useMvIndex bool
+}
+
+func (c *testCase) getQueryPlan(query string) (*planDetail, error) {
 	planQuery := "explain format=brief " + query
 	rs, err := c.execQuery(planQuery)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	useMvIndex := false
 	ss := make([]string, 0, len(rs))
 	for _, r := range rs {
 		ss = append(ss, r[0])
+		if strings.Contains(r[3], "array") {
+			useMvIndex = true
+		}
 	}
-	return simplifyQueryPlan(ss), nil
+	pd := simplifyQueryPlan(ss)
+	pd.useMvIndex = useMvIndex
+	return pd, err
 }

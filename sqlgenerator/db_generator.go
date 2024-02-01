@@ -55,6 +55,8 @@ func (s *State) GenNewColumnWithType(tps ...ColumnType) *Column {
 		col.Arg1 = 1 + rand.Intn(512)
 	case ColumnTypeEnum, ColumnTypeSet:
 		col.Args = []string{"Alice", "Bob", "Charlie", "David"}
+	case ColumnTypeJSON:
+		col.SubType = randArrayTp[rand.Intn(len(randArrayTp))]
 	}
 	if !col.Tp.RequiredFieldLength() && rand.Intn(5) == 0 {
 		col.Arg1, col.Arg2 = 0, 0

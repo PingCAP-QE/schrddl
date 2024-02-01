@@ -112,6 +112,10 @@ var dmlIgnoreList = []string{
 	"Cant peek from empty bytes",
 
 	"maximum statement execution time exceeded",
+	"please skip this plan",
+
+	// unknown
+	"context canceled",
 }
 
 var ddlIgnoreList = []string{

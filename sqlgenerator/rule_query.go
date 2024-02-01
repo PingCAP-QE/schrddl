@@ -136,7 +136,7 @@ var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
 		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin, HintNPlan,
 		SelectFields, Str("from"), TableReference,
-		WhereClause, Opt(OrderByLimit),
+		WhereClause, Opt(OrderBy), Opt(Limit),
 	)
 })
 
@@ -166,7 +166,7 @@ var AggSelect = NewFn(func(state *State) Fn {
 	return And(
 		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin, HintNPlan,
 		SelectFields, Str("from"), TableReference,
-		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderByLimit),
+		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderBy), Opt(Limit),
 	)
 })
 
@@ -657,11 +657,7 @@ var SetOperator = NewFn(func(state *State) Fn {
 	)
 })
 
-var Limit = NewFn(func(state *State) Fn {
-	return Strs("limit", RandomNum(1, 100))
-})
-
-var OrderByLimit = NewFn(func(state *State) Fn {
+var OrderBy = NewFn(func(state *State) Fn {
 	queryState := state.env.QState
 	var fields strings.Builder
 	if queryState == nil {
@@ -673,8 +669,9 @@ var OrderByLimit = NewFn(func(state *State) Fn {
 		}
 		fields.WriteString(fmt.Sprintf("r%d", i))
 	}
-	return And(
-		Str("order by"), Str(fields.String()),
-		Opt(Limit),
-	)
+	return Strs("order by", fields.String())
+})
+
+var Limit = NewFn(func(state *State) Fn {
+	return Strs("limit", RandomNum(1000000, 2147483646))
 })
