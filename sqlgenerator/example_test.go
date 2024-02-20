@@ -265,3 +265,26 @@ func TestCTE(t *testing.T) {
 		fmt.Println(";")
 	}
 }
+
+func TestScalarQuery(t *testing.T) {
+	state := sqlgenerator.NewState()
+	state.Config().SetMaxTable(2)
+	state.SetWeight(sqlgenerator.IndexDefinitions, 0)
+	state.SetWeight(sqlgenerator.PartitionDefinition, 0)
+	state.SetWeight(sqlgenerator.JSONPredicate, 0)
+	state.SetWeight(sqlgenerator.SubSelect, 0)
+	state.SetWeight(sqlgenerator.UnionSelect, 0)
+
+	for i := 0; i < 3; i++ {
+		sql, err := sqlgenerator.CreateTable.Eval(state)
+		require.NoError(t, err)
+		fmt.Print(sql)
+		fmt.Println(";")
+	}
+	for i := 0; i < 100; i++ {
+		sql, err := sqlgenerator.ScalarSubQuery.Eval(state)
+		require.NoError(t, err)
+		fmt.Print(sql)
+		fmt.Println(";")
+	}
+}

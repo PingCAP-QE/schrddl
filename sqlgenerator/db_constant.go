@@ -252,6 +252,15 @@ func (c ColumnType) IsPartitionType() bool {
 	return c.IsIntegerType()
 }
 
+func (c ColumnType) IsKeyPartitionType() bool {
+	switch c {
+	case ColumnTypeBlob, ColumnTypeJSON:
+		return false
+	default:
+		return true
+	}
+}
+
 func (c ColumnType) IsPointGetableType() bool {
 	switch c {
 	case ColumnTypeFloat, ColumnTypeDouble, ColumnTypeText, ColumnTypeBlob:

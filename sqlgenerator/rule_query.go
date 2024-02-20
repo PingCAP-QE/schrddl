@@ -145,6 +145,9 @@ var GroupByColumns = NewFn(func(state *State) Fn {
 	if len(aggColsMap) == 0 {
 		return Empty
 	}
+	if state.env.QueryHint == hintSingleValue {
+		return Empty
+	}
 	groupByItems := make([]string, 0)
 	for t, cols := range aggColsMap {
 		for _, col := range cols {
@@ -172,6 +175,12 @@ var AggSelect = NewFn(func(state *State) Fn {
 
 var CommonSelect = NewFn(func(state *State) Fn {
 	NotNil(state.env.QState)
+	if state.env.QueryHint == hintSingleValue {
+		if rand.Intn(10) == 0 || state.GetWeight(AggSelect) == 0 {
+			return NonAggSelect
+		}
+		return AggSelect
+	}
 	return Or(
 		NonAggSelect,
 		AggSelect,
@@ -182,6 +191,9 @@ var SelectFields = NewFn(func(state *State) Fn {
 	queryState := state.env.QState
 	if queryState.FieldNumHint == 0 {
 		queryState.FieldNumHint = 1 + rand.Intn(5)
+	}
+	if state.env.QueryHint == hintSingleValue {
+		queryState.FieldNumHint = 1
 	}
 	var fns []Fn
 	for i := 0; i < queryState.FieldNumHint; i++ {
@@ -499,11 +511,18 @@ var Predicate = NewFn(func(state *State) Fn {
 	randCol := state.env.Column
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
 	var pre Fn
-	noJsonPre := Or(
+
+	fns := []Fn{
 		And(Str(colName), CompareSymbol, RandVal),
 		And(Str(colName), Str("in"), Str("("), InValues, Str(")")),
 		And(Str("IsNull("), Str(colName), Str(")")),
 		And(Str(colName), Str("between"), RandVal, Str("and"), RandVal),
+	}
+	if state.GetWeight(ScalarSubQuery) != 0 {
+		fns = append(fns, And(Str(colName), CompareSymbol, ScalarSubQuery))
+	}
+	noJsonPre := Or(
+		fns...,
 	)
 	if state.env.Column.Tp == ColumnTypeJSON {
 		pre = Or(
@@ -673,5 +692,22 @@ var OrderBy = NewFn(func(state *State) Fn {
 })
 
 var Limit = NewFn(func(state *State) Fn {
-	return Strs("limit", RandomNum(1000000, 2147483646))
+	return Strs("limit", RandomNum(100000, 1000000))
+
+	//return Strs("limit", RandomNum(1000000, 2147483646))
+})
+
+var Query2 Fn
+
+func init() {
+	Query2 = Query
+}
+
+var SubQuery = NewFn(func(state *State) Fn {
+	return And(Str("("), Query, Str(")"))
+})
+
+var ScalarSubQuery = NewFn(func(state *State) Fn {
+	state.env.QueryHint = hintSingleValue
+	return And(Str("("), Query2, Str(")"))
 })

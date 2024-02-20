@@ -41,3 +41,30 @@ func CloneAst(n ast.StmtNode) ast.StmtNode {
 	}
 	return n
 }
+
+func DetectAgg(sel *ast.SelectStmt) bool {
+	if sel.GroupBy != nil {
+		return true
+	}
+	for _, f := range sel.Fields.Fields {
+		if f.WildCard != nil {
+			continue
+		}
+		if ast.HasAggFlag(f.Expr) {
+			return true
+		}
+	}
+	if sel.Having != nil {
+		if ast.HasAggFlag(sel.Having.Expr) {
+			return true
+		}
+	}
+	if sel.OrderBy != nil {
+		for _, item := range sel.OrderBy.Items {
+			if ast.HasAggFlag(item.Expr) {
+				return true
+			}
+		}
+	}
+	return false
+}

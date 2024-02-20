@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/PingCAP-QE/schrddl/dump"
 	"github.com/PingCAP-QE/schrddl/norec"
+	"github.com/PingCAP-QE/schrddl/pinolo"
 	"github.com/PingCAP-QE/schrddl/pinolo/stage2"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
@@ -295,6 +296,52 @@ func (c *testCase) execQueryForCnt(sql string) (int, error) {
 	return rs, nil
 }
 
+func (c *testCase) execQueryAndCheckEmpty(sql string) bool {
+	rows, err := c.dbs[0].Query(sql)
+	if err != nil {
+		logutil.BgLogger().Error("unexpected error", zap.Error(err))
+		return false
+	}
+	defer func() {
+		rows.Close()
+	}()
+
+	result := !rows.Next()
+
+	cnt2 := 0
+	if !result {
+		cols, _ := rows.Columns()
+		rawResult := make([][]byte, len(cols))
+		dest := make([]interface{}, len(cols))
+		for i := range rawResult {
+			dest[i] = &rawResult[i]
+		}
+
+		err := rows.Scan(dest...)
+		if err != nil {
+			panic(err)
+		}
+
+		for rows.Next() {
+			cnt2++
+		}
+
+		for _, r := range rawResult {
+			c.outputWriter.WriteString(fmt.Sprintf("%s\n", string(r)))
+		}
+
+		cnt, _ := c.execQueryForCnt(sql)
+
+		rs, _ := c.execQuery(sql)
+
+		c.outputWriter.WriteString(fmt.Sprintf("sql: %s, cnt: %d, cnt2: %d, cnt3: %d \n", sql, cnt, cnt2+1, len(rs)))
+		if rows.Err() != nil {
+			c.outputWriter.WriteString(fmt.Sprintf("err %s \n", rows.Err().Error()))
+		}
+	}
+	return result
+}
+
 func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 	rows, err := c.dbs[0].Query(sql)
 	if err != nil {
@@ -319,6 +366,7 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 		rawResult := make([][]byte, len(cols))
 		result := make([]string, len(cols))
 		dest := make([]interface{}, len(cols))
+		ct, _ := rows.ColumnTypes()
 		for i := range rawResult {
 			dest[i] = &rawResult[i]
 		}
@@ -332,7 +380,12 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 			if raw == nil {
 				result[i] = ddlTestValueNull
 			} else {
-				result[i] = fmt.Sprintf("'%s'", string(raw))
+				//logutil.BgLogger().Warn("type to debug", zap.String("type", ct[i].DatabaseTypeName()))
+				if strings.EqualFold(ct[i].DatabaseTypeName(), "double") {
+					result[i] = fmt.Sprintf("'%s'", RoundToSixDecimals(string(raw)))
+				} else {
+					result[i] = fmt.Sprintf("'%s'", string(raw))
+				}
 				//if typeNeedQuota(metaCols[i].k) {
 				//	result[i] = fmt.Sprintf("'%s'", string(raw))
 				//}
@@ -407,6 +460,24 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 	return actualRows, nil
 }
 
+func mapLess(m1, m2 map[uint32]struct{}) bool {
+	for k := range m2 {
+		if _, ok := m1[k]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+func mapMore(m1, m2 map[uint32]struct{}) bool {
+	for k := range m1 {
+		if _, ok := m2[k]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
 // execute iterates over two list of operations concurrently, one is
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
@@ -421,13 +492,17 @@ func (c *testCase) execute(ctx context.Context) error {
 	//state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
-	state.SetWeight(sqlgenerator.PartitionDefinitionList, 0)
+	//state.SetWeight(sqlgenerator.PartitionDefinitionList, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
 
 	//state.SetWeight(sqlgenerator.AggSelect, 0)
 
 	// Sub query is hard for NoREC
 	state.SetWeight(sqlgenerator.SubSelect, 0)
+
+	if !EnableApproximateQuerySynthesis {
+		state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
+	}
 
 	// bug
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesEnum, 0)
@@ -453,6 +528,10 @@ func (c *testCase) execute(ctx context.Context) error {
 	}
 
 	err := c.execSQL("set @@max_execution_time=3000")
+	if err != nil {
+		return err
+	}
+	err = c.execSQL("set @@group_concat_max_len=10240000")
 	if err != nil {
 		return err
 	}
@@ -498,7 +577,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 			}
 		}
-		if cnt%20000 == 0 && rand.Intn(2) == 0 {
+		if cnt%10000 == 0 && rand.Intn(2) == 0 {
 			break
 		}
 
@@ -537,6 +616,10 @@ func (c *testCase) execute(ctx context.Context) error {
 				// send queries to tidb and check the result
 				globalRunQueryCnt.Add(1)
 				rs1, err := c.execQueryForCnt(querySQL)
+				var rs1checkSum map[uint32]struct{}
+				if EnableApproximateQuerySynthesis {
+					rs1checkSum, err = c.execQueryForCRC32(querySQL)
+				}
 				//println(fmt.Sprintf("%s;", querySQL))
 				if err != nil {
 					if dmlIgnoreError(err) {
@@ -574,8 +657,12 @@ func (c *testCase) execute(ctx context.Context) error {
 									return false, errors.Trace(err)
 								}
 							}
+							rs2checkSum, err := c.execQueryForCRC32(r.Sql)
+							if err != nil {
+								return false, nil
+							}
 
-							if (r.IsUpper && rs2 < rs1) || (!r.IsUpper && rs2 > rs1) {
+							if (r.IsUpper && mapLess(rs2checkSum, rs1checkSum) && !c.execQueryAndCheckEmpty(pinolo.BuildExcept(querySQL, r.Sql))) || (!r.IsUpper && mapMore(rs2checkSum, rs1checkSum) && !c.execQueryAndCheckEmpty(pinolo.BuildExcept(r.Sql, querySQL))) {
 								cntOfOld = rs1
 								cntOfNew = rs2
 								newQuery = r.Sql
@@ -637,7 +724,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				return cntOfOld != cntOfNew, nil
 			}
 
-			querySQL, err := sqlgenerator.QueryOrCTE.Eval(state)
+			querySQL, err := sqlgenerator.Query.Eval(state)
 			if err != nil {
 				return errors.Trace(err)
 			}
@@ -649,11 +736,11 @@ func (c *testCase) execute(ctx context.Context) error {
 				return errors.Trace(err)
 			}
 			if found {
-				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s  ", cntOfOld, cntOfNew, querySQL, newQuery))
+				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s  \n", cntOfOld, cntOfNew, querySQL, newQuery))
 
 				reduceSQL := reduce.ReduceSQL(checker, querySQL)
 				checker(reduceSQL)
-				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
+				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n\n\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
 				globalBugSeqNum++
 				num := globalBugSeqNum
 

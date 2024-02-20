@@ -1,6 +1,7 @@
 package norec
 
 import (
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 )
 
@@ -38,33 +39,6 @@ func (nr *NoRecRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
 	return n, false
 }
 
-func detectAgg(sel *ast.SelectStmt) bool {
-	if sel.GroupBy != nil {
-		return true
-	}
-	for _, f := range sel.Fields.Fields {
-		if f.WildCard != nil {
-			continue
-		}
-		if ast.HasAggFlag(f.Expr) {
-			return true
-		}
-	}
-	if sel.Having != nil {
-		if ast.HasAggFlag(sel.Having.Expr) {
-			return true
-		}
-	}
-	if sel.OrderBy != nil {
-		for _, item := range sel.OrderBy.Items {
-			if ast.HasAggFlag(item.Expr) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (nr *NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 	switch v := n.(type) {
 	case *ast.WithClause:
@@ -74,7 +48,7 @@ func (nr *NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 			// Do not rewrite CTE
 			return n, true
 		}
-		hasAgg := detectAgg(v)
+		hasAgg := util.DetectAgg(v)
 		nr.isAgg = hasAgg
 		if !hasAgg {
 			whereNode := v.Where

@@ -15,7 +15,10 @@ package framework
 
 import (
 	"database/sql"
+	"fmt"
+	"math"
 	"math/rand"
+	"strconv"
 	"strings"
 
 	"github.com/emirpasic/gods/lists/arraylist"
@@ -205,4 +208,26 @@ func getColumnFromArrayList(list *arraylist.List, i int) *ddlTestColumn {
 func getRowFromArrayList(list *arraylist.List, i int) interface{} {
 	ele, _ := list.Get(i)
 	return ele
+}
+
+func RoundToSixDecimals(numStr string) string {
+	f, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return ""
+	}
+	threshold := 1e-12
+	if math.Abs(f) < threshold {
+		return "0.000000"
+	}
+	rounded := math.Round(f*1e6) / 1e6
+	if strings.Contains(numStr, "e") && !strings.Contains(numStr, "e-") {
+		num, err := strconv.ParseFloat(numStr, 64)
+		if err != nil {
+			panic(err)
+		}
+		return fmt.Sprintf("%.7g", num)
+	}
+	return strconv.FormatFloat(rounded, 'f', 6, 64)
+
+	//return strconv.FormatFloat(rounded, 'f', 6, 64)
 }

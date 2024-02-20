@@ -2,6 +2,7 @@ package stage2
 
 import (
 	"bytes"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	_ "github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/parser/format"
@@ -81,6 +82,7 @@ type Candidate struct {
 type MutateVisitor struct {
 	Root       ast.Node
 	Candidates map[string][]*Candidate // mutation name : slice of *Candidate
+	HasAgg     bool
 }
 
 func (v *MutateVisitor) visit(in ast.Node, flag int) {
@@ -174,10 +176,20 @@ func (v *MutateVisitor) visitSelect(in *ast.SelectStmt, flag int) {
 		return
 	}
 
+	saveHasAgg := v.HasAgg
+	defer func() {
+		v.HasAgg = saveHasAgg
+	}()
+	hasAgg := util.DetectAgg(in)
+	v.HasAgg = hasAgg
+
 	// from
 	v.visitTableRefClause(in.From, flag)
+
 	// where
-	v.visitExprNode(in.Where, flag)
+	if !hasAgg {
+		v.visitExprNode(in.Where, flag)
+	}
 	// having
 	v.visitHavingClause(in.Having, flag)
 	// with
@@ -203,10 +215,12 @@ func (v *MutateVisitor) visitJoin(in *ast.Join, flag int) {
 	}
 	v.visitResultSetNode(in.Left, flag)
 	v.visitResultSetNode(in.Right, flag)
-	// on
-	v.visitOnCondition(in.On, flag)
+	if !v.HasAgg {
+		// on
+		v.visitOnCondition(in.On, flag)
 
-	v.miningJoin(in, flag)
+		v.miningJoin(in, flag)
+	}
 }
 
 func (v *MutateVisitor) visitOnCondition(in *ast.OnCondition, flag int) {
@@ -519,10 +533,12 @@ func (v *MutateVisitor) miningSelectStmt(in *ast.SelectStmt, flag int) {
 	v.addFixMUnionAllU(in, flag)
 	// FixMUnionAllL
 	v.addFixMUnionAllL(in, flag)
-	// FixMWhere1U
-	v.addFixMWhere1U(in, flag)
-	// FixMWhere0L
-	v.addFixMWhere0L(in, flag)
+	if !v.HasAgg {
+		// FixMWhere1U
+		v.addFixMWhere1U(in, flag)
+		// FixMWhere0L
+		v.addFixMWhere0L(in, flag)
+	}
 	// FixMHaving1U
 	v.addFixMHaving1U(in, flag)
 	// FixMHaving0L

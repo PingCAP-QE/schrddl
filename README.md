@@ -43,3 +43,4 @@ You can change the concurrency by setting `--concurrency` flag.
 - [ ] Nested CTE
 - [ ] Recursive CTE
 - [ ] Subquery
+  - [x] Scalar Subquery

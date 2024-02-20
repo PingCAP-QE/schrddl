@@ -7,6 +7,14 @@ type Env struct {
 	*Elem
 }
 
+type GenQueryHint int
+
+const (
+	hintNone GenQueryHint = iota
+	hintSingleValue
+	hintSingleRow
+)
+
 type Elem struct {
 	Table      *Table
 	Column     *Column
@@ -20,6 +28,7 @@ type Elem struct {
 	FnInfo     string
 	Bool       bool
 	MultiObjs  *MultiObjs
+	QueryHint  GenQueryHint
 }
 
 func (e *Env) Enter() {

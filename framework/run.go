@@ -106,6 +106,7 @@ var dmlIgnoreList = []string{
 	"invalid memory address or nil pointer dereference",
 	"encoding failed",
 	"invalid input value",
+	"region not found for key",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
@@ -113,6 +114,11 @@ var dmlIgnoreList = []string{
 
 	"maximum statement execution time exceeded",
 	"please skip this plan",
+
+	"Subquery returns more",
+	"Some rows were cut by",
+	"invalid data type: Illegal Json text",
+	"Data Truncated",
 
 	// unknown
 	"context canceled",
