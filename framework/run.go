@@ -19,6 +19,7 @@ var RCIsolation = false
 var Prepare = false
 var CheckDDLExtraTimeout = 0 * time.Second
 var EnableApproximateQuerySynthesis = false
+var EnableCERT = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)

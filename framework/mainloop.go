@@ -7,18 +7,14 @@ import (
 	"fmt"
 	"github.com/PingCAP-QE/schrddl/dump"
 	"github.com/PingCAP-QE/schrddl/norec"
-	"github.com/PingCAP-QE/schrddl/pinolo"
-	"github.com/PingCAP-QE/schrddl/pinolo/stage2"
 	"github.com/PingCAP-QE/schrddl/reduce"
 	"github.com/pingcap/tidb/pkg/parser"
-	"github.com/pingcap/tidb/pkg/parser/format"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
 	crc322 "hash/crc32"
 	"math/rand"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -88,9 +84,11 @@ func (c *DDLCase) statloop() {
 		case <-tick.C:
 			subcaseStat := make([]string, 20)
 			subcaseUseMvindex := make([]string, 20)
+			subcaseUseCERT := make([]string, 20)
 			for _, c := range c.cases {
 				subcaseStat = append(subcaseStat, fmt.Sprintf("%d", len(c.queryPlanMap)))
 				subcaseUseMvindex = append(subcaseUseMvindex, fmt.Sprintf("%d", c.planUseMvIndex))
+				subcaseUseCERT = append(subcaseUseCERT, fmt.Sprintf("%d", c.checkCERTCnt))
 				//i := 0
 				//for k, v := range c.queryPlanMap {
 				//	logutil.BgLogger().Warn("sample query plan", zap.String("plan", k), zap.String("query", v))
@@ -102,7 +100,7 @@ func (c *DDLCase) statloop() {
 			}
 
 			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()), zap.Int64("fetch json row val:", sqlgenerator.GlobalFetchJsonRowValCnt.Load()),
-				zap.Strings("unique query plan", subcaseStat), zap.Strings("use mv index", subcaseUseMvindex))
+				zap.Strings("unique query plan", subcaseStat), zap.Strings("use mv index", subcaseUseMvindex), zap.Strings("use CERT", subcaseUseCERT))
 		}
 	}
 }
@@ -249,6 +247,7 @@ type dmlJobTask struct {
 func (c *testCase) initialize(dbs []*sql.DB) error {
 	//var err error
 	c.dbs = dbs
+	c.tidbParser = parser.New()
 	return nil
 }
 
@@ -276,6 +275,25 @@ func (c *testCase) execSQL(sql string) error {
 		return nil
 	}
 	return errors.Trace(err)
+}
+
+func (c *testCase) execQueryForPlanEstCnt(sql string) (float64, error) {
+	sql = "explain format='brief' " + sql
+	rows, err := c.dbs[0].Query(sql)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		rows.Close()
+	}()
+	var id string
+	var estRows float64
+	var task string
+	var accessObject string
+	var operatorInfo string
+	rows.Next()
+	err = rows.Scan(&id, &estRows, &task, &accessObject, &operatorInfo)
+	return estRows, err
 }
 
 func (c *testCase) execQueryForCnt(sql string) (int, error) {
@@ -478,6 +496,10 @@ func mapMore(m1, m2 map[uint32]struct{}) bool {
 	return false
 }
 
+type checker interface {
+	check(sql string, isReduce bool) (bool, error)
+}
+
 // execute iterates over two list of operations concurrently, one is
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
@@ -560,7 +582,6 @@ func (c *testCase) execute(ctx context.Context) error {
 	log.Infof("tableMetas %d", len(tableMetas))
 	state.SetTableMeta(tableMetas)
 
-	tidbParser := parser.New()
 	cnt := 0
 
 	for {
@@ -603,144 +624,41 @@ func (c *testCase) execute(ctx context.Context) error {
 				return err
 			}
 		} else {
-			var cntOfOld, cntOfNew int
-			var newQuery string
-
-			checker := func(sql string) (bool, error) {
-				// reset some env variables.
-				cntOfOld = 0
-				cntOfNew = 0
-
-				querySQL := sql
-
-				// send queries to tidb and check the result
-				globalRunQueryCnt.Add(1)
-				rs1, err := c.execQueryForCnt(querySQL)
-				var rs1checkSum map[uint32]struct{}
-				if EnableApproximateQuerySynthesis {
-					rs1checkSum, err = c.execQueryForCRC32(querySQL)
-				}
-				//println(fmt.Sprintf("%s;", querySQL))
-				if err != nil {
-					if dmlIgnoreError(err) {
-						return false, nil
-					} else {
-						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
-						return false, errors.Trace(err)
-					}
-				}
-				globalSuccessQueryCnt.Add(1)
-				pd, err := c.getQueryPlan(querySQL)
-				if err != nil {
-					return false, errors.Trace(err)
-				}
-				c.queryPlanMap[pd.plan] = querySQL
-				if pd.useMvIndex {
-					c.planUseMvIndex++
-				}
-
-				if EnableApproximateQuerySynthesis {
-					mr := stage2.MutateAll(querySQL, 1234)
-					if mr.Err != nil {
-						logutil.BgLogger().Error("mutate error", zap.String("sql", querySQL), zap.Error(mr.Err))
-						return false, errors.Trace(mr.Err)
-					}
-					for _, r := range mr.MutateUnits {
-						if r.Err == nil {
-							rs2, err := c.execQueryForCnt(r.Sql)
-							if err != nil {
-								if dmlIgnoreError(err) {
-									//logutil.BgLogger().Warn("ignore error", zap.String("query", r.Sql), zap.Error(err))
-									return false, nil
-								} else {
-									logutil.BgLogger().Error("unexpected error", zap.String("query", r.Sql), zap.Error(err))
-									return false, errors.Trace(err)
-								}
-							}
-							rs2checkSum, err := c.execQueryForCRC32(r.Sql)
-							if err != nil {
-								return false, nil
-							}
-
-							if (r.IsUpper && mapLess(rs2checkSum, rs1checkSum) && !c.execQueryAndCheckEmpty(pinolo.BuildExcept(querySQL, r.Sql))) || (!r.IsUpper && mapMore(rs2checkSum, rs1checkSum) && !c.execQueryAndCheckEmpty(pinolo.BuildExcept(r.Sql, querySQL))) {
-								cntOfOld = rs1
-								cntOfNew = rs2
-								newQuery = r.Sql
-								return true, nil
-							}
-						}
-					}
-					return false, nil
-				}
-
-				stmts, _, err := tidbParser.Parse(querySQL, "", "")
-				if err != nil {
-					logutil.BgLogger().Error("parse error", zap.String("sql", querySQL), zap.Error(err))
-					return false, errors.Trace(err)
-				}
-				stmt := stmts[0]
-				rewriter.Reset()
-				newStmt, _ := stmt.Accept(rewriter)
-				if !rewriter.Valid() {
-					// No predicate, continue
-					return false, nil
-				}
-				isAgg := rewriter.IsAgg()
-				sb.Reset()
-				err = newStmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags|format.RestoreStringWithoutDefaultCharset, &sb))
-				if err != nil {
-					return false, errors.Trace(err)
-				}
-				newQuery = sb.String()
-
-				cntOfOld = rs1
-				rs2, err := c.execQuery(newQuery)
-				//println(fmt.Sprintf("%s;", newQuery))
-				if err != nil {
-					if dmlIgnoreError(err) {
-						return false, nil
-					} else {
-						log.Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
-						return false, err
-					}
-				}
-				if isAgg {
-					for _, row := range rs2 {
-						if row[0] != "'0'" && row[0] != ddlTestValueNull {
-							cntOfNew++
-						}
-					}
-				} else if rs2[0][0] == ddlTestValueNull {
-					cntOfNew = 0
-				} else {
-					cn, err := strconv.Atoi(strings.Trim(rs2[0][0], "'"))
-					if err != nil {
-						logutil.BgLogger().Error("convert error", zap.Error(err))
-						return false, err
-					}
-					cntOfNew = cn
-				}
-
-				return cntOfOld != cntOfNew, nil
+			var ck checker
+			if EnableApproximateQuerySynthesis {
+				ck = &pinoloChecker{c: c}
+			} else if EnableCERT {
+				ck = &certChecker{c: c}
+			} else {
+				ck = &norecChecker{c: c, rewriter: *rewriter, sb: sb}
 			}
 
-			querySQL, err := sqlgenerator.Query.Eval(state)
+			fn := sqlgenerator.QueryOrCTE
+			if EnableCERT {
+				fn = sqlgenerator.Query
+			}
+			querySQL, err := fn.Eval(state)
 			if err != nil {
 				return errors.Trace(err)
 			}
 
 			//println(fmt.Sprintf("%s;", querySQL))
 
-			found, err := checker(querySQL)
+			found, err := ck.check(querySQL, false)
 			if err != nil {
 				return errors.Trace(err)
 			}
 			if found {
-				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s  \n", cntOfOld, cntOfNew, querySQL, newQuery))
-
-				reduceSQL := reduce.ReduceSQL(checker, querySQL)
-				checker(reduceSQL)
-				_, err = c.outputWriter.WriteString(fmt.Sprintf("old:%d, new:%d, old query: %s , new query: %s, reduce query: %s\n\n\n", cntOfOld, cntOfNew, querySQL, newQuery, reduceSQL))
+				reduceSQL := reduce.ReduceSQL(ck.check, querySQL)
+				if EnableCERT {
+					_, err = c.outputWriter.WriteString(
+						fmt.Sprintf("old count of orginal SQL:%f, new count of orginal SQL:%f,\nold count of reduce SQL:%f, new count of reduce SQL:%f,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
+							c.oldEstCntOriginal, c.newEstCntOriginal, c.oldEstCntReduce, c.newEstCntReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
+				} else {
+					_, err = c.outputWriter.WriteString(
+						fmt.Sprintf("old count of orginal SQL:%d, new count of orginal SQL:%d,\nold count of reduce SQL:%d, new count of reduce SQL:%d,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
+							c.cntOfOldOriginal, c.cntOfNewOriginal, c.cntOfOldReduce, c.cntOfNewReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
+				}
 				globalBugSeqNum++
 				num := globalBugSeqNum
 

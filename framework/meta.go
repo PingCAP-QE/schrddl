@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/pingcap/tidb/pkg/parser"
 	"math/rand"
 	"os"
 	"sort"
@@ -36,8 +37,25 @@ type testCase struct {
 	tableMap     map[string]*sqlgenerator.Table
 	outputWriter *os.File
 
-	queryPlanMap   map[string]string
-	planUseMvIndex int
+	tidbParser *parser.Parser
+
+	// stat info
+	queryPlanMap     map[string]string
+	originalSQL      string
+	reduceChangedSQL string
+	reduceSQL        string
+	planUseMvIndex   int
+	cntOfOldOriginal int
+	cntOfNewOriginal int
+	cntOfOldReduce   int
+	cntOfNewReduce   int
+
+	// cert
+	oldEstCntOriginal float64
+	newEstCntOriginal float64
+	oldEstCntReduce   float64
+	newEstCntReduce   float64
+	checkCERTCnt      int
 }
 
 func (c *testCase) stopTest() {

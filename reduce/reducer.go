@@ -12,7 +12,7 @@ type reduceState struct {
 	ruleState map[rule]bool
 }
 
-func tryARule(check func(sql string) (bool, error), sql string, r rule, s *reduceState) (string, error) {
+func tryARule(check func(sql string, isReduce bool) (bool, error), sql string, r rule, s *reduceState) (string, error) {
 	n, err := util.SQL2Ast(sql)
 	if err != nil {
 		return sql, err
@@ -23,7 +23,7 @@ func tryARule(check func(sql string) (bool, error), sql string, r rule, s *reduc
 	if err != nil {
 		return "", err
 	}
-	ok, err := check(trySQL)
+	ok, err := check(trySQL, true)
 	if err != nil {
 		return "", err
 	}
@@ -33,7 +33,7 @@ func tryARule(check func(sql string) (bool, error), sql string, r rule, s *reduc
 	return sql, nil
 }
 
-func ReduceSQL(check func(sql string) (bool, error), sql string) string {
+func ReduceSQL(check func(sql string, isReduce bool) (bool, error), sql string) string {
 	newestSQL := sql
 	n, err := util.SQL2Ast(newestSQL)
 	if err != nil {
