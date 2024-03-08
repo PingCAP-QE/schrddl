@@ -56,6 +56,15 @@ type testCase struct {
 	oldEstCntReduce   float64
 	newEstCntReduce   float64
 	checkCERTCnt      int
+
+	// tlp
+	cntOfP    int
+	cntOfN    int
+	cntOfNull int
+	cntOfAll  int
+	nQuery    string
+	nullQuery string
+	allQuery  string
 }
 
 func (c *testCase) stopTest() {

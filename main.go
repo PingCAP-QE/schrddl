@@ -42,6 +42,7 @@ var (
 	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
 	aqs                  = flag.Bool("aqs", false, "enable Approximate Query Synthesis")
 	cert                 = flag.Bool("cert", false, "enable CERT")
+	tlp                  = flag.Bool("tlp", false, "enable TLP")
 )
 
 func prepareEnv() {
@@ -88,6 +89,9 @@ func main() {
 	}
 	if *cert {
 		EnableCERT = true
+	}
+	if *tlp {
+		EnableTLP = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType

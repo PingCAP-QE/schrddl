@@ -402,7 +402,7 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 				if strings.EqualFold(ct[i].DatabaseTypeName(), "double") {
 					result[i] = fmt.Sprintf("'%s'", RoundToSixDecimals(string(raw)))
 				} else {
-					result[i] = fmt.Sprintf("'%s'", string(raw))
+					result[i] = fmt.Sprintf("'%s'", strings.ToLower(string(raw)))
 				}
 				//if typeNeedQuota(metaCols[i].k) {
 				//	result[i] = fmt.Sprintf("'%s'", string(raw))
@@ -416,7 +416,10 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 			crc32.Write([]byte(r))
 		}
 
-		crc32s[crc32.Sum32()] = struct{}{}
+		sum := crc32.Sum32()
+		//logutil.BgLogger().Info("crc32", zap.Uint32("crc32", sum), zap.String("data", fmt.Sprintf("%v", result)))
+
+		crc32s[sum] = struct{}{}
 	}
 	if rows.Err() != nil {
 		return nil, rows.Err()
@@ -514,13 +517,13 @@ func (c *testCase) execute(ctx context.Context) error {
 	//state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
-	//state.SetWeight(sqlgenerator.PartitionDefinitionList, 0)
+	state.SetWeight(sqlgenerator.PartitionDefinitionKey, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
 
 	//state.SetWeight(sqlgenerator.AggSelect, 0)
 
 	// Sub query is hard for NoREC
-	state.SetWeight(sqlgenerator.SubSelect, 0)
+	//state.SetWeight(sqlgenerator.SubSelect, 0)
 
 	if !EnableApproximateQuerySynthesis {
 		state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
@@ -629,6 +632,8 @@ func (c *testCase) execute(ctx context.Context) error {
 				ck = &pinoloChecker{c: c}
 			} else if EnableCERT {
 				ck = &certChecker{c: c}
+			} else if EnableTLP {
+				ck = &tlpChecker{c: c}
 			} else {
 				ck = &norecChecker{c: c, rewriter: *rewriter, sb: sb}
 			}
@@ -650,7 +655,17 @@ func (c *testCase) execute(ctx context.Context) error {
 			}
 			if found {
 				reduceSQL := reduce.ReduceSQL(ck.check, querySQL)
-				if EnableCERT {
+				if EnableTLP {
+					_, err = c.outputWriter.WriteString(
+						fmt.Sprintf("old count of predicate reduce SQL:%d, count of non-predicate reduce SQL:%d,\ncount of null-predicate reduce SQL:%d, count of all-predicate reduce SQL:%d\n"+
+							"query of orginal SQL: %s\n"+
+							"predicate reduce query: %s\n"+
+							"negative predicate reduce query: %s\n"+
+							"isnull predicate reduce query: %s\n"+
+							"all predicate reduce query: %s\n"+
+							"\n\n",
+							c.cntOfP, c.cntOfN, c.cntOfNull, c.cntOfAll, c.originalSQL, c.reduceSQL, c.nQuery, c.nullQuery, c.allQuery))
+				} else if EnableCERT {
 					_, err = c.outputWriter.WriteString(
 						fmt.Sprintf("old count of orginal SQL:%f, new count of orginal SQL:%f,\nold count of reduce SQL:%f, new count of reduce SQL:%f,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
 							c.oldEstCntOriginal, c.newEstCntOriginal, c.oldEstCntReduce, c.newEstCntReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
