@@ -100,11 +100,32 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 }
 
+var checkList = []string{
+	"can't have a default value",
+	"strconv.Atoi",
+}
+
 func dmlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
 	errStr := err.Error()
+	if strings.Contains(errStr, "assert") {
+		return false
+	} else {
+		return true
+	}
+	for _, check := range checkList {
+		if strings.Contains(errStr, check) {
+			return true
+		}
+	}
+	if strings.Contains(errStr, "slice bounds out of range") {
+		return true
+	}
+	if strings.Contains(errStr, "bad connection") {
+		return true
+	}
 	if strings.Contains(errStr, "Information schema is changed") && !RCIsolation {
 		return true
 	}
@@ -181,6 +202,9 @@ func ddlIgnoreError(err error) bool {
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
 	if strings.Contains(errStr, "Information schema is changed") {
+		return true
+	}
+	if strings.Contains(errStr, "can't have a default value") {
 		return true
 	}
 	// Sometimes, set shard row id bits to a large value might cause global auto ID overflow error.
