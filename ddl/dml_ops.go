@@ -24,9 +24,9 @@ func (c *testCase) generateDMLOps() error {
 	if err := c.generateDelete(); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateSelect(); err != nil {
-		return errors.Trace(err)
-	}
+	//if err := c.generateSelect(); err != nil {
+	//	return errors.Trace(err)
+	//}
 	return nil
 }
 

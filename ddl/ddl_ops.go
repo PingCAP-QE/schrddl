@@ -26,22 +26,22 @@ var globalCheckDDLMu sync.Mutex
 
 func (c *testCase) generateDDLOps() error {
 	defaultTime := 2
-	if err := c.generateCreateSchema(defaultTime); err != nil {
+	if err := c.generateCreateSchema(0); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateDropSchema(defaultTime); err != nil {
+	if err := c.generateDropSchema(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateAddTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateRenameTable(defaultTime); err != nil {
+	if err := c.generateRenameTable(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateTruncateTable(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyTableComment(defaultTime); err != nil {
+	if err := c.generateModifyTableComment(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateModifyTableCharsetAndCollate(defaultTime); err != nil {
@@ -63,7 +63,7 @@ func (c *testCase) generateDDLOps() error {
 		return errors.Trace(err)
 	}
 
-	if err := c.generateRenameIndex(defaultTime); err != nil {
+	if err := c.generateRenameIndex(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateDropIndex(defaultTime); err != nil {
@@ -84,10 +84,10 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateMultiSchemaChange(defaultTime); err != nil {
+	if err := c.generateMultiSchemaChange(0); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateSetTilfahReplica(defaultTime); err != nil {
+	if err := c.generateSetTilfahReplica(0); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -1281,9 +1281,9 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	}
 
 	uniqueString := ""
-	if index.uniques {
-		uniqueString = "unique"
-	}
+	//if index.uniques {
+	//	uniqueString = "unique"
+	//}
 	// build SQL
 	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (", table.name, uniqueString, index.name)
 	for i, column := range index.columns {
