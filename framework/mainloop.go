@@ -527,6 +527,7 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	if !EnableApproximateQuerySynthesis {
 		state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
+		state.SetWeight(sqlgenerator.SubSelect, 0)
 	}
 
 	// bug
