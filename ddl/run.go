@@ -195,12 +195,21 @@ func dmlIgnoreError(err error) bool {
 	return false
 }
 
+var ddlIgnoreList = []string{
+	"Specified key was too long",
+}
+
 func ddlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
+	for _, l := range ddlIgnoreList {
+		if strings.Contains(errStr, l) {
+			return true
+		}
+	}
 	if strings.Contains(errStr, "Information schema is changed") {
 		return true
 	}
