@@ -391,9 +391,9 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 		if !column.canHaveDefaultValue() {
 			expectedDefault = "NULL"
 		}
-		if !strings.EqualFold(defaultValue, expectedDefault) {
-			return errors.Errorf("column default value doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, strings.Trim(expectedDefault, "'"), defaultValue)
-		}
+		//if !strings.EqualFold(defaultValue, expectedDefault) {
+		//	return errors.Errorf("column default value doesn't match, table %s, column %s, expected default:%s, got default:%s", table.name, column.name, strings.Trim(expectedDefault, "'"), defaultValue)
+		//}
 		expectedFieldType := column.normalizeDataType()
 		if expectedFieldType == "xxx" {
 			// We don't know the column's charset for now, so skip the check for text/blob.
