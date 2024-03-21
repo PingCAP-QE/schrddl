@@ -340,7 +340,7 @@ func (c *testCase) checkSchema() error {
 func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 	var columnCnt int
 	var defaultValueRaw interface{}
-	var defaultValue string
+	//var defaultValue string
 	var dateType string
 
 	row, err := c.dbs[0].Query(fmt.Sprintf("select count(*) from information_schema.columns where table_name='%s';", table.name))
@@ -373,11 +373,11 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 			return err
 		}
 		row.Close()
-		if defaultValueRaw == nil {
-			defaultValue = "NULL"
-		} else {
-			defaultValue = fmt.Sprintf("%s", defaultValueRaw)
-		}
+		//if defaultValueRaw == nil {
+		//	defaultValue = "NULL"
+		//} else {
+		//	defaultValue = fmt.Sprintf("%s", defaultValueRaw)
+		//}
 		expectedDefault := getDefaultValueString(column.k, column.defaultValue)
 		expectedDefault = strings.Trim(expectedDefault, "'")
 		if column.k == KindTIMESTAMP {
