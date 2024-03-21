@@ -38,6 +38,7 @@ var (
 	rc                   = flag.Bool("rc-txn", false, "read-committed isolation")
 	prepare              = flag.Bool("prepare", false, "use prepare statement")
 	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
+	globalSortUri        = flag.String("global-sort-uri", "", "global sort uri")
 )
 
 func prepareEnv() {
@@ -78,6 +79,9 @@ func main() {
 	}
 	if *checkDDLExtraTimeout > 0 {
 		CheckDDLExtraTimeout = *checkDDLExtraTimeout
+	}
+	if *globalSortUri != "" {
+		GlobalSortUri = *globalSortUri
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType
