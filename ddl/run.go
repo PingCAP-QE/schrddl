@@ -18,6 +18,7 @@ var EnableTransactionTest = false
 var RCIsolation = false
 var Prepare = false
 var CheckDDLExtraTimeout = 0 * time.Second
+var GlobalSortUri = ""
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -85,6 +86,10 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		execDMLFunc = TransactionExecuteOperations
 	}
 	var err error
+	if GlobalSortUri != "" {
+		dbss[0][0].Exec("set global tidb_enable_dist_task=1")
+		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
+	}
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
 		log.Fatalf("[ddl] get start ddl seq num error %v", err)
