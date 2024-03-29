@@ -78,6 +78,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		TablesToCreate:  tablesToCreate,
 		MySQLCompatible: mysqlCompatible,
 		TestTp:          testTp,
+		dbAddr:          dbAddr,
 	}
 	ddl := NewDDLCase(&cfg)
 	if RCIsolation {

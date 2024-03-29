@@ -55,6 +55,7 @@ type CaseConfig struct {
 	MySQLCompatible bool
 	TablesToCreate  int
 	TestTp          DDLTestType
+	dbAddr          string
 }
 
 var globalBugSeqNum int64 = 0
@@ -564,7 +565,9 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	tableMetas := make([]*model.TableInfo, 0)
 	for i := 0; i < len(state.Tables); i++ {
-		path := fmt.Sprintf("127.0.0.1:10080/schema/%s/%s", c.initDB, state.Tables[i].Name)
+		addr := c.cfg.dbAddr
+		stateAddr := strings.Replace(addr, "4000", "10080", -1)
+		path := fmt.Sprintf("%d/schema/%s/%s", stateAddr, c.initDB, state.Tables[i].Name)
 		rawMeta, err := exec.Command("curl", path).Output()
 		if err != nil {
 			log.Infof("curl error %s", err.Error())
