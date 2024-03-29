@@ -109,4 +109,7 @@ func main() {
 	}()
 
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	if TestFail {
+		log.Fatalf("test failed")
+	}
 }

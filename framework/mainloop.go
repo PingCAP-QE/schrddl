@@ -688,6 +688,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
+				TestFail = true
 				break
 			}
 		}

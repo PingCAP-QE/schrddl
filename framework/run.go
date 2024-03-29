@@ -21,6 +21,7 @@ var CheckDDLExtraTimeout = 0 * time.Second
 var EnableApproximateQuerySynthesis = false
 var EnableCERT = false
 var EnableTLP = false
+var TestFail = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
