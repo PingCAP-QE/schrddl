@@ -567,7 +567,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	for i := 0; i < len(state.Tables); i++ {
 		addr := c.cfg.dbAddr
 		stateAddr := strings.Replace(addr, "4000", "10080", -1)
-		path := fmt.Sprintf("%d/schema/%s/%s", stateAddr, c.initDB, state.Tables[i].Name)
+		path := fmt.Sprintf("%s/schema/%s/%s", stateAddr, c.initDB, state.Tables[i].Name)
 		rawMeta, err := exec.Command("curl", path).Output()
 		if err != nil {
 			log.Infof("curl error %s", err.Error())
