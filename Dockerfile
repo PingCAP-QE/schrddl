@@ -1,4 +1,4 @@
-FROM registry-mirror.pingcap.net/library/golang:1.19.4 as builder
+FROM registry-mirror.pingcap.net/library/golang:1.21 as builder
 
 WORKDIR /build
 COPY go.mod go.sum ./
