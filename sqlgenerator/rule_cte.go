@@ -229,7 +229,7 @@ func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo)
 	ts := make([]ColumnType, 0)
 	fields := stmts[0].(*ast.SelectStmt).Fields.Fields
 	for _, field := range fields {
-		expr, err := expression.RewriteSimpleExprWithNames(mock.NewContext(), field.Expr, expression.NewSchema(cols...), names)
+		expr, err := expression.BuildSimpleExpr(mock.NewContext(), field.Expr, expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil))
 		if err != nil {
 			return nil, err
 		}
