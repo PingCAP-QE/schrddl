@@ -13,8 +13,9 @@ import (
 	"strings"
 )
 
-func DumpToFile(dbName string, tblName []string, fileName string) error {
+func DumpToFile(dbName string, tblName []string, fileName string, host string) error {
 	conf := export.DefaultConfig()
+	conf.Host = strings.Split(host, ":")[0]
 	conf.Port = 4000
 
 	ns := make([]string, len(tblName))
