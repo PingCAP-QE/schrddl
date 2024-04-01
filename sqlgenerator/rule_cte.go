@@ -80,17 +80,6 @@ var SimpleCTEQuery = NewFn(func(state *State) Fn {
 		}
 	}
 
-	// todo: it can infer the cte or the common table
-	if parentCTE != nil {
-		colNames = colNames[:1]
-		for _, c := range parentCTE.Columns[1:] {
-			if _, ok := colsInfo[c.Tp]; ok {
-				colNames = append(colNames, colsInfo[c.Tp][rand.Intn(len(colsInfo[c.Tp]))])
-			} else {
-				colNames = append(colNames, PrintConstantWithFunction(c.Tp))
-			}
-		}
-	}
 	orderByFields := make([]string, len(colNames))
 	for i := range orderByFields {
 		orderByFields[i] = fmt.Sprintf("%d", i+1)

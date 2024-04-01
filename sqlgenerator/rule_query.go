@@ -11,7 +11,7 @@ import (
 
 var QueryOrCTE = NewFn(func(state *State) Fn {
 	return Or(
-		Query,
+		Query.W(3),
 		CTEQueryStatement,
 	)
 })
