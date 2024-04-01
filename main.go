@@ -71,6 +71,7 @@ func main() {
 	flag.Parse()
 	if *output != "" {
 		log.SetOutputByName(*output)
+		GlobalOutPut = *output
 	}
 	if *txn {
 		EnableTransactionTest = true

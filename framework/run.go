@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+var GlobalOutPut = ""
 var EnableTransactionTest = false
 var RCIsolation = false
 var Prepare = false

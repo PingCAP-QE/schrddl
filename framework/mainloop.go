@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -194,6 +195,10 @@ func getAllCharsetAndCollates(db *sql.DB) ([]string, map[string][]string, error)
 func NewDDLCase(cfg *CaseConfig) *DDLCase {
 	cases := make([]*testCase, cfg.Concurrency)
 	fileName := "result-" + time.Now().Format("2006-01-02-15-04-05")
+
+	if GlobalOutPut != "" {
+		fileName = filepath.Dir(GlobalOutPut) + "/" + fileName
+	}
 	outputfile, err := os.Create(fileName)
 	if err != nil {
 		log.Fatal(err)
