@@ -692,6 +692,9 @@ func (c *testCase) execute(ctx context.Context) error {
 					return err
 				}
 				pwd := os.Getenv("PWD")
+				if GlobalOutPut != "" {
+					pwd = filepath.Dir(GlobalOutPut)
+				}
 				err = dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num), c.cfg.dbAddr)
 				if err != nil {
 					return err
