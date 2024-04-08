@@ -1284,9 +1284,9 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	}
 
 	uniqueString := ""
-	//if index.uniques {
-	//	uniqueString = "unique"
-	//}
+	if index.uniques {
+		uniqueString = "unique"
+	}
 	// build SQL
 	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (", table.name, uniqueString, index.name)
 	for i, column := range index.columns {
