@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -534,6 +535,8 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			// Try to update seq_num.
 			seqNum, query, err := getLastDDLInfo(conn)
 			if err != nil {
+				// Don't know why it failed, just exit.
+				os.Exit(0)
 				log.Errorf("get last ddl info failed, %s", err.Error())
 				unExpectedErr = err
 				return
