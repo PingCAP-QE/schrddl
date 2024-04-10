@@ -10,7 +10,7 @@ var SetVariable = NewFn(func(state *State) Fn {
 	return Or(
 		And(Str("set"), Str("tidb_max_chunk_size"), Str("="), Or(Str("32"), Str("4096"))),
 		And(Str("set"), Str("tidb_enable_clustered_index"), Str("="), Or(Str("0"), Str("1"))),
-		And(Str("set"), Str("sql_mode"), Str("="), Or(Str("''"), Str("'default'"))),
+		And(Str("set"), Str("sql_mode"), Str("="), Or(Str("''"), Str("default"))),
 		And(Str("set"), Str("tidb_enable_chunk_rpc"), Str("="), Or(Str("0"), Str("1"))),
 		And(Str("set"), Str("tidb_enable_clustered_index"), Str("="), Or(Str("0"), Str("1"), Str("'INT_ONLY'"))),
 		And(Str("set"), Str("tidb_enable_table_partition"), Str("="), Or(Str("0"), Str("1"))),
