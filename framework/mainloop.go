@@ -625,8 +625,14 @@ func (c *testCase) execute(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			if rand.Intn(15) == 0 {
+				dmlSQL, err = sqlgenerator.SetVariable.Eval(state)
+				if err != nil {
+					return err
+				}
+			}
 			if rand.Intn(100) == 0 {
-				dmlSQL, err = sqlgenerator.NonDDLMutator[rand.Intn(len(sqlgenerator.NonDDLMutator))].Eval(state)
+				dmlSQL, err = sqlgenerator.AnalyzeTable.Eval(state)
 				if err != nil {
 					return err
 				}

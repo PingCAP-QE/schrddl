@@ -134,7 +134,7 @@ var MultiSelect = NewFn(func(state *State) Fn {
 
 var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin, HintNPlan,
+		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, Opt(OrderBy), Opt(Limit),
 	)
@@ -167,7 +167,7 @@ var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.AggCols[tbl] = groupByCols
 
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin, HintNPlan,
+		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderBy), Opt(Limit),
 	)
@@ -327,9 +327,13 @@ var HintJoin = NewFn(func(state *State) Fn {
 	return Or(
 		Strs("/*+  */"),
 		Strs("/*+ merge_join(", t1.Name, ",", t2.Name, "*/"),
+		Strs("/*+ NO_MERGE_JOIN(", t1.Name, ",", t2.Name, "*/"),
 		Strs("/*+ hash_join(", t1.Name, ",", t2.Name, "*/"),
 		Strs("/*+ inl_join(", t1.Name, ",", t2.Name, ") */"),
 		Strs("/*+ inl_hash_join(", t1.Name, ",", t2.Name, ") */"),
+		Strs("/*+ HASH_JOIN_BUILD(", t1.Name, ") */"),
+		Strs("/*+ HASH_JOIN_PROBE(", t1.Name, ") */"),
+		Strs("/*+ NO_HASH_JOIN(", t1.Name, ",", t2.Name, "*/"),
 		//Strs("/*+ inl_merge_join(", t1.Name, ",", t2.Name, ") */"),
 	)
 })
