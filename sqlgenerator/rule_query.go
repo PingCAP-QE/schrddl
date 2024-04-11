@@ -513,6 +513,12 @@ var Predicate = NewFn(func(state *State) Fn {
 	state.env.Column = state.env.Table.Columns.Rand()
 	tbl := state.env.Table
 	randCol := state.env.Column
+	if tbl == nil {
+		return NoneBecauseOf(fmt.Errorf("table is nil"))
+	}
+	if randCol == nil {
+		return NoneBecauseOf(fmt.Errorf("column is nil, table %s", tbl.Name))
+	}
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
 	var pre Fn
 
