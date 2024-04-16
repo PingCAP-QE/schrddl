@@ -7,36 +7,36 @@ import (
 
 func TestRoundToSixDecimalsWithLargeNumber(t *testing.T) {
 	f := "1.23456789e18"
-	rf := RoundToSixDecimals(f)
-	require.Equal(t, "1.234568e+18", rf)
+	rf := RoundToOneDecimals(f)
+	require.Equal(t, "1.2e+18", rf)
 }
 
 func TestRoundToSixDecimalsWithSmallNumber(t *testing.T) {
 	f := "1.23456789e-5"
-	rf := RoundToSixDecimals(f)
-	require.Equal(t, "0.000012", rf)
+	rf := RoundToOneDecimals(f)
+	require.Equal(t, "0.0", rf)
 }
 
 func TestRoundToSixDecimalsWithZero(t *testing.T) {
 	f := "0"
-	rf := RoundToSixDecimals(f)
-	require.Equal(t, "0.000000", rf)
+	rf := RoundToOneDecimals(f)
+	require.Equal(t, "0.0", rf)
 }
 
 func TestRoundToSixDecimalsWithNegativeNumber(t *testing.T) {
 	f := "-1.23456789e18"
-	rf := RoundToSixDecimals(f)
-	require.Equal(t, "-1.234568e+18", rf)
+	rf := RoundToOneDecimals(f)
+	require.Equal(t, "-1.2e+18", rf)
 }
 
 func TestRoundToSixDecimalsWithNonNumber(t *testing.T) {
 	f := "abc"
-	rf := RoundToSixDecimals(f)
+	rf := RoundToOneDecimals(f)
 	require.Equal(t, "", rf)
 }
 
 func TestRoundToSixDecimalsWithSmallFloatNumber(t *testing.T) {
 	f := "12345.123456788"
-	rf := RoundToSixDecimals(f)
-	require.Equal(t, "12345.123457", rf)
+	rf := RoundToOneDecimals(f)
+	require.Equal(t, "12345.1", rf)
 }

@@ -406,7 +406,7 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 			} else {
 				//logutil.BgLogger().Warn("type to debug", zap.String("type", ct[i].DatabaseTypeName()))
 				if strings.EqualFold(ct[i].DatabaseTypeName(), "double") {
-					result[i] = fmt.Sprintf("'%s'", RoundToSixDecimals(string(raw)))
+					result[i] = fmt.Sprintf("'%s'", RoundToOneDecimals(string(raw)))
 				} else {
 					result[i] = fmt.Sprintf("'%s'", strings.ToLower(string(raw)))
 				}

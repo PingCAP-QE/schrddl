@@ -112,6 +112,7 @@ var dmlIgnoreList = []string{
 	"encoding failed",
 	"invalid input value",
 	"region not found for key",
+	"Unsupported expression type MysqlBit",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",

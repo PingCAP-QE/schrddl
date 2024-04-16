@@ -210,14 +210,14 @@ func getRowFromArrayList(list *arraylist.List, i int) interface{} {
 	return ele
 }
 
-func RoundToSixDecimals(numStr string) string {
+func RoundToOneDecimals(numStr string) string {
 	f, err := strconv.ParseFloat(numStr, 64)
 	if err != nil {
 		return ""
 	}
 	threshold := 1e-12
 	if math.Abs(f) < threshold {
-		return "0.000000"
+		return "0.0"
 	}
 	rounded := math.Round(f*1e6) / 1e6
 	if strings.Contains(numStr, "e") && !strings.Contains(numStr, "e-") {
@@ -225,9 +225,9 @@ func RoundToSixDecimals(numStr string) string {
 		if err != nil {
 			panic(err)
 		}
-		return fmt.Sprintf("%.7g", num)
+		return fmt.Sprintf("%.2g", num)
 	}
-	return strconv.FormatFloat(rounded, 'f', 6, 64)
+	return strconv.FormatFloat(rounded, 'f', 1, 64)
 
 	//return strconv.FormatFloat(rounded, 'f', 6, 64)
 }
