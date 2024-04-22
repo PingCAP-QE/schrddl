@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/ddl"
@@ -63,6 +64,11 @@ func prepareEnv() {
 	mysql.SetLogger(log.Logger())
 }
 
+func timeoutExitLoop(timeout time.Duration) {
+	time.Sleep(timeout + 20*time.Second)
+	os.Exit(0)
+}
+
 func main() {
 	flag.Parse()
 	if *output != "" {
@@ -94,5 +100,8 @@ func main() {
 		log.Fatalf("unknown test mode: %s", *mode)
 	}
 	prepareEnv()
+	go func() {
+		timeoutExitLoop(*testTime)
+	}()
 	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
 }
