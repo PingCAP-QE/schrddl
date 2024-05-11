@@ -202,6 +202,7 @@ func dmlIgnoreError(err error) bool {
 
 var ddlIgnoreList = []string{
 	"Specified key was too long",
+	"Incorrect date value",
 }
 
 func ddlIgnoreError(err error) bool {
