@@ -151,6 +151,8 @@ var ddlIgnoreList = []string{
 	"Adding clustered primary key",
 	"Invalid use of NULL value",
 	"can not get 'tikv_gc_safe_point'",
+	"maximum statement execution time exceeded",
+	"Illegal mix of collations for operation",
 }
 
 func dmlIgnoreError(err error) bool {
