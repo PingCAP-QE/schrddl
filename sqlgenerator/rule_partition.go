@@ -28,8 +28,7 @@ var PartitionDefinitionHash = NewFn(func(state *State) Fn {
 })
 
 var PartitionDefinitionKey = NewFn(func(state *State) Fn {
-	partitionedCol := state.env.Table.Columns.Filter(func(c *Column) bool { return c.Tp.IsKeyPartitionType() }).Rand()
-	state.env.PartColumn = partitionedCol
+	partitionedCol := state.env.PartColumn
 	partitionNum := RandomNum(1, 6)
 	return And(
 		Str("partition by key ("),

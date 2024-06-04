@@ -63,12 +63,12 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	idx := state.env.Index
 	partCol := state.env.PartColumn
-	if partCol != nil && idx.IsUnique() && !idx.Columns.Contain(partCol) {
+	// Global index supports primary key with non-clustered,
+	// but we don't decide the index is clustered or not at this time,
+	// so only check is primary or not here.
+	if partCol != nil && idx.Tp == IndexTypePrimary && !idx.Columns.Contain(partCol) {
 		state.env.IdxColumn = partCol
-		return Or(
-			IndexDefinitionColumnNoPrefix,
-			IndexDefinitionColumnPrefix.P(IndexColumnPrefixable),
-		)
+		return IndexDefinitionColumnNoPrefix
 	}
 	totalCols := tbl.Columns.Filter(func(c *Column) bool {
 		return !idx.HasColumn(c) && !state.env.MultiObjs.SameObject(c.Name)
