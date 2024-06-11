@@ -32,6 +32,14 @@ func (s *State) GenNewCTE() *Table {
 	}
 }
 
+func (s *State) GenSubQuery() *Table {
+	id := s.alloc.AllocTableID()
+	return &Table{
+		ID:   -1, // we do not use the id in subQuery
+		Name: fmt.Sprintf("st_%d", id),
+	}
+}
+
 func (s *State) GenNewColumnWithType(tps ...ColumnType) *Column {
 	id := s.alloc.AllocColumnID()
 	col := &Column{ID: id, Name: fmt.Sprintf("col_%d", id)}

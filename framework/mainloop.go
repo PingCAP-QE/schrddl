@@ -666,7 +666,11 @@ func (c *testCase) execute(ctx context.Context) error {
 
 			found, err := ck.check(querySQL, false)
 			if err != nil {
-				return errors.Trace(err)
+				if !dmlIgnoreError(err) {
+					return errors.Trace(err)
+				} else {
+					continue
+				}
 			}
 			if found {
 				reduceSQL := reduce.ReduceSQL(ck.check, querySQL)

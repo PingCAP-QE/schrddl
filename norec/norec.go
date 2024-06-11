@@ -6,17 +6,19 @@ import (
 )
 
 type NoRecRewriter struct {
-	pred      []ast.Node
-	invalid   bool
-	ctes      []string
-	insideCte bool
-	isAgg     bool
+	pred           []ast.Node
+	invalid        bool
+	ctes           []string
+	insideCte      bool
+	insideSubQuery bool
+	isAgg          bool
 }
 
 func (nr *NoRecRewriter) Reset() {
 	nr.invalid = false
 	nr.ctes = make([]string, 0)
 	nr.insideCte = false
+	nr.insideSubQuery = false
 	nr.isAgg = false
 }
 
@@ -35,6 +37,11 @@ func (nr *NoRecRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
 			nr.ctes = append(nr.ctes, cte.Name.String())
 		}
 		nr.insideCte = true
+	case *ast.TableSource:
+		switch v.Source.(type) {
+		case *ast.SelectStmt, *ast.SetOprStmt:
+			nr.insideSubQuery = true
+		}
 	}
 	return n, false
 }
@@ -43,9 +50,14 @@ func (nr *NoRecRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 	switch v := n.(type) {
 	case *ast.WithClause:
 		nr.insideCte = false
+	case *ast.TableSource:
+		switch v.Source.(type) {
+		case *ast.SelectStmt, *ast.SetOprStmt:
+			nr.insideSubQuery = false
+		}
 	case *ast.SelectStmt:
-		if nr.insideCte {
-			// Do not rewrite CTE
+		if nr.insideCte || nr.insideSubQuery {
+			// Do not rewrite CTE or subQuery.
 			return n, true
 		}
 		hasAgg := util.DetectAgg(v)

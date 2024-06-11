@@ -21,6 +21,7 @@ var Query = NewFn(func(state *State) Fn {
 		SingleSelect,
 		MultiSelect,
 		UnionSelect,
+		MultiSelectWithSubQuery,
 	)
 }).P(HasTables)
 
@@ -111,6 +112,31 @@ var CTESelect = NewFn(func(state *State) Fn {
 		AggCols: make(map[*Table]Columns),
 	}
 	return And(WithClause, PostHandleWith, CommonSelect)
+})
+
+var MultiSelectWithSubQuery = NewFn(func(state *State) Fn {
+	tbl1 := state.Tables.Rand()
+	tbl2Str, err := TableSubQuery.Eval(state)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	sq := state.PopSubQuery()
+	sq[0].SubQueryDef = tbl2Str
+	state.env.QState = &QueryState{
+		SelectedCols: map[*Table]QueryStateColumns{
+			tbl1: {
+				Columns: tbl1.Columns,
+				Attr:    make([]string, len(tbl1.Columns)),
+			},
+			sq[0]: {
+				Columns: sq[0].Columns,
+				Attr:    make([]string, len(sq[0].Columns)),
+			},
+		},
+		AggCols: make(map[*Table]Columns),
+	}
+
+	return CommonSelect
 })
 
 var MultiSelect = NewFn(func(state *State) Fn {
@@ -245,6 +271,10 @@ var TableReference = NewFn(func(state *State) Fn {
 	queryState := state.env.QState
 	tbNames := make([]Fn, 0, len(queryState.SelectedCols))
 	for t := range queryState.SelectedCols {
+		if t.SubQueryDef != "" {
+			tbNames = append(tbNames, Str(t.SubQueryDef))
+			continue
+		}
 		tbNames = append(tbNames, Str(t.Name))
 	}
 	if len(tbNames) == 1 {
@@ -329,7 +359,8 @@ var HintJoin = NewFn(func(state *State) Fn {
 		Strs("/*+ merge_join(", t1.Name, ",", t2.Name, "*/"),
 		Strs("/*+ NO_MERGE_JOIN(", t1.Name, ",", t2.Name, "*/"),
 		Strs("/*+ hash_join(", t1.Name, ",", t2.Name, "*/"),
-		Strs("/*+ inl_join(", t1.Name, ",", t2.Name, ") */"),
+		Strs("/*+ inl_join(", t1.Name, ") */"),
+		Strs("/*+ inl_join(", t2.Name, ") */"),
 		Strs("/*+ inl_hash_join(", t1.Name, ",", t2.Name, ") */"),
 		Strs("/*+ HASH_JOIN_BUILD(", t1.Name, ") */"),
 		Strs("/*+ HASH_JOIN_PROBE(", t1.Name, ") */"),
@@ -720,4 +751,28 @@ var SubQuery = NewFn(func(state *State) Fn {
 var ScalarSubQuery = NewFn(func(state *State) Fn {
 	state.env.QueryHint = hintSingleValue
 	return And(Str("("), Query2, Str(")"))
+})
+
+var TableSubQuery = NewFn(func(state *State) Fn {
+	state.IncSubQueryDeep()
+	st := state.GenSubQuery()
+	def, err := SingleSelect.Eval(state)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	var cts []ColumnType
+	cts, err = getTypeOfExpressions(def, "test", state.tableMeta)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	for _, t := range cts {
+		st.AppendColumn(state.GenNewColumnWithType(t))
+	}
+	// Reset column name
+	for i, c := range st.Columns {
+		c.Name = fmt.Sprintf("r%d", i)
+	}
+	state.PushSubQuery(st)
+
+	return And(Str("("), Str(def), Str(") "), Str(st.Name))
 })

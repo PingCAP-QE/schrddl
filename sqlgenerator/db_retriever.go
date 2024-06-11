@@ -82,6 +82,23 @@ func (s *State) IncCTEDeep() {
 	s.ctes = append(s.ctes, make([]*Table, 0))
 }
 
+func (s *State) IncSubQueryDeep() {
+	s.subQuery = append(s.subQuery, make([]*Table, 0))
+}
+
+func (s *State) PopSubQuery() []*Table {
+	if len(s.subQuery) == 0 {
+		panic("0 subQuery table")
+	}
+	tc := s.subQuery[len(s.subQuery)-1]
+	s.subQuery = s.subQuery[:len(s.subQuery)-1]
+	return tc
+}
+
+func (s *State) PushSubQuery(sq *Table) {
+	s.subQuery[len(s.subQuery)-1] = append(s.subQuery[len(s.subQuery)-1], sq)
+}
+
 func (s *State) GetRandPrepare() *Prepare {
 	return s.prepareStmts[rand.Intn(len(s.prepareStmts))]
 }

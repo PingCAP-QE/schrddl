@@ -14,8 +14,9 @@ type State struct {
 	Tables        Tables
 	droppedTables Tables
 
-	ctes  [][]*Table
-	alloc *IDAllocator
+	ctes     [][]*Table
+	subQuery [][]*Table
+	alloc    *IDAllocator
 
 	env *Env
 
@@ -44,6 +45,7 @@ type Table struct {
 	// A table is also its ChildTables.
 	// This is used for SELECT OUT FILE and LOAD DATA.
 	ChildTables []*Table
+	SubQueryDef string
 }
 
 type Column struct {
