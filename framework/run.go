@@ -113,6 +113,7 @@ var dmlIgnoreList = []string{
 	"invalid input value",
 	"region not found for key",
 	"Unsupported expression type MysqlBit",
+	"Unexpected missing column",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
