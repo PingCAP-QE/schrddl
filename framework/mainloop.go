@@ -568,10 +568,6 @@ func (c *testCase) execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = c.execSQL("set global tidb_enable_global_index=true")
-	if err != nil {
-		return err
-	}
 
 	tableMetas := make([]*model.TableInfo, 0)
 	for i := 0; i < len(state.Tables); i++ {

@@ -60,6 +60,10 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		dbs = append(dbs, db1)
 		dbss = append(dbss, dbs)
 	}
+	globalDbs, err := OpenDB(dbDSN, 20)
+	if err != nil {
+		log.Fatalf("[ddl] create db client error %v", err)
+	}
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc,
@@ -83,7 +87,11 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ddl := NewDDLCase(&cfg)
 	if RCIsolation {
-		dbss[0][0].Exec("set global transaction_isolation='read-committed'")
+		globalDbs.Exec("set global transaction_isolation='read-committed'")
+	}
+	_, err = globalDbs.Exec("set global tidb_enable_global_index=true")
+	if err != nil {
+		log.Fatalf("[ddl] set global tidb_enable_global_index=true error %v", err)
 	}
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)
