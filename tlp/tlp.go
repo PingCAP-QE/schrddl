@@ -11,7 +11,7 @@ type TlpRewriter struct {
 	invalid        bool
 	ctes           []string
 	insideCte      bool
-	insideSubQuery int
+	insideSubQuery bool
 	isAgg          bool
 
 	// config
@@ -23,7 +23,7 @@ func (tr *TlpRewriter) Reset() {
 	tr.invalid = false
 	tr.ctes = make([]string, 0)
 	tr.insideCte = false
-	tr.insideSubQuery = 0
+	tr.insideSubQuery = false
 	tr.isAgg = false
 	tr.negativePred = true
 	tr.noPred = false
@@ -49,7 +49,12 @@ func (tr *TlpRewriter) IsAgg() bool {
 func (tr *TlpRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
 	switch v := n.(type) {
 	case *ast.SubqueryExpr:
-		tr.insideSubQuery++
+		tr.insideSubQuery = true
+	case *ast.TableSource:
+		switch v.Source.(type) {
+		case *ast.SelectStmt, *ast.SetOprStmt:
+			tr.insideSubQuery = true
+		}
 	case *ast.WithClause:
 		for _, cte := range v.CTEs {
 			tr.ctes = append(tr.ctes, cte.Name.String())
@@ -62,7 +67,12 @@ func (tr *TlpRewriter) Enter(n ast.Node) (node ast.Node, skipChildren bool) {
 func (tr *TlpRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 	switch v := n.(type) {
 	case *ast.SubqueryExpr:
-		tr.insideSubQuery--
+		tr.insideSubQuery = false
+	case *ast.TableSource:
+		switch v.Source.(type) {
+		case *ast.SelectStmt, *ast.SetOprStmt:
+			tr.insideSubQuery = false
+		}
 	case *ast.WithClause:
 		tr.insideCte = false
 	case *ast.SelectStmt:
@@ -70,7 +80,7 @@ func (tr *TlpRewriter) Leave(n ast.Node) (retNode ast.Node, ok bool) {
 			// Do not rewrite CTE
 			return n, true
 		}
-		if tr.insideSubQuery > 0 {
+		if tr.insideSubQuery {
 			// Do not rewrite subquery
 			return n, true
 		}
