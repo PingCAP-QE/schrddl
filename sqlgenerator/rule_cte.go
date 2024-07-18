@@ -2,7 +2,11 @@ package sqlgenerator
 
 import (
 	"fmt"
+	"math/rand"
+	"strings"
+
 	"github.com/pingcap/tidb/pkg/expression"
+	"github.com/pingcap/tidb/pkg/expression/aggregation"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/parser/model"
@@ -10,8 +14,6 @@ import (
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"github.com/pingcap/tidb/pkg/util/mock"
 	"go.uber.org/zap"
-	"math/rand"
-	"strings"
 )
 
 // a replacement to avoid initialization loop
@@ -217,13 +219,33 @@ func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo)
 
 	ts := make([]ColumnType, 0)
 	fields := stmts[0].(*ast.SelectStmt).Fields.Fields
+	buildOptions := expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil)
 	for _, field := range fields {
-		expr, err := expression.BuildSimpleExpr(mock.NewContext(), field.Expr, expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil))
+		// A temporarily workaround for building aggregation expression
+		if aggFunc, ok := field.Expr.(*ast.AggregateFuncExpr); field.Expr != nil && ok {
+			newArgList := make([]expression.Expression, 0, len(aggFunc.Args))
+			for _, arg := range aggFunc.Args {
+				expr, err := expression.BuildSimpleExpr(mock.NewContext(), arg, buildOptions)
+				if err != nil {
+					return nil, err
+				}
+				newArgList = append(newArgList, expr)
+			}
+			newFunc, err := aggregation.NewAggFuncDesc(mock.NewContext(), aggFunc.F, newArgList, aggFunc.Distinct)
+			if err != nil {
+				return nil, err
+			}
+			ts = append(ts, evalTypeToColumnType(newFunc.RetTp.EvalType()))
+			continue
+		}
+
+		expr, err := expression.BuildSimpleExpr(mock.NewContext(), field.Expr, buildOptions)
 		if err != nil {
 			return nil, err
 		}
 		ts = append(ts, evalTypeToColumnType(expr.GetType().EvalType()))
 	}
+
 	return ts, nil
 }
 
