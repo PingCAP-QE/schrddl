@@ -57,7 +57,7 @@ func prepareEnv() {
 	}
 	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
 		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
-			if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='+8:00'")); err != nil {
+			if _, err = tidbC.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
 				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
 			}
 		}

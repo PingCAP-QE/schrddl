@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/pingcap/tidb/pkg/parser"
 	"math/rand"
 	"os"
 	"sort"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/twinj/uuid"
 )
 
@@ -40,15 +40,16 @@ type testCase struct {
 	tidbParser *parser.Parser
 
 	// stat info
-	queryPlanMap     map[string]string
-	originalSQL      string
-	reduceChangedSQL string
-	reduceSQL        string
-	planUseMvIndex   int
-	cntOfOldOriginal int
-	cntOfNewOriginal int
-	cntOfOldReduce   int
-	cntOfNewReduce   int
+	queryPlanMap                      map[string]string
+	originalSQL                       string
+	reduceChangedSQL                  string
+	reduceSQL                         string
+	aggregationAsInnerSideOfIndexJoin int
+	planUseMvIndex                    int
+	cntOfOldOriginal                  int
+	cntOfNewOriginal                  int
+	cntOfOldReduce                    int
+	cntOfNewReduce                    int
 
 	// cert
 	oldEstCntOriginal float64
