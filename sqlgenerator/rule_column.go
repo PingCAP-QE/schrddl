@@ -14,7 +14,7 @@ var ColumnDefinitions = NewFn(func(state *State) Fn {
 
 var ColumnDefinition = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
-	partialCol := &Column{ID: state.alloc.AllocColumnID()}
+	partialCol := &Column{ID: state.alloc.AllocColumnID(), Idx: len(tbl.Columns)}
 	state.env.Column = partialCol
 	// Example:
 	//   a varchar(255) collate utf8mb4_bin not null

@@ -366,4 +366,5 @@ const (
 
 const (
 	QueryAggregation = "agg"
+	ChosenSelection  = "Selection"
 )

@@ -1,13 +1,15 @@
 package framework
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
+
 	"github.com/PingCAP-QE/schrddl/norec"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/pkg/parser/format"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
-	"strconv"
-	"strings"
 )
 
 type norecChecker struct {
@@ -54,6 +56,13 @@ func (n *norecChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	if err != nil {
 		return false, errors.Trace(err)
 	}
+
+	re := regexp.MustCompile(`IndexJoin`)
+	match := re.FindString(pd.plan)
+	if match != "" && strings.Contains(querySQL, "inl_join") {
+		n.c.aggregationAsInnerSideOfIndexJoin++
+	}
+
 	n.c.queryPlanMap[pd.plan] = querySQL
 	if pd.useMvIndex {
 		n.c.planUseMvIndex++
