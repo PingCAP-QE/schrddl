@@ -31,7 +31,7 @@ var (
 	dbAddr               = flag.String("addr", "127.0.0.1:4000", "database address")
 	dbName               = flag.String("db", "test", "database name")
 	mode                 = flag.String("mode", "serial", "test mode: serial, parallel")
-	concurrency          = flag.Int("concurrency", 20, "concurrency")
+	concurrency          = flag.Int("concurrency", 1, "concurrency")
 	tablesToCreate       = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible      = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	testTime             = flag.Duration("time", 2*time.Hour, "test time")
@@ -62,6 +62,8 @@ func prepareEnv() {
 			}
 		}
 	}
+	// Enable index join on aggregation
+	tidbC.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
 	tidbC.Close()
 
 	mysql.SetLogger(log.Logger())

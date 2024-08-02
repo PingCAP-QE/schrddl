@@ -99,8 +99,6 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	if err := ddl.Execute(ctx, dbss); err != nil {
 		log.Fatalf("[ddl] execute error %v", err)
 	}
-	// Enable index join on aggregation
-	globalDbs.Exec("set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
 }
 
 var dmlIgnoreList = []string{
