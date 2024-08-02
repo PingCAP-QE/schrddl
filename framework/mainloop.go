@@ -85,13 +85,16 @@ func (c *DDLCase) statloop() {
 	for {
 		select {
 		case <-tick.C:
-			subcaseStat := make([]string, 20)
-			subcaseUseMvindex := make([]string, 20)
-			subcaseUseCERT := make([]string, 20)
+			subcaseStat := make([]string, len(c.cases))
+			subcaseUseMvindex := make([]string, len(c.cases))
+			subcaseUseCERT := make([]string, len(c.cases))
+			subcaseUseAggIndexJoin := make([]string, len(c.cases))
 			for _, c := range c.cases {
 				subcaseStat = append(subcaseStat, fmt.Sprintf("%d", len(c.queryPlanMap)))
 				subcaseUseMvindex = append(subcaseUseMvindex, fmt.Sprintf("%d", c.planUseMvIndex))
 				subcaseUseCERT = append(subcaseUseCERT, fmt.Sprintf("%d", c.checkCERTCnt))
+				subcaseUseAggIndexJoin = append(subcaseUseAggIndexJoin, fmt.Sprintf("%d", c.aggregationAsInnerSideOfIndexJoin))
+
 				//i := 0
 				//for k, v := range c.queryPlanMap {
 				//	logutil.BgLogger().Warn("sample query plan", zap.String("plan", k), zap.String("query", v))
@@ -102,8 +105,14 @@ func (c *DDLCase) statloop() {
 				//}
 			}
 
-			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()), zap.Int64("success:", globalSuccessQueryCnt.Load()), zap.Int64("fetch json row val:", sqlgenerator.GlobalFetchJsonRowValCnt.Load()),
-				zap.Strings("unique query plan", subcaseStat), zap.Strings("use mv index", subcaseUseMvindex), zap.Strings("use CERT", subcaseUseCERT))
+			logutil.BgLogger().Info("stat", zap.Int64("run query:", globalRunQueryCnt.Load()),
+				zap.Int64("success:", globalSuccessQueryCnt.Load()),
+				zap.Int64("fetch json row val:", sqlgenerator.GlobalFetchJsonRowValCnt.Load()),
+				zap.Strings("unique query plan", subcaseStat),
+				zap.Strings("use mv index", subcaseUseMvindex),
+				zap.Strings("use CERT", subcaseUseCERT),
+				zap.Strings("use agg index join", subcaseUseAggIndexJoin),
+			)
 		}
 	}
 }
@@ -594,7 +603,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	}
 	log.Infof("tableMetas %d", len(tableMetas))
 	state.SetTableMeta(tableMetas)
-	state.PrepareIndexJoinColumns()
+	sqlgenerator.PrepareIndexJoinColumns(state)
 
 	cnt := 0
 

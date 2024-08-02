@@ -62,6 +62,8 @@ func prepareEnv() {
 			}
 		}
 	}
+	// Enable index join on aggregation
+	tidbC.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
 	tidbC.Close()
 
 	mysql.SetLogger(log.Logger())

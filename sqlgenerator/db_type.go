@@ -6,49 +6,6 @@ import (
 	"github.com/pingcap/tidb/pkg/parser/model"
 )
 
-var indexJoinType = map[ColumnType][]ColumnType{
-	ColumnTypeBoolean: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeTinyInt: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeSmallInt: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeMediumInt: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeInt: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeBigInt: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeFloat:   {ColumnTypeFloat, ColumnTypeDouble},
-	ColumnTypeDouble:  {ColumnTypeFloat, ColumnTypeDouble},
-	ColumnTypeDecimal: {ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal},
-	ColumnTypeChar: {
-		ColumnTypeFloat, ColumnTypeDouble, ColumnTypeChar, ColumnTypeVarchar,
-		ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeVarchar: {
-		ColumnTypeFloat, ColumnTypeDouble, ColumnTypeChar, ColumnTypeVarchar,
-		ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeDate: {ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeTime: {
-		ColumnTypeFloat, ColumnTypeDouble, ColumnTypeChar, ColumnTypeVarchar,
-		ColumnTypeDate, ColumnTypeTime, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeDatetime:  {ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeTimestamp: {ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp},
-	ColumnTypeYear: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeDate,
-		ColumnTypeDatetime, ColumnTypeTimestamp, ColumnTypeYear, ColumnTypeBit},
-	ColumnTypeBit: {
-		ColumnTypeBoolean, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeInt,
-		ColumnTypeBigInt, ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal, ColumnTypeYear, ColumnTypeBit},
-}
-
 type State struct {
 	hooks  *Hooks
 	weight map[string]int
@@ -57,7 +14,6 @@ type State struct {
 
 	Tables        Tables
 	droppedTables Tables
-	joinColumns   []*JoinColumn
 
 	ctes     [][]*Table
 	subQuery [][]*Table
@@ -70,13 +26,6 @@ type State struct {
 	tableMeta []*model.TableInfo
 
 	fnStack string
-}
-
-type JoinColumn struct {
-	outerTable   *Table
-	innerTable   *Table
-	outerColumns []*Column
-	innerColumns []*Column
 }
 
 type Table struct {
@@ -305,67 +254,4 @@ func (m *MultiObjs) AddName(name string) {
 
 func (s *State) SetTableMeta(tableMeta []*model.TableInfo) {
 	s.tableMeta = tableMeta
-}
-
-func (s *State) PrepareIndexJoinColumns() {
-	var CheckFunc = func(left, right ColumnType) bool {
-		if matches, ok := indexJoinType[left]; ok {
-			for _, match := range matches {
-				if right == match {
-					return true
-				}
-			}
-		}
-		return false
-	}
-
-	// Enumerate possible join columns
-	for i := 0; i < len(s.Tables); i++ {
-		for j := 0; j < len(s.Tables); j++ {
-			outerTable := s.Tables[i]
-			innerTable := s.Tables[j]
-
-			var comb = JoinColumn{
-				outerTable:   outerTable,
-				innerTable:   innerTable,
-				outerColumns: make([]*Column, 0),
-				innerColumns: make([]*Column, 0),
-			}
-
-			for _, outerCol := range outerTable.Columns {
-				for _, innerIndex := range innerTable.Indexes {
-					if CheckFunc(outerCol.Tp, innerIndex.Columns[0].Tp) {
-						comb.outerColumns = append(comb.outerColumns, outerCol)
-						comb.innerColumns = append(comb.innerColumns, innerIndex.Columns[0])
-					}
-				}
-			}
-
-			if len(comb.innerColumns) > 0 {
-				s.joinColumns = append(s.joinColumns, &comb)
-			}
-		}
-	}
-}
-
-func (s *State) RandJoinColumn() (*Table, *Table, *Column, *Column) {
-	totalNum := 0
-	for _, joinColumn := range s.joinColumns {
-		totalNum += len(joinColumn.innerColumns)
-	}
-
-	if totalNum == 0 {
-		return nil, nil, nil, nil
-	}
-
-	idx := rand.Intn(totalNum)
-	for _, joinColumn := range s.joinColumns {
-		if idx < len(joinColumn.innerColumns) {
-			return joinColumn.outerTable, joinColumn.innerTable,
-				joinColumn.outerColumns[idx], joinColumn.innerColumns[idx]
-		}
-		idx -= len(joinColumn.innerColumns)
-	}
-
-	return nil, nil, nil, nil
 }
