@@ -603,7 +603,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	}
 	log.Infof("tableMetas %d", len(tableMetas))
 	state.SetTableMeta(tableMetas)
-	state.PrepareIndexJoinColumns()
+	sqlgenerator.PrepareIndexJoinColumns(state)
 
 	cnt := 0
 

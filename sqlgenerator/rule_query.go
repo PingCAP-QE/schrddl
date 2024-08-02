@@ -115,75 +115,6 @@ var CTESelect = NewFn(func(state *State) Fn {
 	return And(WithClause, PostHandleWith, CommonSelect)
 })
 
-var MultiSelectWithIndexJoin = NewFn(func(state *State) Fn {
-	tbl1, tbl2, col1, col2 := state.RandJoinColumn()
-	if tbl1 == nil {
-		return NoneBecauseOf(fmt.Errorf("not initialized"))
-	}
-
-	// Generate subquery
-	state.IncSubQueryDeep()
-	st := state.GenSubQuery()
-	state.env.QState = &QueryState{
-		SelectedCols: map[*Table]QueryStateColumns{
-			tbl2: {
-				Columns: tbl2.Columns,
-				Attr:    make([]string, len(tbl2.Columns)),
-			},
-		},
-		AggCols: make(map[*Table]Columns),
-	}
-	state.env.QState.SelectedCols[tbl2].Attr[col2.Idx] = ChosenSelection
-
-	def, err := SimpleAggSelect.Eval(state)
-	if err != nil {
-		return NoneBecauseOf(err)
-	}
-	var cts []ColumnType
-	cts, err = getTypeOfExpressions(def, "test", state.tableMeta)
-	if err != nil {
-		return NoneBecauseOf(err)
-	}
-	for _, t := range cts {
-		st.AppendColumn(state.GenNewColumnWithType(t))
-	}
-	// Reset column name
-	for i, c := range st.Columns {
-		c.Name = fmt.Sprintf("r%d", i)
-	}
-	state.PushSubQuery(st)
-
-	tbl2Str := fmt.Sprintf("(%s) %s", def, st.Name)
-	sq := state.PopSubQuery()
-	sq[0].SubQueryDef = tbl2Str
-	state.env.QState = &QueryState{
-		SelectedCols: map[*Table]QueryStateColumns{
-			tbl1: {
-				Columns: tbl1.Columns,
-				Attr:    make([]string, len(tbl1.Columns)),
-			},
-			sq[0]: {
-				Columns: sq[0].Columns,
-				Attr:    make([]string, len(sq[0].Columns)),
-			},
-		},
-		AggCols: make(map[*Table]Columns),
-	}
-
-	joinHint := Str(fmt.Sprintf("/*+ inl_join(%s) */", sq[0].Name))
-	joinPredicate := Str(
-		fmt.Sprintf("on %s.%s = %s.%s",
-			tbl1.Name, col1.Name, st.Name, sq[0].Columns[0].Name))
-
-	tblNames := []Fn{Str(tbl1.Name), Str(tbl2Str)}
-	join := Join(tblNames, Or(Str("left join"), Str("inner join")))
-
-	return And(
-		Str("select"), joinHint, SelectFields,
-		Str("from"), join, joinPredicate, Opt(OrderBy), Opt(Limit),
-	)
-})
-
 var MultiSelectWithSubQuery = NewFn(func(state *State) Fn {
 	tbl1 := state.Tables.Rand()
 	tbl2Str, err := TableSubQuery.Eval(state)
@@ -253,25 +184,6 @@ var GroupByColumns = NewFn(func(state *State) Fn {
 	return Strs("group by", strings.Join(groupByItems, ","))
 })
 
-var SimpleAggSelect = NewFn(func(state *State) Fn {
-	state.env.QState.IsAgg = true
-	tbl := state.env.QState.GetRandTable()
-
-	groupByColsCnt := rand.Intn(3)
-	groupByCols := tbl.Columns.RandGiveN(groupByColsCnt)
-	for i, attr := range state.env.QState.SelectedCols[tbl].Attr {
-		if attr == ChosenSelection {
-			groupByCols = append([]*Column{tbl.Columns[i]}, groupByCols...)
-		}
-	}
-	state.env.QState.AggCols[tbl] = groupByCols
-
-	return And(
-		Str("select"), Opt(HintAggToCop), SimpleSelectFields, Str("from"),
-		TableReference, WhereClause, GroupByColumns,
-	)
-})
-
 var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.IsAgg = true
 	// Choose aggregate columns.
@@ -300,38 +212,6 @@ var CommonSelect = NewFn(func(state *State) Fn {
 		NonAggSelect,
 		AggSelect,
 	)
-})
-
-var SimpleSelectFields = NewFn(func(state *State) Fn {
-	queryState := state.env.QState
-	queryState.FieldNumHint = 2 + rand.Intn(4)
-
-	tbl := queryState.GetRandTable()
-
-	var fns []Fn
-
-	// We need at least one column for join and one aggregation function
-	fns = append(fns, NewFn(func(state *State) Fn {
-		state.env.Table = tbl
-		return Str(fmt.Sprintf("%s.%s as r0", tbl.Name, state.env.QState.AggCols[tbl][0].Name))
-	}))
-	fns = append(fns, Str(","))
-	fns = append(fns, NewFn(func(state *State) Fn {
-		state.env.Table = tbl
-		state.env.QColumns = queryState.SelectedCols[state.env.Table]
-		return And(AggFunction, Str("as r1"))
-	}))
-
-	for i := 2; i < queryState.FieldNumHint; i++ {
-		fieldID := fmt.Sprintf("r%d", i)
-		fns = append(fns, Str(","))
-		fns = append(fns, NewFn(func(state *State) Fn {
-			state.env.Table = tbl
-			state.env.QColumns = queryState.SelectedCols[state.env.Table]
-			return And(Or(SelectFieldName, AggFunction), Str("as"), Str(fieldID))
-		}))
-	}
-	return And(fns...)
 })
 
 var SelectFields = NewFn(func(state *State) Fn {
