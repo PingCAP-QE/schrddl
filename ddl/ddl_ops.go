@@ -91,6 +91,9 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetTilfahReplica(0); err != nil {
 		return errors.Trace(err)
 	}
+	if err := c.generateModifyTableTTL(defaultTime); err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -122,7 +125,7 @@ const (
 	ddlSetTiflashReplica
 
 	ddlMultiSchemaChange
-
+	ddlModifyTableTTL
 	ddlKindNil
 )
 
@@ -772,17 +775,21 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	}
 
 	charset, collate := c.pickupRandomCharsetAndCollate()
+	ttlExpr, ttlEnable, ttlSchedule := c.pickupRandomTTLOptions(tableColumns, true)
 
 	tableInfo := ddlTestTable{
-		name:         uuid.NewV4().String()[:8],
-		columns:      tableColumns,
-		indexes:      make([]*ddlTestIndex, 0),
-		numberOfRows: 0,
-		deleted:      0,
-		comment:      uuid.NewV4().String()[:8],
-		charset:      charset,
-		collate:      collate,
-		lock:         new(sync.RWMutex),
+		name:           uuid.NewV4().String()[:8],
+		columns:        tableColumns,
+		indexes:        make([]*ddlTestIndex, 0),
+		numberOfRows:   0,
+		deleted:        0,
+		comment:        uuid.NewV4().String()[:8],
+		charset:        charset,
+		collate:        collate,
+		lock:           new(sync.RWMutex),
+		ttlExpr:        ttlExpr,
+		ttlEnable:      ttlEnable,
+		ttlJobSchedule: ttlSchedule,
 	}
 
 	sql := fmt.Sprintf("CREATE TABLE `%s` (", tableInfo.name)
@@ -808,6 +815,17 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 
 	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
+	if ttlExpr != "" {
+		sql += " " + tableInfo.ttlExpr
+	}
+
+	if ttlEnable != "" {
+		sql += " " + ttlEnable
+	}
+
+	if ttlSchedule != "" {
+		sql += " " + ttlSchedule
+	}
 
 	if rand.Intn(3) == 0 && partitionColumnName != "" {
 		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumnName, rand.Intn(10)+1)
@@ -1664,6 +1682,11 @@ func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
 	}
+
+	if checkIsTTLColumn(table, origColumn) && !checkColumnSupportTTL(modifiedColumn) {
+		return nil
+	}
+
 	if modifiedColumn.name == origColumn.name {
 		modifiedColumn.name = ""
 	}
@@ -1749,6 +1772,11 @@ func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask)
 			sql += fmt.Sprintf(" AFTER `%s`", insertAfterColumn.name)
 		}
 	}
+
+	if checkIsTTLColumn(table, origColumn) && !checkColumnSupportTTL(modifiedColumn) {
+		return nil
+	}
+
 	if modifiedColumn.name == origColumn.name {
 		modifiedColumn.name = ""
 	}
@@ -1858,6 +1886,10 @@ func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) e
 	}
 
 	columnToDrop := getColumnFromArrayList(table.columns, columnToDropIndex)
+
+	if checkIsTTLColumn(table, columnToDrop) {
+		return nil
+	}
 
 	if !checkAddDropColumn(ctx, columnToDrop) {
 		return nil
@@ -2018,6 +2050,87 @@ func (c *testCase) generateSetTilfahReplica(repeat int) error {
 		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareSetTiflashReplica, nil, ddlSetTiflashReplica})
 	}
 	return nil
+}
+
+type ddlModifyTableTTLArg struct {
+	ttlExpr        string
+	ttlEnable      string
+	ttlJobSchedule string
+}
+
+func (c *testCase) generateModifyTableTTL(repeat int) error {
+	for i := 0; i < repeat; i++ {
+		c.ddlOps = append(c.ddlOps, ddlTestOpExecutor{c.prepareModifyTableTTL, nil, ddlModifyTableTTL})
+	}
+	return nil
+}
+
+func (c *testCase) prepareModifyTableTTL(_ interface{}, taskCh chan *ddlJobTask) error {
+	table := c.pickupRandomTable()
+	if table == nil {
+		return nil
+	}
+
+	opt := ""
+	var ttlExpr, ttlEnable, ttlSchedule string
+	if rand.Intn(5) == 0 {
+		opt = " REMOVE TTL"
+	} else {
+		ttlExpr, ttlEnable, ttlSchedule = c.pickupRandomTTLOptions(table.columns, table.ttlExpr == "")
+		if ttlExpr != "" {
+			opt += " " + ttlExpr
+		}
+		if ttlEnable != "" {
+			opt += " " + ttlEnable
+		}
+		if ttlSchedule != "" {
+			opt += " " + ttlSchedule
+		}
+	}
+
+	if opt == "" {
+		return nil
+	}
+
+	sql := fmt.Sprintf("ALTER TABLE `%s` %s", table.name, opt)
+	task := &ddlJobTask{
+		k:       ddlModifyTableTTL,
+		sql:     sql,
+		tblInfo: table,
+		arg: ddlJobArg(&ddlModifyTableTTLArg{
+			ttlExpr,
+			ttlEnable,
+			ttlSchedule,
+		}),
+	}
+	taskCh <- task
+	return nil
+}
+
+func (c *testCase) modifyTTLOptionJob(task *ddlJobTask) error {
+	table := task.tblInfo
+	table.lock.Lock()
+	defer table.lock.Unlock()
+	if c.isTableDeleted(table) {
+		return fmt.Errorf("table %s is not exists", table.name)
+	}
+	arg := (*ddlModifyTableTTLArg)(task.arg)
+	table.ttlExpr = arg.ttlExpr
+	table.ttlEnable = arg.ttlEnable
+	table.ttlJobSchedule = arg.ttlJobSchedule
+	return nil
+}
+
+func checkColumnSupportTTL(col *ddlTestColumn) bool {
+	switch col.k {
+	case KindDATE, KindDATETIME, KindTIMESTAMP:
+		return true
+	}
+	return false
+}
+
+func checkIsTTLColumn(tbl *ddlTestTable, col *ddlTestColumn) bool {
+	return strings.Contains(tbl.ttlExpr, fmt.Sprintf("`%s`", col.name))
 }
 
 type ddlSetTiflashReplicaArg struct {

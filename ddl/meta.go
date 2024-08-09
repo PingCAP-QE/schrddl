@@ -109,6 +109,59 @@ func (c *testCase) pickupRandomTable() *ddlTestTable {
 	return c.tables[name]
 }
 
+func (c *testCase) pickupRandomTTLOptions(columns *arraylist.List, forceTTLOption bool) (ttlExpr string, ttlEnable string, ttlJobSchedule string) {
+	timeColumns := make([]*ddlTestColumn, 0, columns.Size())
+	for ite := columns.Iterator(); ite.Next(); {
+		col := ite.Value().(*ddlTestColumn)
+		if checkColumnSupportTTL(col) {
+			timeColumns = append(timeColumns, col)
+		}
+
+		if col.isPrimaryKey {
+			ft := strings.ToLower(col.fieldType)
+			if strings.Contains(ft, "float") || strings.Contains(ft, "double") {
+				// TTL do not support double/float pk
+				return
+			}
+		}
+	}
+
+	ttlColIndex := rand.Intn(len(timeColumns) + 1)
+	if ttlColIndex >= len(timeColumns) {
+		return
+	}
+
+	if forceTTLOption || rand.Intn(2) > 0 {
+		ttlCol := timeColumns[ttlColIndex]
+		expireIntervals := []string{"1", "1.2"}
+		expireIntervalUnits := []string{"MINUTE", "HOUR", "DAY", "MONTH", "YEAR"}
+
+		ttlExpr = fmt.Sprintf("TTL=`%s` + INTERVAL %s %s",
+			ttlCol.name,
+			expireIntervals[rand.Intn(len(expireIntervals))],
+			expireIntervalUnits[rand.Intn(len(expireIntervalUnits))],
+		)
+	}
+
+	if rand.Intn(2) > 0 {
+		ttlEnable = fmt.Sprintf(" TTL_ENABLE='%s'", []string{"ON", "OFF"}[rand.Intn(2)])
+	}
+
+	if rand.Intn(2) > 0 {
+		intervals := []string{"1h20m", "1d10h30m", "1d20m"}
+		for _, v := range []string{"1"} {
+			for _, u := range []string{"m", "h", "d"} {
+				intervals = append(intervals, v+u)
+			}
+		}
+
+		interval := intervals[rand.Intn(len(intervals))]
+		ttlJobSchedule = fmt.Sprintf("TTL_JOB_INTERVAL='%s'", interval)
+	}
+
+	return
+}
+
 func (c *testCase) pickupRandomCharsetAndCollate() (string, string) {
 	// When a table created by a binary charset and collate, it would
 	// convert char type column to binary type which would cause the
@@ -163,19 +216,22 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 }
 
 type ddlTestTable struct {
-	deleted      int32
-	name         string
-	id           string // table_id , get from admin show ddl jobs
-	columns      *arraylist.List
-	indexes      []*ddlTestIndex
-	numberOfRows int
-	shardRowId   int64 // shard_row_id_bits
-	autoIncID    int64
-	comment      string // table comment
-	charset      string
-	collate      string
-	lock         *sync.RWMutex
-	replicaCnt   int
+	deleted        int32
+	name           string
+	id             string // table_id , get from admin show ddl jobs
+	columns        *arraylist.List
+	indexes        []*ddlTestIndex
+	numberOfRows   int
+	shardRowId     int64 // shard_row_id_bits
+	autoIncID      int64
+	comment        string // table comment
+	charset        string
+	collate        string
+	lock           *sync.RWMutex
+	replicaCnt     int
+	ttlExpr        string
+	ttlEnable      string
+	ttlJobSchedule string
 }
 
 func (table *ddlTestTable) isDeleted() bool {
