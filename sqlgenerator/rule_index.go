@@ -22,6 +22,7 @@ var IndexDefinition = NewFn(func(state *State) Fn {
 		IndexDefinitionType,
 		IndexDefinitionName,
 		IndexDefinitionColumns,
+		IndexAddGlobalIndexKeyword,
 		IndexDefinitionClustered,
 	).Eval(state)
 	if err != nil {
@@ -63,10 +64,8 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	idx := state.env.Index
 	partCol := state.env.PartColumn
-	// Global index supports primary key with non-clustered,
-	// but we don't decide the index is clustered or not at this time,
-	// so only check is primary or not here.
-	if partCol != nil && idx.Tp == IndexTypePrimary && !idx.Columns.Contain(partCol) {
+	// For non-global index, we should add `partCol`.
+	if partCol != nil && !idx.Global && !idx.Columns.Contain(partCol) {
 		state.env.IdxColumn = partCol
 		return IndexDefinitionColumnNoPrefix
 	}
@@ -77,6 +76,11 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 		// All parts of a PRIMARY KEY must be NOT NULL.
 		totalCols = totalCols.Filter(func(c *Column) bool {
 			return c.DefaultVal != "null" && c.Tp != ColumnTypeJSON
+		})
+	}
+	if idx.Global {
+		totalCols = totalCols.Filter(func(c *Column) bool {
+			return partCol.Name != c.Name
 		})
 	}
 	if len(totalCols) == 0 {
@@ -132,7 +136,15 @@ var IndexDefinitionColumnPrefix = NewFn(func(state *State) Fn {
 
 var IndexDefinitionTypeUnique = NewFn(func(state *State) Fn {
 	idx := state.env.Index
+	parCols := state.env.PartColumn
 	idx.Tp = IndexTypeUnique
+	if parCols != nil {
+		// If it's a partition table, random create an unique index.
+		return Or(
+			Str("unique key"),
+			IndexDefinitionUniqueGlobalIndex,
+		)
+	}
 	return Str("unique key")
 })
 
@@ -156,9 +168,26 @@ var IndexDefinitionTypePrimary = NewFn(func(state *State) Fn {
 	return Str("primary key")
 })
 
+// Only set `idx.Global = true` will print keyword in `IndexAddGlobalIndexKeyword` later.
+// We could delete it after global index support non-unique keys.
+var IndexDefinitionUniqueGlobalIndex = NewFn(func(state *State) Fn {
+	idx := state.env.Index
+	idx.Global = true
+	return Str("unique key")
+})
+
+var IndexAddGlobalIndexKeyword = NewFn(func(state *State) Fn {
+	idx := state.env.Index
+	if idx.Global {
+		return Str("global")
+	} else {
+		return Empty
+	}
+})
+
 var IndexDefinitionClustered = NewFn(func(state *State) Fn {
 	idx := state.env.Index
-	if idx.Tp != IndexTypePrimary {
+	if idx.Tp != IndexTypePrimary || idx.Global {
 		return Empty
 	}
 	return Or(

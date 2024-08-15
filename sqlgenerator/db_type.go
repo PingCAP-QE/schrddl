@@ -73,6 +73,7 @@ type Index struct {
 	ID           int
 	Name         string
 	Tp           IndexType
+	Global       bool
 	Columns      Columns
 	ColumnPrefix []int
 }

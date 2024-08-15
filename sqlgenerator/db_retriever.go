@@ -2,13 +2,14 @@ package sqlgenerator
 
 import (
 	"fmt"
-	"github.com/pingcap/tidb/pkg/util/logutil"
-	"github.com/twinj/uuid"
-	"go.uber.org/zap"
 	"math"
 	"math/rand"
 	"strings"
 	"sync/atomic"
+
+	"github.com/pingcap/tidb/pkg/util/logutil"
+	"github.com/twinj/uuid"
+	"go.uber.org/zap"
 
 	"github.com/cznic/mathutil"
 )

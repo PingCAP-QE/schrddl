@@ -325,6 +325,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Invalid JSON data provided") ||
 		strings.Contains(errStr, "Invalid JSON value for CAST") ||
 		strings.Contains(errStr, "Invalid JSON text") ||
+		strings.Contains(errStr, "since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption") ||
 		strings.Contains(errStr, "doesn't yet support") {
 		return true
 	}
