@@ -163,6 +163,7 @@ var ddlIgnoreList = []string{
 	"can not get 'tikv_gc_safe_point'",
 	"maximum statement execution time exceeded",
 	"Illegal mix of collations for operation",
+	"Unsupported Global Index",
 }
 
 func dmlIgnoreError(err error) bool {
