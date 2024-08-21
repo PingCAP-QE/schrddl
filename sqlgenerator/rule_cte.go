@@ -243,7 +243,7 @@ func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo)
 		if err != nil {
 			return nil, err
 		}
-		ts = append(ts, evalTypeToColumnType(expr.GetType().EvalType()))
+		ts = append(ts, evalTypeToColumnType(expr.GetType(mock.NewContext()).EvalType()))
 	}
 
 	return ts, nil
