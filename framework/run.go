@@ -109,6 +109,7 @@ var dmlIgnoreList = []string{
 	"Invalid JSON value for CAST",
 	"Invalid JSON text",
 	"Data too long",
+	"Invalid gbk character string",
 
 	// bug
 	"slice bounds out of range",
