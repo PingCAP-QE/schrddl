@@ -3,6 +3,7 @@ package sqlgenerator
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 )
 
 type JoinColumn struct {
@@ -12,11 +13,7 @@ type JoinColumn struct {
 	innerColumns []*Column
 }
 
-var allJoinColumns map[*State][]*JoinColumn
-
-func init() {
-	allJoinColumns = make(map[*State][]*JoinColumn)
-}
+var allJoinColumns sync.Map
 
 var indexJoinType = map[ColumnType][]ColumnType{
 	ColumnTypeBoolean: {
@@ -103,11 +100,23 @@ func PrepareIndexJoinColumns(s *State) {
 		}
 	}
 
-	allJoinColumns[s] = joinColumns
+	allJoinColumns.Store(s, joinColumns)
+}
+
+func RemoveIndexJoinColumns(s *State) {
+	allJoinColumns.Delete(s)
 }
 
 func RandJoinColumn(s *State) (*Table, *Table, *Column, *Column) {
-	joinColumns := allJoinColumns[s]
+	val, ok := allJoinColumns.Load(s)
+	if !ok {
+		return nil, nil, nil, nil
+	}
+
+	joinColumns, ok := val.([]*JoinColumn)
+	if !ok {
+		return nil, nil, nil, nil
+	}
 
 	totalNum := 0
 	for _, joinColumn := range joinColumns {
