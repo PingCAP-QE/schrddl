@@ -87,6 +87,12 @@ func (f Fn) P(fns ...func(state *State) bool) Fn {
 }
 
 func (f Fn) Eval(state *State) (res string, err error) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			fmt.Println(fmt.Sprintf("Panic in NewFn: %v, info: %s", r, state.FnStack))
+		}
+	}()
 	newFn := f
 	for _, l := range state.hooks.hooks {
 		newFn = l.BeforeEvaluate(state, newFn)

@@ -9,7 +9,7 @@ type FnHookScope struct {
 func (s *FnHookScope) BeforeEvaluate(state *State, fn Fn) Fn {
 	state.env.Enter()
 	state.env.FnInfo = fn.Info
-	state.fnStack = state.env.GetCurrentStack()
+	state.FnStack = state.env.GetCurrentStack()
 	return fn
 }
 

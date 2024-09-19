@@ -25,7 +25,7 @@ type State struct {
 
 	tableMeta []*model.TableInfo
 
-	fnStack string
+	FnStack string
 }
 
 type Table struct {

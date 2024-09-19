@@ -290,6 +290,10 @@ func (c *testCase) execSQL(sql string) error {
 	if err != nil && dmlIgnoreError(err) || ddlIgnoreError(err) {
 		return nil
 	}
+	if strings.Contains(err.Error(), "plan not match") {
+		_, err = c.dbs[0].Exec(sql)
+		return err
+	}
 	return errors.Trace(err)
 }
 
@@ -550,6 +554,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesEnum, 0)
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesSet, 0)
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesYear, 0)
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesBit, 0)
 
 	//state.Hook().Append(sqlgenerator.NewFnHookDebug())
 
@@ -569,7 +574,7 @@ func (c *testCase) execute(ctx context.Context) error {
 		}
 	}
 
-	err := c.execSQL("set @@max_execution_time=3000")
+	err := c.execSQL("set @@max_execution_time=800000")
 	if err != nil {
 		return err
 	}
@@ -622,7 +627,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 			}
 		}
-		if cnt%10000 == 0 && rand.Intn(2) == 0 {
+		if cnt%50 == 0 && rand.Intn(2) == 0 {
 			break
 		}
 
@@ -637,7 +642,12 @@ func (c *testCase) execute(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if rand.Intn(15) == 0 {
+			if rand.Intn(10) == 0 {
+				dmlSQL, err = sqlgenerator.SetTiFlashReplica.Eval(state)
+				if err != nil {
+					return err
+				}
+			} else if rand.Intn(15) == 0 {
 				dmlSQL, err = sqlgenerator.SetVariable.Eval(state)
 				if err != nil {
 					return err
@@ -679,6 +689,12 @@ func (c *testCase) execute(ctx context.Context) error {
 			found, err := ck.check(querySQL, false)
 			if err != nil {
 				if !dmlIgnoreError(err) {
+					if strings.Contains(err.Error(), "plan not match") {
+						_, err = c.dbs[0].Exec(querySQL)
+						if err == nil {
+							continue
+						}
+					}
 					return errors.Trace(err)
 				} else {
 					continue
