@@ -61,6 +61,7 @@ var ColumnDefinitionType = NewFn(func(state *State) Fn {
 		ColumnDefinitionTypesTimes.W(5),
 		ColumnDefinitionTypesBit,
 		ColumnDefinitionTypesJSON.W(6),
+		ColumnDefinitionTypesVector.W(5),
 	)
 })
 
@@ -361,4 +362,14 @@ var ColumnDefinitionTypesJSON = NewFn(func(state *State) Fn {
 	col.Array = true
 	col.SubType = randArrayTp[rand.Intn(len(randArrayTp))]
 	return Str("json")
+})
+
+var ColumnDefinitionTypesVector = NewFn(func(state *State) Fn {
+	col := state.env.Column
+	col.Tp = ColumnTypeVector
+	if rand.Intn(4) == 0 {
+		col.Arg1 = 1 + rand.Intn(10)
+		return Strs("vector(", Num(col.Arg1), ")")
+	}
+	return Str("vector")
 })

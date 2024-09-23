@@ -141,6 +141,14 @@ var dmlIgnoreList = []string{
 	// unknown
 	"context canceled",
 	"cannot be pushed down",
+
+	// vector related
+	"cannot cast from vector to",
+	" to vector",
+	"unsupport column type",
+	"Hex invalid args",
+	"Invalid vector text",
+	"Unhex invalid args",
 }
 
 var ddlIgnoreList = []string{
@@ -166,6 +174,7 @@ var ddlIgnoreList = []string{
 	"maximum statement execution time exceeded",
 	"Illegal mix of collations for operation",
 	"Unsupported Global Index",
+	"The used storage engine can't index column",
 }
 
 func dmlIgnoreError(err error) bool {

@@ -1,6 +1,7 @@
 package sqlgenerator
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/pingcap/tidb/pkg/parser/model"
@@ -255,4 +256,42 @@ func (m *MultiObjs) AddName(name string) {
 
 func (s *State) SetTableMeta(tableMeta []*model.TableInfo) {
 	s.tableMeta = tableMeta
+}
+
+func CompareVector(a, b []float64) int {
+	la := len(a)
+	lb := len(b)
+	commonLen := la
+	if lb < commonLen {
+		commonLen = lb
+	}
+
+	va := a
+	vb := b
+
+	for i := 0; i < commonLen; i++ {
+		if va[i] < vb[i] {
+			return -1
+		} else if va[i] > vb[i] {
+			return 1
+		}
+	}
+	if la < lb {
+		return -1
+	} else if la > lb {
+		return 1
+	}
+	return 0
+}
+
+func vecToStr(v []float64) string {
+	res := "'["
+	for i, val := range v {
+		if i != 0 {
+			res += ", "
+		}
+		res += fmt.Sprintf("%f", val)
+	}
+	res += "]'"
+	return res
 }

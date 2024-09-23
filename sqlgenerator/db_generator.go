@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
 	"log"
 	"math/rand"
 	"sort"
@@ -200,6 +201,8 @@ func (c *Column) ZeroValue() string {
 		return fmt.Sprintf("'00:00:00'")
 	case ColumnTypeJSON:
 		return "NULL"
+	case ColumnTypeVector:
+		return "NULL"
 	default:
 		return "invalid data type"
 	}
@@ -215,6 +218,31 @@ func (c *Column) RandomValue() string {
 func (c *Column) RandomValueRange() (string, string) {
 	values := c.RandomValuesAsc(2)
 	return values[0], values[1]
+}
+
+func (c *Column) randomVectorValue() []float64 {
+	n := c.Arg1
+	if n == 0 {
+		n = rand.Intn(10) + 1
+	}
+	values := make([]float64, n)
+	for i := 0; i < n; i++ {
+		values[i] = rand.Float64()
+	}
+	return values
+}
+
+func (c *Column) RandomVector(count int) []string {
+	res := make([][]float64, count)
+	for i := range res {
+		res[i] = c.randomVectorValue()
+	}
+	slices.SortFunc(res, CompareVector)
+	resStr := make([]string, count)
+	for i := range res {
+		resStr[i] = vecToStr(res[i])
+	}
+	return resStr
 }
 
 func (c *Column) RandomValuesAsc(count int) []string {
@@ -284,7 +312,9 @@ func (c *Column) RandomValuesAsc(count int) []string {
 		return RandYear(count)
 	case ColumnTypeJSON:
 		return RandArrayJsonsWithType(count, c.SubType)
-		//return RandJsons(count)
+	//return RandJsons(count)
+	case ColumnTypeVector:
+		return c.RandomVector(count)
 	default:
 		log.Fatalf("invalid column type %v", c.Tp)
 		return nil

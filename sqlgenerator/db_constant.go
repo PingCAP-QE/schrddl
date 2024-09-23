@@ -41,6 +41,8 @@ func (c *Column) EstimateSizeInBytes() int {
 		return 4
 	case ColumnTypeJSON:
 		return c.Arg1
+	case ColumnTypeVector:
+		return bytesPerChar * c.Arg1
 	}
 	panic(fmt.Sprintf("unknown column type %d", c.Tp))
 	return 0
@@ -75,6 +77,7 @@ const (
 	ColumnTypeTimestamp
 	ColumnTypeYear
 	ColumnTypeJSON
+	ColumnTypeVector
 
 	ColumnTypeMax
 )
@@ -146,6 +149,7 @@ var ColumnTypeAllTypes = ColumnTypes{
 	ColumnTypeTimestamp,
 	ColumnTypeYear,
 	ColumnTypeJSON,
+	ColumnTypeVector,
 }
 
 var ColumnTypeIntegerTypes = ColumnTypes{
@@ -325,6 +329,8 @@ func (c ColumnType) String() string {
 		return "year"
 	case ColumnTypeJSON:
 		return "json"
+	case ColumnTypeVector:
+		return "vector"
 	default:
 		return fmt.Sprintf("unknown: %d", c)
 	}

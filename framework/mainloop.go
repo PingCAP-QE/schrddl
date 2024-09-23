@@ -555,6 +555,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesSet, 0)
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesYear, 0)
 	state.SetWeight(sqlgenerator.ColumnDefinitionTypesBit, 0)
+	//state.SetWeight(sqlgenerator.ColumnDefinitionTypesVector, 0)
 
 	//state.Hook().Append(sqlgenerator.NewFnHookDebug())
 
