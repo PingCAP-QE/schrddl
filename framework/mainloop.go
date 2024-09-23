@@ -627,7 +627,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 			}
 		}
-		if cnt%50 == 0 && rand.Intn(2) == 0 {
+		if cnt%10000 == 0 && rand.Intn(2) == 0 {
 			break
 		}
 
@@ -642,7 +642,7 @@ func (c *testCase) execute(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if rand.Intn(10) == 0 {
+			if rand.Intn(100) == 0 {
 				dmlSQL, err = sqlgenerator.SetTiFlashReplica.Eval(state)
 				if err != nil {
 					return err

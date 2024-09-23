@@ -124,6 +124,7 @@ var dmlIgnoreList = []string{
 	"Unsupported expression type MysqlBit",
 	"Unexpected missing column",
 	"strconv.Atoi",
+	//"other error for mpp stream",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
