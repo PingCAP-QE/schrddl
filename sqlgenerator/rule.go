@@ -121,8 +121,10 @@ var CreateTable = NewFn(func(state *State) Fn {
 		return Strs("create table", tbl.Name, "(", eColDefs, ",", eIdxDefs, ")",
 			eTableOption, ePartitionDef)
 	}
-	return Strs("create table", tbl.Name, "(", eColDefs, ")",
+	fn := Strs("create table", tbl.Name, "(", eColDefs, ")",
 		eTableOption, ePartitionDef)
+	fn.Info = "CreateTable"
+	return fn
 })
 
 var TableOptions = NewFn(func(state *State) Fn {
@@ -508,7 +510,7 @@ var AlterIndex = NewFn(func(state *State) Fn {
 		return true
 	})
 	if len(idxes) == 0 {
-		return None("no suitable index")
+		return None(fmt.Sprintf("no suitable index, table name: %s", tbl.Name))
 	}
 	idx := idxes.Rand()
 	if state.Env().MultiObjs != nil {

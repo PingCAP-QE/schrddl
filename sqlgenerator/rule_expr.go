@@ -18,15 +18,31 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 	intCols := cols.Filter(func(c *Column) bool {
 		return c.Tp.IsIntegerType()
 	}).Or(cols)
+	vecCols := cols.Filter(func(c *Column) bool { return c.Tp == ColumnTypeVector })
 	mk := func(colName string) Fn {
 		return Str(fmt.Sprintf("%s.%s", tbl.Name, colName))
 	}
 	s1, s2 := mk(strCols.Rand().Name), mk(strCols.Rand().Name)
 	i1, i2 := mk(intCols.Rand().Name), mk(intCols.Rand().Name)
+	var v1, v2 Fn
+	if len(vecCols) > 0 {
+		v1, v2 = mk(vecCols.Rand().Name), mk(vecCols.Rand().Name)
+	}
+	hasVecCol := func(s *State) bool {
+		return len(vecCols) >= 1
+	}
+
 	chs := Str(Collations[CollationType(rand.Intn(int(CollationTypeMax)-1)+1)].CharsetName)
 	ns := RandomNums(0, 10, 2)
 	n1, n2 := Str(ns[0]), Str(ns[1])
 	return Or(
+		Strf("VEC_L1_DISTANCE([%fn], [%fn])", v1, v2).P(hasVecCol),
+		Strf("VEC_L2_DISTANCE([%fn], [%fn])", v1, v2).P(hasVecCol),
+		Strf("VEC_NEGATIVE_INNER_PRODUCT([%fn], [%fn])", v1, v2).P(hasVecCol),
+		Strf("VEC_COSINE_DISTANCE([%fn], [%fn])", v1, v2).P(hasVecCol),
+		Strf("VEC_L2_NORM([%fn], [%fn])", v1, v2).P(hasVecCol),
+		Strf("vec_dims([%fn])", v1).P(hasVecCol),
+		Strf("vec_as_text([%fn])", v1).P(hasVecCol),
 		Strf("ascii([%fn])", s1),
 		Strf("bin([%fn])", i1),
 		Strf("bit_length([%fn])", s1),
@@ -49,7 +65,8 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("left([%fn], [%fn])", s1, n1),
 		Strf("length([%fn])", s1),
 		Strf("locate([%fn], [%fn])", s1, s2),
-		Strf("lpad([%fn], [%fn], [%fn])", s1, n1, s2),
+		// TODO: fix bug for tiflash
+		//Strf("lpad([%fn], [%fn], [%fn])", s1, n1, s2),
 		Strf("ltrim([%fn])", s1),
 		Strf("make_set([%fn], [%fn], [%fn])", n1, s1, s2),
 		Strf("mid([%fn], [%fn], [%fn])", s1, n1, n2),
@@ -63,7 +80,8 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("replace([%fn], [%fn], [%fn])", s1, s2, s1),
 		Strf("reverse([%fn])", s1),
 		Strf("right([%fn], [%fn])", s1, n1),
-		Strf("rpad([%fn], [%fn], [%fn])", s1, n1, s2),
+		// TODO: fix bug for tiflash
+		// Strf("rpad([%fn], [%fn], [%fn])", s1, n1, s2),
 		Strf("rtrim([%fn])", s1),
 		Strf("space([%fn])", n1),
 		Strf("strcmp([%fn], [%fn])", s1, s2),

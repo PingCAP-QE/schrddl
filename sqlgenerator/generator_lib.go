@@ -57,7 +57,7 @@ func Or(fns ...Fn) Fn {
 		for len(fns) > 0 {
 			chosenFnIdx := randSelectByWeight(state, fns)
 			if chosenFnIdx == -1 {
-				return NoneBecauseOf(fmt.Errorf("or exhausted")).Eval(state)
+				return NoneBecauseOf(fmt.Errorf("or exhausted, stack: %s, error: %s", state.FnStack, errs)).Eval(state)
 			}
 			chosenFn := fns[chosenFnIdx]
 			rs, err := chosenFn.Eval(state)
@@ -71,7 +71,7 @@ func Or(fns ...Fn) Fn {
 			return rs, nil
 		}
 		log.L().Debug("or() error", zap.Strings("fns", fnNames), zap.Errors("errors", errs))
-		return "", fmt.Errorf("or exhausted")
+		return "", fmt.Errorf("or exhausted, stack: %s", fnNames)
 	}
 	return ret
 }

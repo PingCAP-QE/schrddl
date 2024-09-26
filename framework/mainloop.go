@@ -537,7 +537,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	//state.SetWeight(sqlgenerator.Limit, 0)
 	state.SetWeight(sqlgenerator.UnionSelect, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionHash, 1000)
-	state.SetWeight(sqlgenerator.PartitionDefinitionKey, 0)
+	state.SetWeight(sqlgenerator.PartitionDefinition, 0)
 	//state.SetWeight(sqlgenerator.PartitionDefinitionRange, 1000)
 
 	//state.SetWeight(sqlgenerator.AggSelect, 0)
@@ -559,7 +559,7 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	//state.Hook().Append(sqlgenerator.NewFnHookDebug())
 
-	//state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
+	state.SetWeight(sqlgenerator.ColumnDefinitionTypesJSON, 0)
 	//state.SetWeight(sqlgenerator.JSONPredicate, 0)
 
 	prepareStmtCnt := 50
@@ -652,6 +652,11 @@ func (c *testCase) execute(ctx context.Context) error {
 				dmlSQL, err = sqlgenerator.SetVariable.Eval(state)
 				if err != nil {
 					return err
+				}
+			} else if rand.Intn(15) == 0 {
+				dmlSQL, err = sqlgenerator.AlterTable.Eval(state)
+				if err != nil {
+					continue
 				}
 			}
 			if rand.Intn(100) == 0 {

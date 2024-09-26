@@ -276,7 +276,7 @@ func (c ColumnType) IsPointGetableType() bool {
 // BLOB/TEXT/JSON column can't have a default value.
 func (c ColumnType) DisallowDefaultValue() bool {
 	// ERROR 1101 (42000): BLOB/TEXT/JSON column 'a' can't have a default value
-	return c == ColumnTypeText || c == ColumnTypeBlob || c == ColumnTypeJSON
+	return c == ColumnTypeText || c == ColumnTypeBlob || c == ColumnTypeJSON || c == ColumnTypeVector
 }
 
 func (c ColumnType) String() string {

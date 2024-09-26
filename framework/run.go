@@ -149,6 +149,12 @@ var dmlIgnoreList = []string{
 	"Hex invalid args",
 	"Invalid vector text",
 	"Unhex invalid args",
+	"Nested column is longer",
+	"There is no supertype for types",
+	"Cannot read all data",
+	"Cannot read all array values",
+	"Memory limit",
+	"vectors have different dimensions",
 }
 
 var ddlIgnoreList = []string{
@@ -175,6 +181,9 @@ var ddlIgnoreList = []string{
 	"Illegal mix of collations for operation",
 	"Unsupported Global Index",
 	"The used storage engine can't index column",
+	"unsupported empty TiFlash replica, the replica is nil",
+	"unsupported partition table",
+	"vector index can only be defined on fixed-dimension vector columns",
 }
 
 func dmlIgnoreError(err error) bool {

@@ -2,7 +2,9 @@ package sqlgenerator
 
 import (
 	"fmt"
+	"github.com/ngaut/log"
 	"math/rand"
+	"strings"
 
 	"github.com/cznic/mathutil"
 )
@@ -15,18 +17,34 @@ var IndexDefinition = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	newIdx := &Index{ID: state.alloc.AllocIndexID()}
 	state.env.Index = newIdx
-	// Example:
-	//   unique key idx_1 (a, b, c)
-	//   primary key (a(2), b(3), c)
-	ret, err := And(
-		IndexDefinitionType,
-		IndexDefinitionName,
-		IndexDefinitionColumns,
-		IndexAddGlobalIndexKeyword,
-		IndexDefinitionClustered,
-	).Eval(state)
-	if err != nil {
-		return NoneBecauseOf(err)
+	var ret string
+	var err error
+	if !strings.Contains(state.FnStack, "CreateTable") && rand.Intn(3) == -1 && len(tbl.Columns.Filter(func(c *Column) bool {
+		return c.Tp == ColumnTypeVector
+	})) > 0 {
+		ret, err = And(
+			Strs("vector index"),
+			IndexDefinitionName,
+			IndexDefinitionVectorColumn,
+		).Eval(state)
+		if err != nil {
+			log.Fatal(err)
+			return NoneBecauseOf(err)
+		}
+	} else {
+		// Example:
+		//   unique key idx_1 (a, b, c)
+		//   primary key (a(2), b(3), c)
+		ret, err = And(
+			IndexDefinitionType,
+			IndexDefinitionName,
+			IndexDefinitionColumns,
+			IndexAddGlobalIndexKeyword,
+			IndexDefinitionClustered,
+		).Eval(state)
+		if err != nil {
+			return NoneBecauseOf(err)
+		}
 	}
 	// It is possible that no column can be used to build an index.
 	if len(newIdx.Columns) == 0 {
@@ -56,6 +74,26 @@ var IndexDefinitionName = NewFn(func(state *State) Fn {
 	return Str(idx.Name)
 })
 
+var IndexDefinitionVectorFunc = NewFn(func(state *State) Fn {
+	col := state.env.Table.Columns.Filter(func(c *Column) bool {
+		return c.Tp == ColumnTypeVector
+	}).Rand()
+	if col == nil {
+		return NoneBecauseOf(fmt.Errorf("no vector column"))
+	}
+	idx := state.env.Index
+	state.env.IdxColumn = col
+	idx.AppendColumn(col, 0)
+	return Or(
+		Strs("vec_cosine_distance(", col.Name, ")"),
+		Strs("vec_l2_distance(", col.Name, ")"),
+	)
+})
+
+var IndexDefinitionVectorColumn = NewFn(func(state *State) Fn {
+	return And(Str("(("), IndexDefinitionVectorFunc, Str("))"), Str(" USING HNSW"))
+})
+
 var IndexDefinitionColumns = NewFn(func(state *State) Fn {
 	return And(Str("("), Repeat(IndexDefinitionColumn.R(1, 3), Str(",")), Str(")"))
 })
@@ -70,7 +108,7 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 		return IndexDefinitionColumnNoPrefix
 	}
 	totalCols := tbl.Columns.Filter(func(c *Column) bool {
-		return !idx.HasColumn(c) && !state.env.MultiObjs.SameObject(c.Name)
+		return !idx.HasColumn(c) && !state.env.MultiObjs.SameObject(c.Name) && c.Tp != ColumnTypeVector
 	})
 	if idx.Tp == IndexTypePrimary {
 		// All parts of a PRIMARY KEY must be NOT NULL.
