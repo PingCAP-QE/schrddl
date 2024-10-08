@@ -744,16 +744,18 @@ func (c *testCase) generateAddTable(repeat int) error {
 func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) error {
 	columnCount := rand.Intn(c.cfg.TablesToCreate) + 2
 	tableColumns := arraylist.New()
-	var partitionColumnName string
+	var partitionColumn *ddlTestColumn
 	for i := 0; i < columnCount; i++ {
 		columns := getRandDDLTestColumns()
 		for _, column := range columns {
 			tableColumns.Add(column)
-			if column.k <= KindBigInt && partitionColumnName == "" {
-				partitionColumnName = column.name
+			if column.k <= KindBigInt && partitionColumn == nil {
+				partitionColumn = column
 			}
 		}
 	}
+
+	needGlobal := true
 
 	// Generate primary key with [0, 3) size
 	primaryKeyFields := rand.Intn(3)
@@ -766,6 +768,9 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 			if column.canBePrimary() {
 				column.isPrimaryKey = true
 				primaryKeys = append(primaryKeys, columnIndex)
+				if partitionColumn != nil && column.name == partitionColumn.name {
+					needGlobal = false
+				}
 			}
 		}
 		primaryKeyFields = len(primaryKeys)
@@ -774,15 +779,16 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	charset, collate := c.pickupRandomCharsetAndCollate()
 
 	tableInfo := ddlTestTable{
-		name:         uuid.NewV4().String()[:8],
-		columns:      tableColumns,
-		indexes:      make([]*ddlTestIndex, 0),
-		numberOfRows: 0,
-		deleted:      0,
-		comment:      uuid.NewV4().String()[:8],
-		charset:      charset,
-		collate:      collate,
-		lock:         new(sync.RWMutex),
+		name:            uuid.NewV4().String()[:8],
+		columns:         tableColumns,
+		partitionColumn: partitionColumn,
+		indexes:         make([]*ddlTestIndex, 0),
+		numberOfRows:    0,
+		deleted:         0,
+		comment:         uuid.NewV4().String()[:8],
+		charset:         charset,
+		collate:         collate,
+		lock:            new(sync.RWMutex),
 	}
 
 	sql := fmt.Sprintf("CREATE TABLE `%s` (", tableInfo.name)
@@ -803,14 +809,17 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 			sql += fmt.Sprintf("`%s`", column.name)
 		}
 		sql += ")"
+		if needGlobal {
+			sql += " GLOBAL NONCLUSTERED"
+		}
 	}
 	sql += ")"
 
 	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
 
-	if rand.Intn(3) == 0 && partitionColumnName != "" {
-		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumnName, rand.Intn(10)+1)
+	if rand.Intn(3) == 0 && partitionColumn != nil {
+		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumn.name, rand.Intn(10)+1)
 	}
 
 	task := &ddlJobTask{
@@ -1265,9 +1274,14 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		}
 	}
 
+	needGlobal := index.uniques && table.partitionColumn != nil
+
 	for _, column := range index.columns {
 		if !checkAddDropColumn(ctx, column) {
 			return nil
+		}
+		if table.partitionColumn != nil && column.name == table.partitionColumn.name {
+			needGlobal = false
 		}
 	}
 
@@ -1296,6 +1310,10 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		sql += fmt.Sprintf("`%s`", column.name)
 	}
 	sql += ")"
+
+	if needGlobal {
+		sql += " GLOBAL"
+	}
 
 	arg := &ddlIndexJobArg{index: &index}
 	task := &ddlJobTask{

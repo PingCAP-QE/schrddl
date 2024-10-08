@@ -163,19 +163,20 @@ func (c *testCase) isColumnDeleted(column *ddlTestColumn, table *ddlTestTable) b
 }
 
 type ddlTestTable struct {
-	deleted      int32
-	name         string
-	id           string // table_id , get from admin show ddl jobs
-	columns      *arraylist.List
-	indexes      []*ddlTestIndex
-	numberOfRows int
-	shardRowId   int64 // shard_row_id_bits
-	autoIncID    int64
-	comment      string // table comment
-	charset      string
-	collate      string
-	lock         *sync.RWMutex
-	replicaCnt   int
+	deleted         int32
+	name            string
+	id              string // table_id , get from admin show ddl jobs
+	columns         *arraylist.List
+	partitionColumn *ddlTestColumn
+	indexes         []*ddlTestIndex
+	numberOfRows    int
+	shardRowId      int64 // shard_row_id_bits
+	autoIncID       int64
+	comment         string // table comment
+	charset         string
+	collate         string
+	lock            *sync.RWMutex
+	replicaCnt      int
 }
 
 func (table *ddlTestTable) isDeleted() bool {

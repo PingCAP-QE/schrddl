@@ -280,6 +280,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "not allowed type for this type of partitioning") ||
 		strings.Contains(errStr, "since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption") ||
 		strings.Contains(errStr, "A UNIQUE INDEX must include all columns in the table's partitioning function") ||
+		strings.Contains(errStr, "Unsupported Global Index") ||
 		strings.Contains(errStr, "cannot convert datum") ||
 		strings.Contains(errStr, "Duplicate entry") ||
 		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
