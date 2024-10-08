@@ -755,7 +755,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		}
 	}
 
-	needGlobal := true
+	needGlobal := partitionColumn != nil
 
 	// Generate primary key with [0, 3) size
 	primaryKeyFields := rand.Intn(3)
