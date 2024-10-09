@@ -2,7 +2,9 @@ package sqlgenerator
 
 import (
 	"fmt"
+	"github.com/go-sql-driver/mysql"
 	"math/rand"
+	"os"
 	"strings"
 )
 
@@ -26,15 +28,44 @@ var Start = NewFn(func(state *State) Fn {
 		DropTable.W(1).P(HasTables),
 		TruncateTable.W(1).P(HasTables),
 		SetTiFlashReplica.W(0).P(HasTables),
+		LoadFile.W(0).P(HasTables),
 	)
+})
+
+var LoadFile = NewFn(func(state *State) Fn {
+	tbl := state.Tables.Rand()
+	file, err := os.Create(fmt.Sprintf("%s.csv", tbl.Name))
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	defer file.Close()
+	intRow := rand.Intn(100)
+	for i := 0; i < intRow; i++ {
+		rowString := ""
+		for i, col := range tbl.Columns {
+			colVal := col.RandomValue()
+			if i != 0 {
+				rowString += "|"
+			}
+			rowString += colVal
+		}
+		_, err := file.WriteString(fmt.Sprintf("%s\n", rowString))
+		if err != nil {
+			return NoneBecauseOf(err)
+		}
+	}
+	mysql.RegisterLocalFile(file.Name())
+	resultStr := fmt.Sprintf("load data local infile '%s' replace into table %s fields terminated by '|' escaped by '' lines terminated by '\\n'", file.Name(), tbl.Name)
+	return Strs(resultStr)
 })
 
 var DMLStmt = NewFn(func(state *State) Fn {
 	state.env.Table = state.Tables.Rand()
 	return Or(
-		CommonDelete.W(1),
-		CommonInsertOrReplace.W(3),
-		CommonUpdate.W(1),
+		CommonDelete.W(10),
+		CommonInsertOrReplace.W(30),
+		CommonUpdate.W(10),
+		LoadFile.W(0).P(HasTables),
 		NonTransactionalDelete.W(0).P(HasShardableColumn),
 		NonTransactionalUpdate.W(0).P(HasShardableColumn),
 	)

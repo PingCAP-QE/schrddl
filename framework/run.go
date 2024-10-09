@@ -155,6 +155,8 @@ var dmlIgnoreList = []string{
 	"Cannot read all array values",
 	"Memory limit",
 	"vectors have different dimensions",
+	"assertion failed",
+	"does not fit",
 }
 
 var ddlIgnoreList = []string{
@@ -184,6 +186,9 @@ var ddlIgnoreList = []string{
 	"unsupported empty TiFlash replica, the replica is nil",
 	"unsupported partition table",
 	"vector index can only be defined on fixed-dimension vector columns",
+	"Multiple primary key defined",
+	"already exist on column",
+	"Unsupported set vector index invisible",
 }
 
 func dmlIgnoreError(err error) bool {

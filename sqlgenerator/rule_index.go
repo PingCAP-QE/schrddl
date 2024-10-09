@@ -19,7 +19,7 @@ var IndexDefinition = NewFn(func(state *State) Fn {
 	state.env.Index = newIdx
 	var ret string
 	var err error
-	if !strings.Contains(state.FnStack, "CreateTable") && rand.Intn(3) == -1 && len(tbl.Columns.Filter(func(c *Column) bool {
+	if !strings.Contains(state.FnStack, "CreateTable") && rand.Intn(3) == 0 && len(tbl.Columns.Filter(func(c *Column) bool {
 		return c.Tp == ColumnTypeVector
 	})) > 0 {
 		ret, err = And(
