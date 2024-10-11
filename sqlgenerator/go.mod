@@ -1,4 +1,4 @@
-module sqlgenerator
+module github.com/PingCAP-QE/schrddl/sqlgenerator
 
 go 1.23.0
 
