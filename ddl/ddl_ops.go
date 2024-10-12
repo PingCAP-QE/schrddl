@@ -1275,13 +1275,17 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	}
 
 	needGlobal := index.uniques && table.partitionColumn != nil
+	isVector := true
 
-	for _, column := range index.columns {
+	for i, column := range index.columns {
 		if !checkAddDropColumn(ctx, column) {
 			return nil
 		}
 		if table.partitionColumn != nil && column.name == table.partitionColumn.name {
 			needGlobal = false
+		}
+		if column.k != KindVector || i > 0 {
+			isVector = false
 		}
 	}
 
@@ -1313,6 +1317,10 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 
 	if needGlobal {
 		sql += " GLOBAL"
+	}
+
+	if isVector {
+		sql = fmt.Sprintf("ALTER TABLE `%s` ADD VECTOR INDEX `%s` ((VEC_COSINE_DISTANCE(`%s`))) USING HNSW", table.name, index.name, index.columns[0].name)
 	}
 
 	arg := &ddlIndexJobArg{index: &index}

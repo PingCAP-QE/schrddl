@@ -204,6 +204,7 @@ var ddlIgnoreList = []string{
 	"Specified key was too long",
 	"Too many keys specified",
 	"Incorrect date value",
+	"can't have a literal default",
 }
 
 func ddlIgnoreError(err error) bool {
