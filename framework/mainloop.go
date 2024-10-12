@@ -26,7 +26,7 @@ import (
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
-	"github.com/pingcap/tidb/pkg/parser/model"
+	"github.com/pingcap/tidb/pkg/meta/model"
 	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
 

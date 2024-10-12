@@ -7,9 +7,10 @@ import (
 
 	"github.com/pingcap/tidb/pkg/expression"
 	"github.com/pingcap/tidb/pkg/expression/aggregation"
+	"github.com/pingcap/tidb/pkg/meta/model"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
-	"github.com/pingcap/tidb/pkg/parser/model"
+	model2 "github.com/pingcap/tidb/pkg/parser/model"
 	_ "github.com/pingcap/tidb/pkg/planner/core"
 	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util/logutil"
@@ -204,7 +205,7 @@ func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo)
 	cols := make([]*expression.Column, 0)
 	var names types.NameSlice
 	for _, tbl := range schemas {
-		column, name, err := expression.ColumnInfos2ColumnsAndNames(mock.NewContext(), model.NewCIStr(dbName), tbl.Name, tbl.Cols(), tbl)
+		column, name, err := expression.ColumnInfos2ColumnsAndNames(mock.NewContext(), model2.NewCIStr(dbName), tbl.Name, tbl.Cols(), tbl)
 		if err != nil {
 			return nil, err
 		}
