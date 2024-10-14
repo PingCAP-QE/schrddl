@@ -479,7 +479,7 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      uuid.NewV4().String()[:8],
+		name:      "col" + uuid.NewV4().String()[:4],
 		fieldType: ALLFieldType[n],
 		rows:      arraylist.New(),
 		deleted:   0,
@@ -519,9 +519,10 @@ func getDDLTestColumn(n int) *ddlTestColumn {
 	case KindVector:
 		column.filedTypeM = rand.Intn(8)
 		if rand.Intn(2) == 1 {
-			column.filedTypeM = 0
+			column.fieldType = fmt.Sprintf("%s", ALLFieldType[n])
+		} else {
+			column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
 		}
-		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
 	}
 
 	if column.canHaveDefaultValue() {
@@ -830,7 +831,7 @@ func (col *ddlTestColumn) canBePrimary() bool {
 
 func (col *ddlTestColumn) canBeIndex() bool {
 	switch col.k {
-	case KindChar, KindVarChar:
+	case KindChar, KindVarChar, KindVector:
 		if col.filedTypeM == 0 {
 			return false
 		} else {

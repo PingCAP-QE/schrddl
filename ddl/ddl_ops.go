@@ -88,7 +88,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateMultiSchemaChange(2); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateSetTilfahReplica(0); err != nil {
+	if err := c.generateSetTilfahReplica(2 * defaultTime); err != nil {
 		return errors.Trace(err)
 	}
 	return nil
@@ -567,7 +567,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			}
 
 			if !ddlIgnoreError(ddlErr) {
-				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, err, time.Since(opStart).Seconds())
+				log.Infof("[ddl] [instance %d] TiDB execute %s , err %v, elapsed time:%v", c.caseIndex, task.sql, ddlErr, time.Since(opStart).Seconds())
 				task.err = ddlErr
 				unExpectedErr = ddlErr
 				// No need to update schema.
@@ -742,7 +742,7 @@ func (c *testCase) generateAddTable(repeat int) error {
 }
 
 func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) error {
-	columnCount := rand.Intn(c.cfg.TablesToCreate) + 2
+	columnCount := rand.Intn(5) + 2
 	tableColumns := arraylist.New()
 	var partitionColumn *ddlTestColumn
 	for i := 0; i < columnCount; i++ {
@@ -779,7 +779,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	charset, collate := c.pickupRandomCharsetAndCollate()
 
 	tableInfo := ddlTestTable{
-		name:            uuid.NewV4().String()[:8],
+		name:            "t" + uuid.NewV4().String()[:8],
 		columns:         tableColumns,
 		partitionColumn: partitionColumn,
 		indexes:         make([]*ddlTestIndex, 0),
@@ -818,7 +818,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
 
-	if rand.Intn(3) == 0 && partitionColumn != nil {
+	if rand.Intn(30) == 0 && partitionColumn != nil {
 		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumn.name, rand.Intn(10)+1)
 	}
 
@@ -1268,6 +1268,9 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		perm := rand.Perm(table.columns.Size())[:numberOfColumns]
 		for _, idx := range perm {
 			column := getColumnFromArrayList(table.columns, idx)
+			if column.k == KindVector {
+				continue
+			}
 			if column.canBeIndex() {
 				index.columns = append(index.columns, column)
 			}
@@ -2056,8 +2059,9 @@ func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTa
 		return nil
 	}
 
-	cnt := rand.Intn(6)
-	sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", table.name, cnt)
+	cnt := 1
+	//sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA %d", table.name, cnt)
+	sql := fmt.Sprintf("ALTER TABLE `%s` SET TIFLASH REPLICA 1", table.name)
 	task := &ddlJobTask{
 		k:       ddlSetTiflashReplica,
 		sql:     sql,

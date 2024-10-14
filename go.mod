@@ -3,12 +3,11 @@ module github.com/PingCAP-QE/schrddl
 go 1.23.0
 
 require (
-	github.com/PingCAP-QE/clustered-index-rand-test v0.0.0-20231211080657-6f65c68e73f6
-	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241011091014-4341641987cc
+	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef
 	github.com/emirpasic/gods v1.18.1
-	github.com/go-sql-driver/mysql v1.7.1
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/juju/errors v0.0.0-20200330140219-3fe23663418f
-	github.com/ngaut/log v0.0.0-20180314031856-b8e36e7ba5ac
+	github.com/ngaut/log v0.0.0-20221012222132-f3329cba28a5
 	github.com/pingcap/errors v0.11.5-0.20240318064555-6bd07397691f
 	github.com/pingcap/tidb/parser v0.0.0-20220507103032-9339955f0d84
 	github.com/prometheus/client_golang v1.20.4
@@ -22,6 +21,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.6 // indirect
 	cloud.google.com/go/storage v1.38.0 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.12.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.6.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.9.0 // indirect

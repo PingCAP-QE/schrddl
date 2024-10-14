@@ -133,6 +133,12 @@ var TestFieldType = []int{
 	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
 	KindEnum,
 	KindSet,
+
+	// More likelihood to vector type.
+	KindVector,
+	KindVector,
+	KindVector,
+	KindVector,
 	KindVector,
 }
 

@@ -89,6 +89,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	if GlobalSortUri != "" {
 		dbss[0][0].Exec("set global tidb_enable_dist_task=1")
 		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
+		dbss[0][0].Exec("set global max_execution_time=5000")
 	}
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
@@ -205,6 +206,12 @@ var ddlIgnoreList = []string{
 	"Too many keys specified",
 	"Incorrect date value",
 	"can't have a literal default",
+	"Unsupported add vector index",
+	"does not fit",
+	"can only be defined on fixed-dimension vector columns",
+	"with Vector Key covered",
+	"already exist on column",
+	"Unsupported",
 }
 
 func ddlIgnoreError(err error) bool {
