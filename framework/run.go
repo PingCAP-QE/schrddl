@@ -166,6 +166,7 @@ var ddlIgnoreList = []string{
 	"maximum statement execution time exceeded",
 	"Illegal mix of collations for operation",
 	"Unsupported Global Index",
+	"settings for table contains gbk charset",
 }
 
 func dmlIgnoreError(err error) bool {
