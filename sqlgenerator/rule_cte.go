@@ -196,6 +196,9 @@ func evalTypeToColumnType(evalType types.EvalType) ColumnType {
 		return ColumnTypeTime
 	case types.ETJson:
 		return ColumnTypeJSON
+	case types.ETVectorFloat32:
+		return ColumnTypeVector
+
 	default:
 		panic(fmt.Sprintf("unknown eval type %d", evalType))
 	}

@@ -157,6 +157,8 @@ var dmlIgnoreList = []string{
 	"vectors have different dimensions",
 	"assertion failed",
 	"does not fit",
+
+	"of first argument of function replaceAll",
 }
 
 var ddlIgnoreList = []string{
@@ -189,6 +191,7 @@ var ddlIgnoreList = []string{
 	"Multiple primary key defined",
 	"already exist on column",
 	"Unsupported set vector index invisible",
+	"settings for table contains gbk charset",
 }
 
 func dmlIgnoreError(err error) bool {
