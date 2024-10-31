@@ -856,15 +856,15 @@ type ddlTestIndex struct {
 func (col *ddlTestColumn) normalizeDataType() string {
 	switch col.k {
 	case KindTINYINT:
-		return "tinyint(4)"
+		return "tinyint"
 	case KindSMALLINT:
-		return "smallint(6)"
+		return "smallint"
 	case KindMEDIUMINT:
-		return "mediumint(9)"
+		return "mediumint"
 	case KindInt32:
-		return "int(11)"
+		return "int"
 	case KindBigInt:
-		return "bigint(20)"
+		return "bigint"
 	case KindBit:
 		return fmt.Sprintf("bit(%d)", col.filedTypeM)
 	case KindDECIMAL:
