@@ -734,7 +734,7 @@ var OrderBy = NewFn(func(state *State) Fn {
 })
 
 var Limit = NewFn(func(state *State) Fn {
-	return Strs("limit", RandomNum(10000000, 100000000))
+	return Strs("limit", RandomNum(100000000, 1000000000))
 
 	//return Strs("limit", RandomNum(1000000, 2147483646))
 })
