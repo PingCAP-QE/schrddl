@@ -29,7 +29,7 @@ import (
 var (
 	dbAddr               = flag.String("addr", "127.0.0.1:4000", "database address")
 	dbName               = flag.String("db", "test", "database name")
-	mode                 = flag.String("mode", "serial", "test mode: serial, parallel")
+	mode                 = flag.String("mode", "parallel", "test mode: serial, parallel")
 	concurrency          = flag.Int("concurrency", 20, "concurrency")
 	tablesToCreate       = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible      = flag.Bool("mysql-compatible", false, "disable TiDB-only features")

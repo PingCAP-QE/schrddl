@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
+	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 )
@@ -244,9 +244,9 @@ func (c *testCase) prepareInsert(cfg interface{}, taskCh chan *dmlJobTask) error
 		return nil
 	}
 
-	state := sqlgen.NewState()
+	state := sqlgenerator.NewState()
 	state.Tables = append(state.Tables, table.mapTableToRandTestTable())
-	sql, err := sqlgen.CommonInsertOrReplace.Eval(state)
+	sql, err := sqlgenerator.CommonInsertOrReplace.Eval(state)
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,8 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 
-	state := sqlgen.NewState()
+	state := sqlgenerator.NewState()
+	state.SetWeight(sqlgenerator.Limit, 1000)
 	for _, table := range c.tableMap {
 		state.Tables = append(state.Tables, table)
 	}
@@ -279,7 +280,7 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 		return nil
 	}
 
-	sql, err := sqlgen.CommonUpdate.Eval(state)
+	sql, err := sqlgenerator.CommonUpdate.Eval(state)
 	if err != nil {
 		return err
 	}
@@ -303,7 +304,8 @@ func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 
-	state := sqlgen.NewState()
+	state := sqlgenerator.NewState()
+	state.SetWeight(sqlgenerator.Limit, 1000)
 	for _, table := range c.tableMap {
 		state.Tables = append(state.Tables, table)
 	}
@@ -312,7 +314,7 @@ func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error
 		return nil
 	}
 
-	sql, err := sqlgen.CommonDelete.Eval(state)
+	sql, err := sqlgenerator.CommonDelete.Eval(state)
 	if err != nil {
 		return err
 	}
@@ -340,13 +342,13 @@ func (c *testCase) prepareSelect(cfg interface{}, taskCh chan *dmlJobTask) error
 		return nil
 	}
 
-	state := sqlgen.NewState()
-	state.SetWeight(sqlgen.WindowFunctionOverW, 0)
+	state := sqlgenerator.NewState()
+	state.SetWeight(sqlgenerator.WindowFunctionOverW, 0)
 	for _, table := range c.tableMap {
 		state.Tables = append(state.Tables, table)
 	}
 
-	query, err := sqlgen.Query.Eval(state)
+	query, err := sqlgenerator.Query.Eval(state)
 	if err != nil {
 		return err
 	}

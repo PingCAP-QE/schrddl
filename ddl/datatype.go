@@ -57,6 +57,7 @@ const (
 
 	KindEnum
 	KindSet
+	KindVector
 )
 
 var ALLFieldType = map[int]string{
@@ -93,9 +94,10 @@ var ALLFieldType = map[int]string{
 	KindTIMESTAMP: "TIMESTAMP",
 	KindYEAR:      "YEAR",
 
-	KindJSON: "JSON",
-	KindEnum: "ENUM",
-	KindSet:  "SET",
+	KindJSON:   "JSON",
+	KindEnum:   "ENUM",
+	KindSet:    "SET",
+	KindVector: "VECTOR",
 }
 
 // TestFieldType is use to control what kind of data types to test.
@@ -131,6 +133,13 @@ var TestFieldType = []int{
 	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
 	KindEnum,
 	KindSet,
+
+	// More likelihood to vector type.
+	KindVector,
+	KindVector,
+	KindVector,
+	KindVector,
+	KindVector,
 }
 
 var AllowPartitionType = []int{
@@ -216,6 +225,8 @@ func GetMaxLenByKind(kind int) int {
 		return EnumMaxLen
 	case KindSet:
 		return SetMaxLen
+	case KindVector:
+		return 1600
 	}
 	return 0
 }

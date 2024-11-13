@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/PingCAP-QE/clustered-index-rand-test/sqlgen"
+	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/parser/model"
@@ -283,7 +283,7 @@ func NewDDLCase(cfg *DDLCaseConfig) *DDLCase {
 			dmlOps:    make([]dmlTestOpExecutor, 0),
 			caseIndex: i,
 			stop:      0,
-			tableMap:  make(map[string]*sqlgen.Table),
+			tableMap:  make(map[string]*sqlgenerator.Table),
 		}
 	}
 	b := &DDLCase{
@@ -626,7 +626,7 @@ func (c *testCase) readDataFromTiDB() error {
 				return errors.Trace(err)
 			}
 
-			log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
+			//log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
 
 			// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
 			rawResult := make([][]byte, len(cols))
