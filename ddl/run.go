@@ -91,6 +91,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
 		dbss[0][0].Exec("set global max_execution_time=5000")
 	}
+	dbss[0][0].Exec("set global tidb_enable_fast_create_table=0")
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
 		log.Fatalf("[ddl] get start ddl seq num error %v", err)
