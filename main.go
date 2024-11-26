@@ -14,7 +14,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -23,15 +22,16 @@ import (
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/framework"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 )
 
 var (
 	dbAddr               = flag.String("addr", "127.0.0.1:4000", "database address")
-	dbName               = flag.String("db", "test", "database name")
+	dbName               = flag.String("db", "test1", "database name")
 	mode                 = flag.String("mode", "serial", "test mode: serial, parallel")
-	concurrency          = flag.Int("concurrency", 20, "concurrency")
+	concurrency          = flag.Int("concurrency", 1, "concurrency")
 	tablesToCreate       = flag.Int("tables", 1, "the number of the tables to create")
 	mysqlCompatible      = flag.Bool("mysql-compatible", false, "disable TiDB-only features")
 	testTime             = flag.Duration("time", 2*time.Hour, "test time")
@@ -46,25 +46,48 @@ var (
 )
 
 func prepareEnv() {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
-	tiDb, err := sql.Open("mysql", dbURL)
+	dbURL := fmt.Sprintf("root:@tcp(%s)/test", *dbAddr)
+	db, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
 	}
-	tidbC, err := tiDb.Conn(context.Background())
-	if err != nil {
-		log.Fatalf("Can't connect to database, err: %s", err.Error())
+
+	if _, err = db.Exec("drop database if exists test1"); err != nil {
+		log.Fatalf("Can't create database")
 	}
-	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
-		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
-			if _, err = tidbC.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
+	if _, err = db.Exec("drop database if exists test2"); err != nil {
+		log.Fatalf("Can't create database")
+	}
+	if _, err = db.Exec("create database if not exists test1"); err != nil {
+		log.Fatalf("Can't create database")
+	}
+	if _, err = db.Exec("create database if not exists test2"); err != nil {
+		log.Fatalf("Can't create database")
+	}
+
+	if _, err = db.Exec(fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
+		if _, err = db.Exec(fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
+			if _, err = db.Exec("set global time_zone='+8:00'"); err != nil {
 				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
 			}
 		}
 	}
 	// Enable index join on aggregation
-	tidbC.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
-	tidbC.Close()
+	if _, err := db.Exec("set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'"); err != nil {
+		log.Fatalf("Can't set tidb_enable_inl_join_inner_multi_pattern for tidb, please check tidb env")
+	}
+	if *rc {
+		if _, err := db.Exec("set global transaction_isolation='read-committed'"); err != nil {
+			log.Fatalf("Can't set transaction_isolation for tidb, please check tidb env")
+		}
+	}
+	if _, err := db.Exec("set global tidb_enable_global_index=true"); err != nil {
+		log.Fatalf("Can't set global tidb_enable_global_index=true, error %v", err)
+	}
+
+	if _, err := db.Exec("set global tidb_enable_instance_plan_cache = 1"); err != nil {
+		log.Fatalf("Can't set global tidb_enable_instance_plan_cache=1, error %v", err)
+	}
 
 	mysql.SetLogger(log.Logger())
 }
@@ -79,7 +102,7 @@ func main() {
 		EnableTransactionTest = true
 	}
 	if *rc {
-		RCIsolation = true
+		util.RCIsolation = true
 	}
 	if *prepare {
 		Prepare = true
@@ -111,7 +134,16 @@ func main() {
 		http.ListenAndServe("127.0.0.1:6060", nil)
 	}()
 
-	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	caseConfig := CaseConfig{
+		Concurrency:     *concurrency,
+		TablesToCreate:  *tablesToCreate,
+		MySQLCompatible: *mysqlCompatible,
+		TestTp:          testType,
+		DBAddr:          *dbAddr,
+		DBName:          *dbName,
+	}
+
+	Run(caseConfig, *testTime)
 	if TestFail {
 		log.Fatalf("test failed")
 	}

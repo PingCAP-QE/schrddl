@@ -21,7 +21,7 @@ type State struct {
 
 	env *Env
 
-	prepareStmts []*Prepare
+	prepareStmt *Prepare
 
 	tableMeta []*model.TableInfo
 
@@ -76,12 +76,6 @@ type Index struct {
 	Global       bool
 	Columns      Columns
 	ColumnPrefix []int
-}
-
-type Prepare struct {
-	ID   int
-	Name string
-	Args []func() string
 }
 
 func NewState() *State {

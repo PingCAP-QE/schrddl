@@ -1,11 +1,13 @@
 package framework
 
 import (
+	"strings"
+
 	"github.com/PingCAP-QE/schrddl/pinolo/stage2"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
-	"strings"
 )
 
 type certChecker struct {
@@ -42,7 +44,7 @@ func (n *certChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	rs1, err := n.c.execQueryForPlanEstCnt(querySQL)
 	//println(fmt.Sprintf("%s;", querySQL))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -81,7 +83,7 @@ func (n *certChecker) check(sql string, isReduce bool) (ok bool, err error) {
 
 			rs2, err := n.c.execQueryForPlanEstCnt(r.Sql)
 			if err != nil {
-				if dmlIgnoreError(err) {
+				if util.DMLIgnoreError(err) {
 					//logutil.BgLogger().Warn("ignore error", zap.String("query", r.Sql), zap.Error(err))
 					return false, nil
 				} else {
