@@ -3,10 +3,29 @@ package framework
 import (
 	"github.com/PingCAP-QE/schrddl/pinolo"
 	"github.com/PingCAP-QE/schrddl/pinolo/stage2"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
 )
+
+func mapLess(m1, m2 map[uint32]struct{}) bool {
+	for k := range m2 {
+		if _, ok := m1[k]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+func mapMore(m1, m2 map[uint32]struct{}) bool {
+	for k := range m1 {
+		if _, ok := m2[k]; !ok {
+			return true
+		}
+	}
+	return false
+}
 
 type pinoloChecker struct {
 	c *testCase
@@ -41,7 +60,7 @@ func (n *pinoloChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	}
 	//println(fmt.Sprintf("%s;", querySQL))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -67,7 +86,7 @@ func (n *pinoloChecker) check(sql string, isReduce bool) (ok bool, err error) {
 		if r.Err == nil {
 			rs2, err := n.c.execQueryForCnt(r.Sql)
 			if err != nil {
-				if dmlIgnoreError(err) {
+				if util.DMLIgnoreError(err) {
 					//logutil.BgLogger().Warn("ignore error", zap.String("query", r.Sql), zap.Error(err))
 					return false, nil
 				} else {

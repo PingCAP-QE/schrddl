@@ -1,6 +1,8 @@
 package framework
 
 import (
+	"strings"
+
 	"github.com/PingCAP-QE/schrddl/tlp"
 	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/errors"
@@ -8,7 +10,6 @@ import (
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
-	"strings"
 )
 
 type tlpChecker struct {
@@ -60,7 +61,7 @@ func (t *tlpChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	rs1, err := t.c.execQueryForCRC32(querySQL)
 	//println(fmt.Sprintf("%s;", querySQL))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -98,7 +99,7 @@ func (t *tlpChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	rs2, err := t.c.execQueryForCRC32(negativeQuery)
 	//println(fmt.Sprintf("%s;", newQuery))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -120,7 +121,7 @@ func (t *tlpChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	isNullQuery = t.sb.String()
 	rs3, err := t.c.execQueryForCRC32(isNullQuery)
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -143,7 +144,7 @@ func (t *tlpChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	allQuery = t.sb.String()
 	rsAll, err := t.c.execQueryForCRC32(allQuery)
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))

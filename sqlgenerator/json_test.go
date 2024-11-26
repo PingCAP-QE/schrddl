@@ -1,9 +1,10 @@
 package sqlgenerator
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
-	"testing"
 )
 
 func TestRandJsons(t *testing.T) {
@@ -26,7 +27,7 @@ func TestRandJsons(t *testing.T) {
 	})
 	t.Run("test rand json sub", func(t *testing.T) {
 		for i := 0; i < 20; i++ {
-			str := randomArrayJSONSubValue(randArrayTp[rand.Intn(len(randArrayTp))])
+			str := RandomValueWithType(randArrayTp[rand.Intn(len(randArrayTp))])
 			t.Log(str)
 		}
 	})
