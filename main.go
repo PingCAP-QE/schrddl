@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -29,7 +30,7 @@ import (
 
 var (
 	dbAddr               = flag.String("addr", "127.0.0.1:4000", "database address")
-	dbName               = flag.String("db", "test1", "database name")
+	dbName               = flag.String("db", "test", "database name")
 	mode                 = flag.String("mode", "serial", "test mode: serial, parallel")
 	concurrency          = flag.Int("concurrency", 1, "concurrency")
 	tablesToCreate       = flag.Int("tables", 1, "the number of the tables to create")
@@ -46,49 +47,43 @@ var (
 )
 
 func prepareEnv() {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/test", *dbAddr)
-	db, err := sql.Open("mysql", dbURL)
+	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
+	tiDb, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
 	}
+	defer tiDb.Close()
 
-	if _, err = db.Exec("drop database if exists test1"); err != nil {
-		log.Fatalf("Can't create database")
+	tidbC, err := tiDb.Conn(context.Background())
+	if err != nil {
+		log.Fatalf("Can't connect to database, err: %s", err.Error())
 	}
-	if _, err = db.Exec("drop database if exists test2"); err != nil {
-		log.Fatalf("Can't create database")
-	}
-	if _, err = db.Exec("create database if not exists test1"); err != nil {
-		log.Fatalf("Can't create database")
-	}
-	if _, err = db.Exec("create database if not exists test2"); err != nil {
-		log.Fatalf("Can't create database")
-	}
+	defer tidbC.Close()
 
-	if _, err = db.Exec(fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
-		if _, err = db.Exec(fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
-			if _, err = db.Exec("set global time_zone='+8:00'"); err != nil {
+	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
+		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
+			if _, err = tidbC.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
 				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
 			}
 		}
 	}
-	// Enable index join on aggregation
-	if _, err := db.Exec("set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'"); err != nil {
-		log.Fatalf("Can't set tidb_enable_inl_join_inner_multi_pattern for tidb, please check tidb env")
+
+	initSQLs := []string{
+		"create database if not exists testcache",
+		"set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'",
+		"set GLOBAL tidb_enable_instance_plan_cache=1",
+		"set global tidb_enable_global_index=true",
 	}
-	if *rc {
-		if _, err := db.Exec("set global transaction_isolation='read-committed'"); err != nil {
-			log.Fatalf("Can't set transaction_isolation for tidb, please check tidb env")
+	if util.RCIsolation {
+		initSQLs = append(initSQLs, "set global transaction_isolation='read-committed'")
+	}
+
+	for _, sql := range initSQLs {
+		_, err = tidbC.ExecContext(context.Background(), sql)
+		if err != nil {
+			log.Fatalf("[DDL] %s failed", sql)
 		}
 	}
-	if _, err := db.Exec("set global tidb_enable_global_index=true"); err != nil {
-		log.Fatalf("Can't set global tidb_enable_global_index=true, error %v", err)
-	}
-
-	if _, err := db.Exec("set global tidb_enable_instance_plan_cache = 1"); err != nil {
-		log.Fatalf("Can't set global tidb_enable_instance_plan_cache=1, error %v", err)
-	}
-
 	mysql.SetLogger(log.Logger())
 }
 
@@ -134,16 +129,17 @@ func main() {
 		http.ListenAndServe("127.0.0.1:6060", nil)
 	}()
 
-	caseConfig := CaseConfig{
+	cfg := CaseConfig{
 		Concurrency:     *concurrency,
 		TablesToCreate:  *tablesToCreate,
 		MySQLCompatible: *mysqlCompatible,
-		TestTp:          testType,
-		DBAddr:          *dbAddr,
 		DBName:          *dbName,
+		DBAddr:          *dbAddr,
+		TestTp:          testType,
+		TestPrepare:     *prepare,
 	}
 
-	Run(caseConfig, *testTime)
+	Run(cfg, *testTime)
 	if TestFail {
 		log.Fatalf("test failed")
 	}

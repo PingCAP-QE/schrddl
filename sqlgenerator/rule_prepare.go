@@ -7,8 +7,10 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PingCAP-QE/schrddl/util"
 	sqlutil "github.com/PingCAP-QE/schrddl/util"
@@ -16,11 +18,13 @@ import (
 	"github.com/ngaut/log"
 )
 
-func checkError(err1, err2 error) error {
+func CheckError(err1, err2 error) error {
 	if err1 == nil && err2 == nil {
 		return nil
 	}
 
+	// Since the SQL is randomly generated, it may inherently fail to execute.
+	// In this case, we assume both sessions will return the same error.
 	if err1 == nil || err2 == nil {
 		log.Warn("Two sessions returns different error")
 		log.Warnf("Error1: %v", err1)
@@ -28,11 +32,9 @@ func checkError(err1, err2 error) error {
 		return errors.Errorf("Two sessions return different error")
 	}
 
-	// Since the SQL is randomly generated, it may inherently fail to execute.
-	// In this case, we assume both sessions will return the same error.
-	// TODO(joechenrh): pass schema name
+	// TODO(joechenrh): pass dbname here
 	errStr1, errStr2 := err1.Error(), err2.Error()
-	errStr2 = strings.ReplaceAll(errStr2, "test2", "test1")
+	errStr2 = strings.ReplaceAll(errStr2, "testcache", "test")
 	if errStr1 != errStr2 {
 		log.Warn("Two sessions returns different error")
 		log.Warnf("Error1: %v", err1)
@@ -40,10 +42,20 @@ func checkError(err1, err2 error) error {
 		return errors.Errorf("Two sessions return different error")
 	}
 
-	if !util.DMLIgnoreError(err1) {
-		return errors.Errorf("Two sessions both get non-ignorable error")
+	// Two sessions return same error, check if it can be ignroed.
+	if !util.DMLIgnoreError(err1) && !util.DDLIgnoreError(err1) {
+		log.Warnf("Two sessions get same error %v", err1)
+		return errors.Trace(err1)
 	}
 	return nil
+}
+
+func checkLastUseCache(conn *sql.Conn) bool {
+	rows, err := util.FetchRowsWithConn(conn, "select @@last_plan_from_cache")
+	if err != nil {
+		log.Fatalf("Error fetch rows %v", err)
+	}
+	return rows[0][0] == "'1'"
 }
 
 const Placeholder = "?"
@@ -115,8 +127,8 @@ func (g *SimpleGenerator) GenMismatch() string {
 
 // Check whether this statement can be used in plan cache.
 func RunAndCheckPlanCache(sql string, db *sql.DB) (bool, error) {
-	_, err := db.Exec(sql)
-	if err != nil {
+	// The generated statement may already have errors, check it first.
+	if _, err := db.Exec(sql); err != nil {
 		if sqlutil.DMLIgnoreError(err) {
 			return true, nil
 		}
@@ -142,8 +154,10 @@ type Prepare struct {
 	originalSQL string
 	prepareSQL  string
 	executeSQL  string
+	setSQL      string
 	SQLNoCache  string
-	assigns     []string
+	err1        error
+	err2        error
 }
 
 func NewPrepare() *Prepare {
@@ -162,139 +176,181 @@ func (p *Prepare) PopStack(l int) {
 	}
 }
 
-func replaceQuestionMarks(original string, replacements []string) string {
-	// Create a new string builder for the result
-	var result strings.Builder
-	replacementIndex := 0
+func (p *Prepare) RecordError(dir string) error {
+	dir = dir[8:]
+	filePath := filepath.Join(dir, "prepare.sql")
 
-	for _, char := range original {
-		if char == '?' {
-			// Replace with the corresponding string from the slice
-			result.WriteString(replacements[replacementIndex])
-			replacementIndex++
-		} else {
-			// Append the original character
-			result.WriteRune(char)
-		}
+	content := fmt.Sprintf("SQLs:\n%s\n%s\n%s\n%s\nerr1:%v\nerr2:%v\n",
+		p.prepareSQL, p.setSQL, p.executeSQL, p.SQLNoCache, p.err1, p.err2)
+
+	err := os.WriteFile(filePath, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write to file %s: %v", filePath, err)
 	}
 
-	return result.String()
+	return nil
 }
 
-func (p *Prepare) RecordError(o *os.File) {
-	o.WriteString(fmt.Sprintf("Prepare statement: %s\n", p.prepareSQL))
-	o.WriteString("params:\n")
-	for _, p := range p.assigns {
-		o.WriteString(fmt.Sprintf("%s\n", p))
-	}
-}
-
-func (p *Prepare) GenAssignments(genMatch bool) {
-	p.assigns = make([]string, 0, len(p.generators))
-	for _, gen := range p.generators {
+func (p *Prepare) generateParams(genMatch bool) {
+	replacementsPairs := make([]string, 0, len(p.generators))
+	setSQLs := make([]string, len(p.generators))
+	for i, gen := range p.generators {
 		v := gen.GenMatch()
 		if !genMatch {
 			v = gen.GenMismatch()
 		}
-		p.assigns = append(p.assigns, v)
+		setSQLs[i] = fmt.Sprintf("@i%d = %s", i, v)
+		replacementsPairs = append(replacementsPairs, v)
 	}
+	p.setSQL = fmt.Sprintf("set %s", strings.Join(setSQLs, ","))
+
+	var sb strings.Builder
+	replacementIndex := 0
+	for _, char := range p.originalSQL {
+		if char == '?' {
+			sb.WriteString(replacementsPairs[replacementIndex])
+			replacementIndex++
+		} else {
+			sb.WriteRune(char)
+		}
+	}
+	p.SQLNoCache = sb.String()
+}
+
+func getConn(db *sql.DB) (*sql.Conn, error) {
+	var (
+		conn *sql.Conn
+		err  error
+	)
+
+	conn, err = db.Conn(context.Background())
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		if err = conn.PingContext(context.Background()); err != nil {
+			conn.Close()
+			time.Sleep(10 * time.Millisecond)
+			conn, err = db.Conn(context.Background())
+			if err != nil {
+				return nil, errors.Trace(err)
+			}
+		} else {
+			break
+		}
+	}
+
+	return conn, errors.Trace(err)
 }
 
 // Run the same query in two sessions, one with plan cache and one not.
 // Return an error if two sessions return different errors.
-func (p *Prepare) execAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool) error {
-	p.GenAssignments(genMatch)
-
-	replacementsPairs := make([]string, 0, len(p.generators))
-	setSQLs := make([]string, len(p.generators))
-	for i, v := range p.assigns {
-		setSQLs[i] = fmt.Sprintf("set @i%d = %s", i, v)
-		replacementsPairs = append(replacementsPairs, v)
-	}
-	p.SQLNoCache = replaceQuestionMarks(p.originalSQL, replacementsPairs)
-
-	// No cache
-	err1 := util.ExecSQLWithDB(dbNoCache, p.SQLNoCache)
-
-	// With cache
-	connWithCache, err := dbWithCache.Conn(context.Background())
+func (p *Prepare) execAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool, times int) error {
+	conn, err := getConn(dbWithCache)
 	if err != nil {
-		log.Fatal("Can't open connection")
+		return errors.Trace(err)
 	}
-	defer connWithCache.Close()
-	for _, sql := range setSQLs {
-		err := util.ExecSQLWithConn(connWithCache, sql)
+	defer conn.Close()
+
+	// Prepare statement
+	err = util.ExecSQLWithConn(conn, p.prepareSQL)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < times; i++ {
+		p.generateParams(genMatch)
+
+		// No cache
+		_, p.err1 = dbNoCache.Exec(p.SQLNoCache)
+
+		// With cache
+		err := util.ExecSQLWithConn(conn, p.setSQL)
 		if err != nil {
 			return errors.Trace(err)
 		}
-	}
-	err2 := util.ExecSQLWithConn(connWithCache, p.prepareSQL)
-	if err2 != nil {
-		return err2
-	}
-	err2 = util.ExecSQLWithConn(connWithCache, p.SQLNoCache)
 
-	return checkError(err1, err2)
+		_, p.err2 = conn.ExecContext(context.Background(), p.executeSQL)
+		lastExecuteUseCache := checkLastUseCache(conn)
+
+		if err := CheckError(p.err1, p.err2); err != nil {
+			return errors.Trace(err)
+		}
+
+		// Check cache used if no error.
+		if i > 0 && !lastExecuteUseCache {
+			skipCacheInExecute++
+		}
+	}
+
+	return nil
 }
+
+var skipCacheInExecute = 0
 
 // Run the same query in two sessions, one with plan cache and one not.
 // Return an error if either:
 // 1. two sessions return different errors.
 // 2. two sessions return different results.
-func (p *Prepare) queryAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool) error {
-	p.GenAssignments(genMatch)
-
-	replacementsPairs := make([]string, 0, len(p.generators))
-	setSQLs := make([]string, len(p.generators))
-	for i, v := range p.assigns {
-		setSQLs[i] = fmt.Sprintf("set @i%d = %s", i, v)
-		replacementsPairs = append(replacementsPairs, v)
-	}
-	p.SQLNoCache = replaceQuestionMarks(p.originalSQL, replacementsPairs)
-
-	// No cache
-	res1, err1 := util.FetchRowsWithDB(dbNoCache, p.SQLNoCache)
-
-	// With cache
-	conn, err := dbWithCache.Conn(context.Background())
+func (p *Prepare) queryAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool, times int) error {
+	conn, err := getConn(dbWithCache)
 	if err != nil {
-		log.Fatal("Can't open connection")
+		return errors.Trace(err)
 	}
 	defer conn.Close()
-	for _, sql := range setSQLs {
-		err := util.ExecSQLWithConn(conn, sql)
+
+	// Prepare statement
+	err = util.ExecSQLWithConn(conn, p.prepareSQL)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < times; i++ {
+		p.generateParams(genMatch)
+
+		// No cache
+		resWithoutCache, err1 := util.FetchRowsWithDB(dbNoCache, p.SQLNoCache)
+		p.err1 = err1
+
+		// With cache
+		err := util.ExecSQLWithConn(conn, p.setSQL)
 		if err != nil {
 			return errors.Trace(err)
 		}
-	}
-	err2 := util.ExecSQLWithConn(conn, p.prepareSQL)
-	if err2 != nil {
-		return err2
-	}
-	res2, err2 := util.FetchRowsWithConn(conn, p.executeSQL)
 
-	// If both executed successfully, check whether the results are same.
-	if err1 == nil && err2 == nil {
-		same, err := util.CheckResults(res1, res2)
-		if err != nil {
-			return err
+		resWithCache, err2 := util.FetchRowsWithConn(conn, p.executeSQL)
+		lastExecuteUseCache := checkLastUseCache(conn)
+		p.err2 = err2
+
+		// If both executed successfully, check whether the results are same.
+		if err1 == nil && err2 == nil {
+			if i > 0 && !lastExecuteUseCache {
+				skipCacheInExecute++
+			}
+
+			same, err := util.CheckResults(resWithoutCache, resWithCache)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			if !same {
+				return errors.Errorf("Two sessions' result mismatch")
+			}
+			return nil
 		}
-		if !same {
-			return errors.Errorf("Two sessions' result mismatch")
+
+		// Two sessions return different result
+		if err := CheckError(err1, err2); err != nil {
+			return errors.Trace(err)
 		}
-		return nil
+
+		if i > 0 && !lastExecuteUseCache {
+			skipCacheInExecute++
+		}
 	}
 
-	if err1 != nil && strings.Contains(err1.Error(), "context canceled") ||
-		err2 != nil && strings.Contains(err2.Error(), "context canceled") {
-		log.Warn("Unexpected context canceled")
-		return nil
-	}
-	if err1 != nil && strings.Contains(err1.Error(), "Illegal mix of collation") && err2 == nil {
-		log.Warn("no cache get Illegal mix of collations error")
-		return nil
-	}
-	return checkError(err1, err2)
+	return nil
 }
 
 func (p *Prepare) UsePlanCache(dbWithCache *sql.DB) (bool, error) {
@@ -307,32 +363,28 @@ func (p *Prepare) UsePlanCache(dbWithCache *sql.DB) (bool, error) {
 }
 
 func (p *Prepare) CheckQuery(dbWithCache, dbNoCache *sql.DB) error {
-	err := p.queryAndCompare(dbWithCache, dbNoCache, true)
+	err := p.queryAndCompare(dbWithCache, dbNoCache, true, 1)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	for i := 0; i <= 10; i++ {
-		err = p.queryAndCompare(dbWithCache, dbNoCache, false)
-		if err != nil {
-			return errors.Trace(err)
-		}
+	err = p.queryAndCompare(dbWithCache, dbNoCache, false, 10)
+	if err != nil {
+		return errors.Trace(err)
 	}
 
 	return nil
 }
 
 func (p *Prepare) CheckExec(dbWithCache, dbNoCache *sql.DB) error {
-	err := p.execAndCompare(dbWithCache, dbNoCache, true)
+	err := p.execAndCompare(dbWithCache, dbNoCache, true, 1)
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	for i := 0; i <= 5; i++ {
-		err = p.execAndCompare(dbWithCache, dbNoCache, false)
-		if err != nil {
-			return errors.Trace(err)
-		}
+	err = p.execAndCompare(dbWithCache, dbNoCache, false, 3)
+	if err != nil {
+		return errors.Trace(err)
 	}
 
 	return nil
