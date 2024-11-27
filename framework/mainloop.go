@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +48,7 @@ type CaseConfig struct {
 	TestTp          DDLTestType
 	DBAddr          string
 	DBName          string
+	TestPrepare     bool
 }
 
 var globalBugSeqNum atomic.Int64
@@ -119,7 +121,16 @@ func (c *DDLCase) Execute(ctx context.Context) error {
 		go func(i int) {
 			defer wg.Done()
 			for {
-				err := c.cases[i].testPlanCache(ctx)
+				var err error
+				switch c.cases[i].caseType {
+				case CaseTypeNormal:
+					err = c.cases[i].execute(ctx)
+				case CaseTypePlanCache:
+					err = c.cases[i].testPlanCache(ctx)
+				default:
+					log.Fatalf("Unknown case type %d", c.cases[i].caseType)
+				}
+
 				if err != nil {
 					for _, tc := range c.cases {
 						tc.DisableKVGC()
@@ -141,11 +152,12 @@ func (c *DDLCase) Execute(ctx context.Context) error {
 
 // Initialize initializes all supported charsets, collates and each concurrent
 // goroutine (i.e. `testCase`).
-func (c *DDLCase) Initialize(ctx context.Context) error {
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", c.cfg.DBAddr, c.cfg.DBName)
-	for _, tc := range c.cases {
-		if err := tc.InitializeDB(c.cfg.DBName, dbDSN); err != nil {
-			return err
+func (c *DDLCase) Initialize(ctx context.Context, dbss [][]*sql.DB, initDB string) error {
+	for i := 0; i < c.cfg.Concurrency; i++ {
+		c.cases[i].dbname = initDB
+		err := c.cases[i].initialize(dbss[i])
+		if err != nil {
+			return errors.Trace(err)
 		}
 	}
 	return nil
@@ -166,6 +178,7 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 	for i := 0; i < cfg.Concurrency; i++ {
 		cases[i] = &testCase{
 			cfg:          cfg,
+			caseType:     CaseTypeNormal,
 			tables:       make(map[string]*ddlTestTable),
 			schemas:      make(map[string]*ddlTestSchema),
 			views:        make(map[string]*ddlTestView),
@@ -175,6 +188,10 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 			outputWriter: outputfile,
 			queryPlanMap: make(map[string]string),
 		}
+	}
+
+	if cfg.TestPrepare {
+		cases[0].caseType = CaseTypePlanCache
 	}
 
 	return &DDLCase{

@@ -27,8 +27,17 @@ import (
 	"go.uber.org/zap"
 )
 
+type CaseType int
+
+const (
+	CaseTypeNormal CaseType = iota
+	CaseTypePlanCache
+)
+
 type testCase struct {
-	cfg              *CaseConfig
+	cfg      *CaseConfig
+	caseType CaseType
+
 	dbname           string
 	dbs              []*sql.DB
 	caseIndex        int
@@ -293,53 +302,63 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 	return util.FetchRowsWithDB(c.dbs[0], sql)
 }
 
-func test(tables []*model.TableInfo, db *sql.DB) {
+func (c *testCase) CheckData(tables []*model.TableInfo) error {
 	for _, table := range tables {
-		res1, err1 := util.FetchRowsWithDB(db, fmt.Sprintf("select * from test1.`%s`", table.Name.L))
-		res2, err2 := util.FetchRowsWithDB(db, fmt.Sprintf("select * from test2.`%s`", table.Name.L))
-		if err1 != nil || err2 != nil {
-			log.Fatal("Error select data")
+		sql := fmt.Sprintf("select * from `%s`.`%s`", c.dbname, table.Name.L)
+		rows1, err := util.FetchRowsWithDB(c.dbs[0], sql)
+		if err != nil {
+			return errors.Trace(err)
 		}
-		same, err := util.CheckResults(res1, res2)
-		if err != nil || !same {
-			log.Fatal("Error generate data")
+		sql = fmt.Sprintf("select * from `%s`.`%s`", "testcache", table.Name)
+		rows2, err := util.FetchRowsWithDB(c.dbs[0], sql)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		same, err := util.CheckResults(rows1, rows2)
+		if err != nil {
+			log.Fatalf("Error check result")
+		}
+		if !same {
+			return errors.Errorf("Table %s have different data", table.Name)
 		}
 	}
+
+	return nil
 }
 
 // A special function to test instance plan cache
 func (c *testCase) testPlanCache(ctx context.Context) error {
 	state := sqlgenerator.NewState()
 
-	dbNoCache, err := OpenDB(fmt.Sprintf("root:@tcp(%s)/%s", c.cfg.DBAddr, "test1"), 20)
-	if err != nil {
-		log.Fatalf("[ddl] create db client error %v", err)
-	}
-	dbWithCache, err := OpenDB(fmt.Sprintf("root:@tcp(%s)/%s", c.cfg.DBAddr, "test2"), 20)
-	if err != nil {
-		log.Fatalf("[ddl] create db client error %v", err)
-	}
+	dbNoCache, dbWithCache := c.dbs[0], c.dbs[1]
 
 	prepareStmtCnt := 100
 	for i := 0; i < prepareStmtCnt; i++ {
 		startSQL, err := sqlgenerator.PlanCacheDataGen.Eval(state)
 		if err != nil {
-			return err
+			return errors.Trace(err)
 		}
-		err1 := util.ExecSQLWithDB(dbWithCache, startSQL)
-		err2 := util.ExecSQLWithDB(dbNoCache, startSQL)
-		if err1 != nil || err2 != nil {
-			return err
+
+		_, err1 := dbNoCache.Exec(startSQL)
+		_, err2 := dbWithCache.Exec(startSQL)
+		err = sqlgenerator.CheckError(err1, err2)
+		if err != nil {
+			return errors.Trace(err)
 		}
 	}
 
 	tableMetas := c.fetchTableInfo(state)
-	test(tableMetas, dbNoCache)
 
 	noCache, withCache := 0, 0
-	for i := 0; i < 10000; i++ {
-		// useQuery := rand.Intn(2) == 0
-		useQuery := true
+	for i := 0; i < 50000; i++ {
+		if i%1000 == 0 {
+			if err := c.CheckData(tableMetas); err != nil {
+				return errors.Trace(err)
+			}
+			log.Info("Check table data passed")
+		}
+
+		useQuery := rand.Intn(2) == 0
 
 		prepare, err := sqlgenerator.GeneratePrepare(state, useQuery)
 		if err != nil {
@@ -365,9 +384,17 @@ func (c *testCase) testPlanCache(ctx context.Context) error {
 		}
 
 		if err != nil {
-			TestFail = true
-			prepare.RecordError(c.outputWriter)
-			return c.dumpErrorTables(prepare.SQLNoCache)
+			dir, err2 := c.dumpErrorTables(prepare.SQLNoCache)
+			if err2 != nil {
+				return errors.Trace(err)
+			}
+			err2 = prepare.RecordError(dir)
+			if err2 != nil {
+				return errors.Trace(err)
+			}
+			if strings.Contains(err.Error(), "different error") {
+				continue
+			}
 		}
 	}
 
@@ -404,17 +431,18 @@ func (c *testCase) fetchTableInfo(state *sqlgenerator.State) []*model.TableInfo 
 }
 
 // Dump related table data to local.
-func (c *testCase) dumpErrorTables(sql string) error {
+func (c *testCase) dumpErrorTables(sql string) (string, error) {
 	tblNames, err := dump.ExtraFromSQL(sql)
 	if err != nil {
-		return err
+		return "", err
 	}
 	pwd := os.Getenv("PWD")
 	if GlobalOutPut != "" {
 		pwd = filepath.Dir(GlobalOutPut)
 	}
 	bugNum := globalBugSeqNum.Add(1)
-	return dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), bugNum), c.cfg.DBAddr)
+	dir := fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), bugNum)
+	return dir, dump.DumpToFile("test", tblNames, dir, c.cfg.DBAddr)
 }
 
 // execute iterates over two list of operations concurrently, one is
@@ -468,6 +496,15 @@ func (c *testCase) execute(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	_, err := c.dbs[0].Exec("set @@max_execution_time=800000")
+	if err != nil {
+		return err
+	}
+	_, err = c.dbs[0].Exec("set @@group_concat_max_len=10240000")
+	if err != nil {
+		return err
 	}
 
 	tableMetas := c.fetchTableInfo(state)
@@ -576,7 +613,7 @@ func (c *testCase) execute(ctx context.Context) error {
 							c.cntOfOldOriginal, c.cntOfNewOriginal, c.cntOfOldReduce, c.cntOfNewReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
 				}
 
-				if err := c.dumpErrorTables(reduceSQL); err != nil {
+				if _, err := c.dumpErrorTables(reduceSQL); err != nil {
 					return err
 				}
 				TestFail = true

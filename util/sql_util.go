@@ -6,51 +6,19 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/juju/errors"
-	"github.com/ngaut/log"
 )
-
-func execWithConn(conn *sql.Conn, query string) (sql.Result, error) {
-	var (
-		err error
-		res sql.Result
-	)
-	for retry := 0; retry < 10; retry++ {
-		res, err = conn.ExecContext(context.Background(), query)
-		if err != nil && strings.Contains(err.Error(), "context canceled") {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		return res, err
-	}
-	return res, err
-}
-
-func QueryWithRetry(conn *sql.Conn, sql string) (*sql.Rows, error) {
-	var err error
-	for retry := 0; retry < 10; retry++ {
-		res, err := conn.QueryContext(context.Background(), sql)
-		if err != nil && strings.Contains(err.Error(), "context canceled") {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		return res, err
-	}
-
-	return nil, err
-}
 
 // Execute SQL with no returning rows.
 // This function will check if the error can be ignored.
 func ExecSQLWithConn(conn *sql.Conn, sql string) error {
-	_, err := execWithConn(conn, sql)
+	_, err := conn.ExecContext(context.Background(), sql)
 	if err != nil && DMLIgnoreError(err) || DDLIgnoreError(err) {
 		return nil
 	}
 	if strings.Contains(err.Error(), "plan not match") {
-		_, err = execWithConn(conn, sql)
+		_, err = conn.ExecContext(context.Background(), sql)
 		return err
 	}
 	return errors.Trace(err)
@@ -59,17 +27,12 @@ func ExecSQLWithConn(conn *sql.Conn, sql string) error {
 // Execute SQL with no returning rows.
 // This function will check if the error can be ignored.
 func ExecSQLWithDB(db *sql.DB, sql string) error {
-	conn, err := db.Conn(context.Background())
-	if err != nil {
-		log.Fatal("Can't open connection")
-	}
-	defer conn.Close()
-	_, err = execWithConn(conn, sql)
+	_, err := db.Exec(sql)
 	if err != nil && DMLIgnoreError(err) || DDLIgnoreError(err) {
 		return nil
 	}
 	if strings.Contains(err.Error(), "plan not match") {
-		_, err = execWithConn(conn, sql)
+		_, err = db.Exec(sql)
 		return err
 	}
 	return errors.Trace(err)
@@ -77,7 +40,7 @@ func ExecSQLWithDB(db *sql.DB, sql string) error {
 
 // Execute SQL and return all the rows.
 func FetchRowsWithConn(conn *sql.Conn, sql string) ([][]string, error) {
-	rows, err := QueryWithRetry(conn, sql)
+	rows, err := conn.QueryContext(context.Background(), sql)
 	if err != nil {
 		return nil, err
 	}
@@ -126,13 +89,7 @@ func FetchRowsWithConn(conn *sql.Conn, sql string) ([][]string, error) {
 
 // Execute SQL and return all the rows.
 func FetchRowsWithDB(db *sql.DB, sql string) ([][]string, error) {
-	conn, err := db.Conn(context.Background())
-	if err != nil {
-		log.Fatal("Can't open connection")
-	}
-	defer conn.Close()
-
-	rows, err := QueryWithRetry(conn, sql)
+	rows, err := db.Query(sql)
 	if err != nil {
 		return nil, err
 	}
