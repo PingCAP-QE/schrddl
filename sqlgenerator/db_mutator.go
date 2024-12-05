@@ -100,21 +100,6 @@ func (s *State) ParentCTE() *Table {
 	return ctes[len(ctes)-1]
 }
 
-func (s *State) AppendPrepare(pre *Prepare) {
-	s.prepareStmts = append(s.prepareStmts, pre)
-}
-
-func (s *State) RemovePrepare(p *Prepare) {
-	var pos int
-	for i := range s.prepareStmts {
-		if s.prepareStmts[i].ID == p.ID {
-			pos = i
-			break
-		}
-	}
-	s.prepareStmts = append(s.prepareStmts[:pos], s.prepareStmts[pos+1:]...)
-}
-
 func (t *Table) AppendColumn(c *Column) {
 	t.Columns = append(t.Columns, c)
 	for i := range t.Values {
@@ -282,13 +267,5 @@ func (i *Index) AppendColumnIfNotExists(cols ...*Column) {
 		}
 		i.Columns = append(i.Columns, c)
 		i.ColumnPrefix = append(i.ColumnPrefix, 0)
-	}
-}
-
-func (p *Prepare) AppendColumns(cols ...*Column) {
-	for _, c := range cols {
-		p.Args = append(p.Args, func() string {
-			return c.RandomValue()
-		})
 	}
 }

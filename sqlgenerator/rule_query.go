@@ -63,11 +63,22 @@ var UnionSelect = NewFn(func(state *State) Fn {
 	if err != nil {
 		return NoneBecauseOf(err)
 	}
+
+	orderString := func(n int) string {
+		numbers := make([]string, n)
+		for i := 1; i <= n; i++ {
+			numbers[i-1] = fmt.Sprintf("%d", i)
+		}
+		return strings.Join(numbers, ",")
+	}(fieldNum)
+	orderString = fmt.Sprintf("order by %s", orderString)
+
 	return Strs(
 		"(", firstSelect, ")",
 		setOpr,
 		"(", secondSelect, ")",
-		"order by 1 limit", RandomNum(1, 1000),
+		orderString,
+		"limit", RandomNum(1, 1000),
 	)
 })
 
@@ -580,19 +591,26 @@ var Predicate = NewFn(func(state *State) Fn {
 	)
 })
 
+var JSONContainVal = NewFn(func(state *State) Fn {
+	v, err := ArrayRandVal.Eval(state)
+	if err != nil {
+		return NoneBecauseOf(err)
+	}
+	// Don't add quote to placeholder
+	if v == Placeholder {
+		return Str(v)
+	}
+	return Str(fmt.Sprintf("'%s'", strings.Trim(v, "'")))
+})
+
 var JSONPredicate = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	randCol := state.env.Column
 	colName := fmt.Sprintf("%s.%s", tbl.Name, randCol.Name)
-	arv, err := ArrayRandVal.Eval(state)
-	if err != nil {
-		return NoneBecauseOf(err)
-	}
-	jsContainVal := "'" + strings.Trim(arv, "'") + "'"
 
 	pre := Or(
-		And(Str(arv), Str("MEMBER OF"), Str("("), Str(colName), Str(")")),
-		And(Str("JSON_CONTAINS("), Str(colName), Str(","), Str(jsContainVal), Str(")")),
+		And(ArrayRandVal, Str("MEMBER OF"), Str("("), Str(colName), Str(")")),
+		And(Str("JSON_CONTAINS("), Str(colName), Str(","), JSONContainVal, Str(")")),
 		//And(Str("JSON_CONTAINS("), ArrayRandVal, Str(","), Str(colName), Str(")")),
 		And(Str("JSON_OVERLAPS("), Str(colName), Str(","), RandVal, Str(")")),
 		//And(Str("JSON_OVERLAPS("), RandVal, Str(","), Str(colName), Str(")")),
@@ -619,33 +637,13 @@ var RandColVals = NewFn(func(state *State) Fn {
 })
 
 var ArrayRandVal = NewFn(func(state *State) Fn {
-	tbl := state.env.Table
-	randCol := state.env.Column
-	var v string
-	if len(tbl.Values) == 0 || rand.Intn(3) == 0 {
-		v = randomArrayJSONSubValue(randCol.SubType)
-	} else {
-		v = tbl.GetRandArraySubVal(randCol)
-	}
-	if len(v) == 0 {
-		v = randomArrayJSONSubValue(randCol.SubType)
-	}
-	return Str(v)
+	gen := &ArrayValueGenerator{table: state.env.Table, column: state.env.Column}
+	return state.GetValueFn(gen)
 })
 
 var RandVal = NewFn(func(state *State) Fn {
-	tbl := state.env.Table
-	randCol := state.env.Column
-	var v string
-	if len(tbl.Values) == 0 || rand.Intn(3) == 0 {
-		v = randCol.RandomValue()
-	} else {
-		v = tbl.GetRandRowVal(randCol)
-	}
-	if len(v) == 0 {
-		v = randCol.RandomValue()
-	}
-	return Str(v)
+	gen := &ColumnGenerator{table: state.env.Table, column: state.env.Column}
+	return state.GetValueFn(gen)
 })
 
 var SubSelect = NewFn(func(state *State) Fn {
@@ -734,9 +732,10 @@ var OrderBy = NewFn(func(state *State) Fn {
 })
 
 var Limit = NewFn(func(state *State) Fn {
-	return Strs("limit", RandomNum(100000000, 1000000000))
-
-	//return Strs("limit", RandomNum(1000000, 2147483646))
+	gen := &SimpleGenerator{gen: func() string {
+		return Num(rand.Intn(900000000) + 100000000)
+	}}
+	return And(Strs("limit"), state.GetValueFn(gen))
 })
 
 var Query2 Fn

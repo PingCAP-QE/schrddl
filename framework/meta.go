@@ -2,79 +2,18 @@ package framework
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/emirpasic/gods/lists/arraylist"
-	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/twinj/uuid"
 )
-
-type testCase struct {
-	cfg              *CaseConfig
-	initDB           string
-	dbs              []*sql.DB
-	caseIndex        int
-	tables           map[string]*ddlTestTable
-	schemas          map[string]*ddlTestSchema
-	views            map[string]*ddlTestView
-	tablesLock       sync.RWMutex
-	schemasLock      sync.Mutex
-	stop             int32
-	lastDDLID        int
-	charsets         []string
-	charsetsCollates map[string][]string
-
-	tableMap     map[string]*sqlgenerator.Table
-	outputWriter *os.File
-
-	tidbParser *parser.Parser
-
-	// stat info
-	queryPlanMap                      map[string]string
-	originalSQL                       string
-	reduceChangedSQL                  string
-	reduceSQL                         string
-	aggregationAsInnerSideOfIndexJoin int
-	planUseMvIndex                    int
-	cntOfOldOriginal                  int
-	cntOfNewOriginal                  int
-	cntOfOldReduce                    int
-	cntOfNewReduce                    int
-
-	// cert
-	oldEstCntOriginal float64
-	newEstCntOriginal float64
-	oldEstCntReduce   float64
-	newEstCntReduce   float64
-	checkCERTCnt      int
-
-	// tlp
-	cntOfP    int
-	cntOfN    int
-	cntOfNull int
-	cntOfAll  int
-	nQuery    string
-	nullQuery string
-	allQuery  string
-}
-
-func (c *testCase) stopTest() {
-	atomic.StoreInt32(&c.stop, 1)
-}
-
-func (c *testCase) isStop() bool {
-	return atomic.LoadInt32(&c.stop) == 1
-}
 
 // schema type, this might be modified to support other operations, but it's not clear
 // currently for me.
