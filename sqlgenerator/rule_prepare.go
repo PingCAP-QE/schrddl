@@ -156,8 +156,14 @@ type Prepare struct {
 	executeSQL  string
 	setSQL      string
 	SQLNoCache  string
-	err1        error
-	err2        error
+
+	// parameters for the first time execution
+	// It's used to replay the cache plan generation.
+	firstSetSQL string
+
+	// error for no-cache execution and with-cache execution
+	err1 error
+	err2 error
 }
 
 func NewPrepare() *Prepare {
@@ -180,8 +186,8 @@ func (p *Prepare) RecordError(dir string) error {
 	dir = dir[8:]
 	filePath := filepath.Join(dir, "prepare.sql")
 
-	content := fmt.Sprintf("SQLs:\n%s\n%s\n%s\n%s\nerr1:%v\nerr2:%v\n",
-		p.prepareSQL, p.setSQL, p.executeSQL, p.SQLNoCache, p.err1, p.err2)
+	content := fmt.Sprintf("SQLs:\n%s\n%s\n%s\n%s\n%s\nerr1:%v\nerr2:%v\n",
+		p.prepareSQL, p.firstSetSQL, p.setSQL, p.executeSQL, p.SQLNoCache, p.err1, p.err2)
 
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
@@ -203,6 +209,10 @@ func (p *Prepare) generateParams(genMatch bool) {
 		replacementsPairs = append(replacementsPairs, v)
 	}
 	p.setSQL = fmt.Sprintf("set %s", strings.Join(setSQLs, ","))
+
+	if p.firstSetSQL == "" {
+		p.firstSetSQL = p.setSQL
+	}
 
 	var sb strings.Builder
 	replacementIndex := 0
