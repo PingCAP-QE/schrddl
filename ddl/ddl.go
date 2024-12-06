@@ -180,6 +180,23 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 	}
 }
 
+func backgroundSetVariables(ctx context.Context, db *sql.DB) {
+	tk := time.NewTicker(50 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("Time is up, exit schrddl")
+			return
+		case <-tk.C:
+			state := sqlgenerator.NewState()
+			setVar, err := sqlgenerator.SetVariable.Eval(state)
+			if err != nil {
+				db.Exec(setVar)
+			}
+		}
+	}
+}
+
 // Execute executes each goroutine (i.e. `testCase`) concurrently.
 func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc ExecuteDDLFunc, exeDMLFunc ExecuteDMLFunc) error {
 	log.Infof("[%s] start to test...", c)
@@ -196,6 +213,11 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 		backgroundUpdateSeq(ctx, c.cases[0].dbs[0])
 		wg.Done()
 	}()
+	go func() {
+		backgroundSetVariables(ctx, c.cases[0].dbs[0])
+		wg.Done()
+	}()
+
 	for i := 0; i < c.cfg.Concurrency; i++ {
 		wg.Add(1)
 		go func(i int) {
