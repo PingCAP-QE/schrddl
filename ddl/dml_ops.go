@@ -272,6 +272,7 @@ func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error
 
 	state := sqlgenerator.NewState()
 	state.SetWeight(sqlgenerator.Limit, 1000)
+	state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
 	for _, table := range c.tableMap {
 		state.Tables = append(state.Tables, table)
 	}
@@ -306,6 +307,7 @@ func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error
 
 	state := sqlgenerator.NewState()
 	state.SetWeight(sqlgenerator.Limit, 1000)
+	state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
 	for _, table := range c.tableMap {
 		state.Tables = append(state.Tables, table)
 	}

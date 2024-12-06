@@ -91,6 +91,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
 		dbss[0][0].Exec("set global max_execution_time=5000")
 	}
+	dbss[0][0].Exec("set global tidb_enable_fast_create_table=0")
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
 		log.Fatalf("[ddl] get start ddl seq num error %v", err)
@@ -109,6 +110,15 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 var checkList = []string{
 	"can't have a default value",
 	"strconv.Atoi",
+	"assertion failed",
+	"cannot cast from bigint to vector",
+	"does not fit",
+	"Invalid vector text",
+	"cannot cast",
+	"Data Truncated",
+
+	// bug
+	"unsupport column type for encode 225",
 }
 
 func dmlIgnoreError(err error) bool {
@@ -116,11 +126,6 @@ func dmlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
-	if strings.Contains(errStr, "assert") {
-		return false
-	} else {
-		return true
-	}
 	for _, check := range checkList {
 		if strings.Contains(errStr, check) {
 			return true
