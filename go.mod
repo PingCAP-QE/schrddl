@@ -2,6 +2,8 @@ module github.com/PingCAP-QE/schrddl
 
 go 1.23.0
 
+toolchain go1.23.2
+
 require (
 	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef
 	github.com/emirpasic/gods v1.18.1
