@@ -110,6 +110,15 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 var checkList = []string{
 	"can't have a default value",
 	"strconv.Atoi",
+	"assertion failed",
+	"cannot cast from bigint to vector",
+	"does not fit",
+	"Invalid vector text",
+	"cannot cast",
+	"Data Truncated",
+
+	// bug
+	"unsupport column type for encode 225",
 }
 
 func dmlIgnoreError(err error) bool {
@@ -117,11 +126,6 @@ func dmlIgnoreError(err error) bool {
 		return true
 	}
 	errStr := err.Error()
-	if strings.Contains(errStr, "assert") {
-		return false
-	} else {
-		return true
-	}
 	for _, check := range checkList {
 		if strings.Contains(errStr, check) {
 			return true
