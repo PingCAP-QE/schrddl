@@ -550,6 +550,14 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 				for {
 					globalDDLSeqNumMu.Lock()
 					if seqNum != globalDDLSeqNum+1 {
+						if time.Since(startTs) >= 30*time.Second {
+							// force to increase
+							if seqNum >= globalDDLSeqNum {
+								globalDDLSeqNum++
+							}
+							lock = true
+							break
+						}
 						// Wait for other gorountine to update
 						globalDDLSeqNumMu.Unlock()
 						time.Sleep(5 * time.Millisecond)
