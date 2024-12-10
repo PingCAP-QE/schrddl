@@ -265,7 +265,7 @@ func (c *DDLCase) Initialize(ctx context.Context, dbss [][]*sql.DB, initDB strin
 }
 
 // getAllCharsetAndCollates returns all allowable charsets and collates by executing a
-// simple SQL query: `show charset`.
+// simple SQL query: `show collation`.
 func getAllCharsetAndCollates(db *sql.DB) ([]string, map[string][]string, error) {
 	sql := "show collation"
 	rows, err := db.Query(sql)
