@@ -116,6 +116,7 @@ var checkList = []string{
 	"Invalid vector text",
 	"cannot cast",
 	"Data Truncated",
+	"context canceled",
 
 	// bug
 	"unsupport column type for encode 225",
@@ -217,6 +218,7 @@ var ddlIgnoreList = []string{
 	"with Vector Key covered",
 	"already exist on column",
 	"Unsupported",
+	"context canceled",
 }
 
 func ddlIgnoreError(err error) bool {
