@@ -7,7 +7,7 @@ COPY . /build
 RUN go build -o /schrddl
 
 
-FROM registry-mirror.pingcap.net/library/debian:bookwarm
+FROM rockylinux:9-minimal
 
 RUN apt -y update && apt -y install wget curl \
  && rm -rf /var/lib/apt/lists/*
