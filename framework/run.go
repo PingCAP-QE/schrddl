@@ -91,7 +91,7 @@ func Run(cfg CaseConfig, testTime time.Duration) {
 	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", cfg.DBAddr, cfg.DBName)
 	for i := 0; i < cfg.Concurrency; i++ {
 		// Currently, we only use one testCase for plan cache test.
-		if cfg.TestPrepare && i == 0 {
+		if cfg.TestPrepare {
 			dbss = append(dbss, createDBsForPrepare(cfg.DBAddr, cfg.DBName))
 		} else {
 			dbss = append(dbss, createDBs(dbDSN))

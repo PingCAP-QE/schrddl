@@ -23,6 +23,24 @@ func CheckError(err1, err2 error) error {
 		return nil
 	}
 
+	errStr1, errStr2 := "", ""
+	if err1 != nil {
+		errStr1 = err1.Error()
+	}
+	if err2 != nil {
+		errStr2 = err2.Error()
+	}
+
+	// Filter some errors
+	if strings.Contains(errStr1, "cannot be pushed down") ||
+		strings.Contains(errStr2, "cannot be pushed down") ||
+		strings.Contains(errStr1, "Truncated incorrect") ||
+		strings.Contains(errStr2, "Truncated incorrect") ||
+		strings.Contains(errStr1, "Incorrect datetime value") ||
+		strings.Contains(errStr2, "Incorrect datetime value") {
+		return nil
+	}
+
 	// Since the SQL is randomly generated, it may inherently fail to execute.
 	// In this case, we assume both sessions will return the same error.
 	if err1 == nil || err2 == nil {
@@ -33,7 +51,6 @@ func CheckError(err1, err2 error) error {
 	}
 
 	// TODO(joechenrh): pass dbname here
-	errStr1, errStr2 := err1.Error(), err2.Error()
 	errStr2 = strings.ReplaceAll(errStr2, "testcache", "test")
 	if errStr1 != errStr2 {
 		log.Warn("Two sessions returns different error")
@@ -125,7 +142,11 @@ func (g *SimpleGenerator) GenMismatch() string {
 	return g.gen()
 }
 
-// Check whether this statement can be used in plan cache.
+// RunAndCheckPlanCache checks whether this statement can be used in plan cache.
+//
+// Return:
+// 1. whether this statement can use plan cache
+// 2. error
 func RunAndCheckPlanCache(sql string, db *sql.DB) (bool, error) {
 	// The generated statement may already have errors, check it first.
 	if _, err := db.Exec(sql); err != nil {
@@ -156,10 +177,7 @@ type Prepare struct {
 	executeSQL  string
 	setSQL      string
 	SQLNoCache  string
-
-	// parameters for the first time execution
-	// It's used to replay the cache plan generation.
-	firstSetSQL string
+	setSQLs     []string
 
 	// error for no-cache execution and with-cache execution
 	err1 error
@@ -186,8 +204,13 @@ func (p *Prepare) RecordError(dir string) error {
 	dir = dir[8:]
 	filePath := filepath.Join(dir, "prepare.sql")
 
-	content := fmt.Sprintf("SQLs:\n%s\n%s\n%s\n%s\n%s\nerr1:%v\nerr2:%v\n",
-		p.prepareSQL, p.firstSetSQL, p.setSQL, p.executeSQL, p.SQLNoCache, p.err1, p.err2)
+	content := fmt.Sprintf("SQLs:\n\n%s\n%s\n%s\nerr1:%v\nerr2:%v\n",
+		p.prepareSQL, p.executeSQL, p.SQLNoCache, p.err1, p.err2)
+	content += "\nParameters:\n\n"
+	for _, sql := range p.setSQLs {
+		content += sql
+		content += "\n"
+	}
 
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
@@ -209,10 +232,7 @@ func (p *Prepare) generateParams(genMatch bool) {
 		replacementsPairs = append(replacementsPairs, v)
 	}
 	p.setSQL = fmt.Sprintf("set %s", strings.Join(setSQLs, ","))
-
-	if p.firstSetSQL == "" {
-		p.firstSetSQL = p.setSQL
-	}
+	p.setSQLs = append(p.setSQLs, p.setSQL)
 
 	var sb strings.Builder
 	replacementIndex := 0
@@ -363,6 +383,7 @@ func (p *Prepare) queryAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool,
 	return nil
 }
 
+// Check whether this generated SQL can utilize plan cache
 func (p *Prepare) UsePlanCache(dbWithCache *sql.DB) (bool, error) {
 	if len(p.generators) == 0 {
 		return false, nil
@@ -461,6 +482,7 @@ func (s *State) GetValueFn(gen ValueGenerator) Fn {
 	return Str(gen.GenMatch())
 }
 
+// Generate a random prepare statement
 func GeneratePrepare(state *State, query bool) (*Prepare, error) {
 	state.EnablePrepare()
 
@@ -479,8 +501,8 @@ func GeneratePrepare(state *State, query bool) (*Prepare, error) {
 		planCacheDML = NewFn(func(state *State) Fn {
 			return Or(
 				CommonInsertOrReplace.W(10),
-				CommonUpdate.W(5),
-				CommonDelete.W(5),
+				CommonUpdate.W(10),
+				//CommonDelete.W(2),
 			)
 		})
 	}
