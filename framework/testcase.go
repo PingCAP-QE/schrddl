@@ -302,28 +302,27 @@ func (c *testCase) execQuery(sql string) ([][]string, error) {
 	return util.FetchRowsWithDB(c.dbs[0], sql)
 }
 
-func (c *testCase) CheckData(tables []*model.TableInfo) error {
+func (c *testCase) CheckData(tables []string) error {
 	for _, table := range tables {
-		sql := fmt.Sprintf("select * from `%s`.`%s`", c.dbname, table.Name.L)
-		rows1, err := util.FetchRowsWithDB(c.dbs[0], sql)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		sql = fmt.Sprintf("select * from `%s`.`%s`", "testcache", table.Name)
-		rows2, err := util.FetchRowsWithDB(c.dbs[0], sql)
-		if err != nil {
-			return errors.Trace(err)
-		}
-		same, err := util.CheckResults(rows1, rows2)
+		same, err := util.CheckTableData(c.dbname, table, "testcache", table, c.dbs[0])
 		if err != nil {
 			log.Fatalf("Error check result")
 		}
 		if !same {
-			return errors.Errorf("Table %s have different data", table.Name)
+			return errors.Errorf("Table %s have different data", table)
 		}
 	}
 
 	return nil
+}
+
+func (c *testCase) dumpPrepare(prepare *sqlgenerator.Prepare) error {
+	dir, err := c.dumpErrorTables(prepare.SQLNoCache)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	err = prepare.RecordError(dir)
+	return errors.Trace(err)
 }
 
 // A special function to test instance plan cache
@@ -341,24 +340,30 @@ func (c *testCase) testPlanCache(ctx context.Context) error {
 
 		_, err1 := dbNoCache.Exec(startSQL)
 		_, err2 := dbWithCache.Exec(startSQL)
-		err = sqlgenerator.CheckError(err1, err2)
-		if err != nil {
+		if err1 != nil && err2 != nil {
+			continue
+		}
+		if err := sqlgenerator.CheckError(err1, err2); err != nil {
 			return errors.Trace(err)
 		}
 	}
 
 	tableMetas := c.fetchTableInfo(state)
+	tblNames := make([]string, 0, len(tableMetas))
+	for _, m := range tableMetas {
+		tblNames = append(tblNames, m.Name.L)
+	}
 
 	noCache, withCache := 0, 0
 	for i := 0; i < 50000; i++ {
 		if i%1000 == 0 {
-			if err := c.CheckData(tableMetas); err != nil {
+			if err := c.CheckData(tblNames); err != nil {
 				return errors.Trace(err)
 			}
 			log.Info("Check table data passed")
 		}
 
-		useQuery := rand.Intn(2) == 0
+		useQuery := rand.Intn(10) > 6
 
 		prepare, err := sqlgenerator.GeneratePrepare(state, useQuery)
 		if err != nil {
@@ -381,16 +386,17 @@ func (c *testCase) testPlanCache(ctx context.Context) error {
 			err = prepare.CheckQuery(dbWithCache, dbNoCache)
 		} else {
 			err = prepare.CheckExec(dbWithCache, dbNoCache)
+
+			affectedTbls, _ := dump.ExtraFromSQL(prepare.SQLNoCache)
+			if err2 := c.CheckData(affectedTbls); err2 != nil {
+				c.dumpPrepare(prepare)
+				log.Fatal("Data inconsistent after DML")
+			}
 		}
 
 		if err != nil {
-			dir, err2 := c.dumpErrorTables(prepare.SQLNoCache)
-			if err2 != nil {
-				return errors.Trace(err)
-			}
-			err2 = prepare.RecordError(dir)
-			if err2 != nil {
-				return errors.Trace(err)
+			if err2 := c.dumpPrepare(prepare); err2 != nil {
+				return errors.Trace(err2)
 			}
 			if strings.Contains(err.Error(), "different error") {
 				continue

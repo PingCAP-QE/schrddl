@@ -74,7 +74,6 @@ func (c *DDLCase) String() string {
 func (c *DDLCase) statloop() {
 	tick := time.NewTicker(10 * time.Second)
 	for range tick.C {
-
 		subcaseStat := make([]string, len(c.cases))
 		subcaseUseMvindex := make([]string, len(c.cases))
 		subcaseUseCERT := make([]string, len(c.cases))
@@ -175,10 +174,16 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	caseType := CaseTypeNormal
+	if cfg.TestPrepare {
+		caseType = CaseTypePlanCache
+	}
+
 	for i := 0; i < cfg.Concurrency; i++ {
 		cases[i] = &testCase{
 			cfg:          cfg,
-			caseType:     CaseTypeNormal,
+			caseType:     caseType,
 			tables:       make(map[string]*ddlTestTable),
 			schemas:      make(map[string]*ddlTestSchema),
 			views:        make(map[string]*ddlTestView),
@@ -188,10 +193,6 @@ func NewDDLCase(cfg *CaseConfig) *DDLCase {
 			outputWriter: outputfile,
 			queryPlanMap: make(map[string]string),
 		}
-	}
-
-	if cfg.TestPrepare {
-		cases[0].caseType = CaseTypePlanCache
 	}
 
 	return &DDLCase{

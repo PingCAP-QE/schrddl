@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/juju/errors"
+	"github.com/ngaut/log"
 )
 
 // Execute SQL with no returning rows.
@@ -136,6 +137,7 @@ func FetchRowsWithDB(db *sql.DB, sql string) ([][]string, error) {
 	return actualRows, nil
 }
 
+// CheckResults checks whether two result sets are same.
 func CheckResults(res1, res2 [][]string) (bool, error) {
 	if len(res1) != len(res2) {
 		return false, nil
@@ -168,4 +170,23 @@ func CheckResults(res1, res2 [][]string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func CheckTableData(db1, tb1, db2, tb2 string, db *sql.DB) (bool, error) {
+	sql := fmt.Sprintf("select * from `%s`.`%s`", db1, tb1)
+	rows1, err := FetchRowsWithDB(db, sql)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+	sql = fmt.Sprintf("select * from `%s`.`%s`", db2, tb2)
+	rows2, err := FetchRowsWithDB(db, sql)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+	same, err := CheckResults(rows1, rows2)
+	if err != nil {
+		log.Fatalf("Error check result")
+	}
+
+	return same, nil
 }
