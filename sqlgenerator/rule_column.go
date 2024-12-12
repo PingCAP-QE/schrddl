@@ -21,11 +21,17 @@ var ColumnDefinition = NewFn(func(state *State) Fn {
 	//   b bigint unsigned default 100
 	ret, err := And(
 		ColumnDefinitionName,
-		ColumnDefinitionTypeOnCreate,
-		ColumnDefinitionCollation,
-		ColumnDefinitionUnsigned,
-		ColumnDefinitionNotNull,
-		ColumnDefinitionDefault,
+		Or(
+			And(
+				ColumnDefinitionTypeOnCreate,
+				ColumnDefinitionCollation,
+				ColumnDefinitionUnsigned,
+				ColumnDefinitionNotNull,
+				ColumnDefinitionDefault,
+				ColumnDefinitionOnUpdate,
+			).W(8),
+			ColumnDefinitionGenerated.P(MoreThan1Columns).W(2),
+		),
 	).Eval(state)
 	if err != nil {
 		return NoneBecauseOf(err)
@@ -97,7 +103,28 @@ var ColumnDefinitionDefault = NewFn(func(state *State) Fn {
 	if RandomBool() || col.Tp.DisallowDefaultValue() {
 		return Empty
 	}
+
+	if col.Tp.SupportCurrentTimestamp() && RandomBool() {
+		return Str("default CURRENT_TIMESTAMP")
+	}
+
 	return Strs("default", col.RandomValue())
+})
+
+var ColumnDefinitionOnUpdate = NewFn(func(state *State) Fn {
+	col := state.env.Column
+	if RandomBool() || !col.Tp.SupportCurrentTimestamp() {
+		return Empty
+	}
+
+	return Str("ON UPDATE CURRENT_TIMESTAMP")
+})
+
+var ColumnDefinitionGenerated = NewFn(func(state *State) Fn {
+	return And(
+		GenerateFunction,
+		ColumnDefinitionNotNull,
+	)
 })
 
 var ColumnDefinitionUnsigned = NewFn(func(state *State) Fn {

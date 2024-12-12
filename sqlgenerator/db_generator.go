@@ -3,13 +3,14 @@ package sqlgenerator
 import (
 	"bytes"
 	"fmt"
-	"github.com/twinj/uuid"
 	"log"
 	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/twinj/uuid"
 
 	"github.com/cznic/mathutil"
 	"gonum.org/v1/gonum/stat/distuv"

@@ -92,9 +92,7 @@ func gCopy[T Entity](is []T) []T {
 func gConcat[T Entity](iss ...[]T) []T {
 	newIs := make([]T, 0)
 	for _, is := range iss {
-		for _, i := range is {
-			newIs = append(newIs, i)
-		}
+		newIs = append(newIs, is...)
 	}
 	return newIs
 }

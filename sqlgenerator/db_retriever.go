@@ -65,9 +65,7 @@ func (s *State) GetRandTableOrCTEs() Tables {
 		tbls = append(tbls, t)
 	}
 	for _, cte := range s.ctes {
-		for _, c := range cte {
-			tbls = append(tbls, c)
-		}
+		tbls = append(tbls, cte...)
 	}
 
 	rand.Shuffle(len(tbls), func(i, j int) {
@@ -106,9 +104,7 @@ func (s *State) GetRandPrepare() *Prepare {
 
 func (ts Tables) Copy() Tables {
 	newTables := make(Tables, len(ts))
-	for i := range ts {
-		newTables[i] = ts[i]
-	}
+	copy(newTables, ts)
 	return newTables
 }
 
