@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"time"
 )
 
 // supported data types
@@ -23,7 +22,7 @@ func wrapString(s string) string {
 	return fmt.Sprintf("\"%s\"", s)
 }
 
-func randomArrayJSONSubValue(dataType string) string {
+func RandomValueWithType(dataType string) string {
 	var val interface{}
 	switch dataType {
 	case dtSignedInt:
@@ -50,8 +49,6 @@ func randomArrayJSONSubValue(dataType string) string {
 
 // randomArrayJSON returns a JSON array with random values of the given data types.
 func randomArrayJSON(size int, dataType string) (string, error) {
-	rand.Seed(time.Now().UnixNano())
-
 	data := make([]interface{}, size)
 
 	for i := range data {
@@ -107,31 +104,4 @@ func randomBinary(length int) []byte {
 	rand.Read(b)
 
 	return b
-}
-
-// randomDate returns a random date string in yyyy-MM-dd format.
-func randomDate() string {
-	min := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
-	max := time.Now().Unix()
-	randTime := time.Unix(rand.Int63n(max-min)+min, 0)
-
-	return randTime.Format("2006-01-02")
-}
-
-// randomDateTime returns a random datetime string in yyyy-MM-dd HH:mm:ss format.
-func randomDateTime() string {
-	min := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
-	max := time.Now().Unix()
-	randTime := time.Unix(rand.Int63n(max-min)+min, 0)
-
-	return randTime.Format("2006-01-02 15:04:05")
-}
-
-// randomTime returns a random time string in HH:mm:ss format.
-func randomTime() string {
-	min := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
-	max := time.Now().Unix()
-	randTime := time.Unix(rand.Int63n(max-min)+min, 0)
-
-	return randTime.Format("15:04:05")
 }

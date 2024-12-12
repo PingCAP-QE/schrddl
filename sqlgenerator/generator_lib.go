@@ -60,12 +60,14 @@ func Or(fns ...Fn) Fn {
 				return NoneBecauseOf(fmt.Errorf("or exhausted")).Eval(state)
 			}
 			chosenFn := fns[chosenFnIdx]
+			l := state.RecordStack()
 			rs, err := chosenFn.Eval(state)
 			if err != nil {
 				fnNames = append(fnNames, chosenFn.Info)
 				errs = append(errs, err)
 				fns[len(fns)-1], fns[chosenFnIdx] = fns[chosenFnIdx], fns[len(fns)-1]
 				fns = fns[:len(fns)-1]
+				state.PopStack(l)
 				continue
 			}
 			return rs, nil
