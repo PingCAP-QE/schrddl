@@ -237,6 +237,8 @@ func dmlIgnoreError(err error) bool {
 		strings.Contains(errStr, "PD server timeout") ||
 		strings.Contains(errStr, "Information schema is out of date") ||
 		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") ||
+		strings.Contains(errStr, "Not found column") ||
+		strings.Contains(errStr, "UnionExec chunk column count mismatch") ||
 		strings.Contains(errStr, "Value is out of range") {
 		return true
 	}
@@ -330,6 +332,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Invalid JSON value for CAST") ||
 		strings.Contains(errStr, "Invalid JSON text") ||
 		strings.Contains(errStr, "since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption") ||
+		strings.Contains(errStr, "Defining a virtual generated column as primary key' is not supported for generated columns") ||
 		strings.Contains(errStr, "doesn't yet support") {
 		return true
 	}

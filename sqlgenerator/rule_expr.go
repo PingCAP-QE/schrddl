@@ -27,7 +27,7 @@ var GenerateFunction = NewFn(func(state *State) Fn {
 	col := state.env.Column
 
 	CopyTypeInfo(col, prevColumn)
-	col.IsGenerated = true
+	col.GeneratedFrom = prevColumn.Idx + 1
 
 	var fns []Fn
 	switch prevTp {
@@ -45,7 +45,8 @@ var GenerateFunction = NewFn(func(state *State) Fn {
 		ColumnTypeBlob, ColumnTypeBinary, ColumnTypeVarBinary:
 		fns = []Fn{
 			Strf("concat([%fn], [%fn])", prevNameFn, prevNameFn),
-			Strf("elt([%fn], [%fn], 'a string')", Str(string(rand.Intn(2)+1)), prevNameFn),
+			Strf("elt(1, [%fn], 'a string')", prevNameFn),
+			Strf("elt(1, 'a string', [%fn])", prevNameFn),
 		}
 	case ColumnTypeTime, ColumnTypeTimestamp, ColumnTypeDate, ColumnTypeDatetime:
 		col.Tp = ColumnTypeDatetime
@@ -55,9 +56,8 @@ var GenerateFunction = NewFn(func(state *State) Fn {
 	}
 
 	return And(
-		Str(col.Tp.String()),
-		Str("generated as"),
-		Str("("),
+		Str(col.TypeString()),
+		Str("as("),
 		Or(fns...),
 		Str(")"),
 		Or(

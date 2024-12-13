@@ -131,8 +131,7 @@ var TableOptions = NewFn(func(state *State) Fn {
 
 var InsertInto = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
-	vals := tbl.GenRandValues(tbl.Columns)
-	tbl.AppendRow(vals)
+	vals := tbl.GenerateRow(tbl.Columns)
 	return And(
 		Str("insert into"),
 		Str(tbl.Name),
@@ -150,7 +149,7 @@ var CommonInsertOrReplace = NewFn(func(state *State) Fn {
 	columns := tbl.Columns.Filter(ColNotGenerated)
 	if RandomBool() {
 		cWithDef, cWithoutDef := columns.Span(ColHasDefaultVal)
-		columns = cWithoutDef.Concat(cWithDef.RandN())
+		columns = cWithoutDef.Concat(cWithDef.RandN()).Or(columns)
 	}
 	state.env.Columns = columns
 
@@ -215,8 +214,7 @@ var MultipleRowVals = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	cols := state.env.Columns
 	var rowVal = NewFn(func(state *State) Fn {
-		vs := tbl.GenRandValues(cols)
-		tbl.Values = append(tbl.Values, vs)
+		vs := tbl.GenerateRow(cols)
 		return Strs("(", PrintRandValues(vs), ")")
 	})
 	return Repeat(rowVal.R(1, 7), Str(","))
@@ -225,11 +223,21 @@ var MultipleRowVals = NewFn(func(state *State) Fn {
 var AssignClause = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	col := state.env.Columns.Rand()
-	return Str(fmt.Sprintf("%s.%s = %s", tbl.Name, col.Name, col.RandomValue()))
+	colTp := col.Tp
+
+	var valStr string
+	if (colTp == ColumnTypeDate || colTp == ColumnTypeDatetime || colTp == ColumnTypeTime || colTp == ColumnTypeTimestamp) &&
+		RandomBool() {
+		valStr = "now()"
+	} else {
+		valStr = col.RandomValue()
+	}
+
+	return Str(fmt.Sprintf("%s.%s = %s", tbl.Name, col.Name, valStr))
 })
 
 var OnDuplicateUpdate = NewFn(func(state *State) Fn {
-	cols := state.env.Columns.RandN()
+	cols := state.env.Columns
 	return Strs(
 		"on duplicate key update",
 		PrintRandomAssignments(cols),

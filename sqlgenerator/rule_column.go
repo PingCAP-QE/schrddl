@@ -3,7 +3,6 @@ package sqlgenerator
 import (
 	"fmt"
 	"math/rand"
-	"strings"
 
 	"github.com/cznic/mathutil"
 )
@@ -194,37 +193,37 @@ var ColumnDefinitionTypesFloatings = NewFn(func(state *State) Fn {
 var ColumnDefinitionTypesIntegerBool = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeBoolean
-	return Str("boolean")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesIntegerTiny = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeTinyInt
-	return Str("tinyint")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesIntegerSmall = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeSmallInt
-	return Str("smallint")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesIntegerMedium = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeMediumInt
-	return Str("mediumint")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesIntegerInt = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeInt
-	return Str("int")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesIntegerBig = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeBigInt
-	return Str("bigint")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesFloat = NewFn(func(state *State) Fn {
@@ -232,7 +231,7 @@ var ColumnDefinitionTypesFloat = NewFn(func(state *State) Fn {
 	col.Arg1 = 0
 	col.Arg2 = 0
 	col.Tp = ColumnTypeFloat
-	return Str("float")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesDouble = NewFn(func(state *State) Fn {
@@ -240,7 +239,8 @@ var ColumnDefinitionTypesDouble = NewFn(func(state *State) Fn {
 	col.Arg1 = 0
 	col.Arg2 = 0
 	col.Tp = ColumnTypeDouble
-	return Str("double")
+	return Str(col.TypeString())
+
 })
 
 var ColumnDefinitionTypesDecimal = NewFn(func(state *State) Fn {
@@ -249,7 +249,7 @@ var ColumnDefinitionTypesDecimal = NewFn(func(state *State) Fn {
 	upper := mathutil.Min(col.Arg1, 30)
 	col.Arg2 = 1 + rand.Intn(upper)
 	col.Tp = ColumnTypeDecimal
-	return Strs("decimal", "(", Num(col.Arg1), ",", Num(col.Arg2), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesBit = NewFn(func(state *State) Fn {
@@ -259,49 +259,49 @@ var ColumnDefinitionTypesBit = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(62)
 	col.Tp = ColumnTypeBit
-	return Strs("bit", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesChar = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(255)
 	col.Tp = ColumnTypeChar
-	return Strs("char", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesBinary = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(255)
 	col.Tp = ColumnTypeBinary
-	return Strs("binary", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesVarchar = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(512)
 	col.Tp = ColumnTypeVarchar
-	return Strs("varchar", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesText = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(512)
 	col.Tp = ColumnTypeText
-	return Strs("text", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesBlob = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(512)
 	col.Tp = ColumnTypeBlob
-	return Strs("blob", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesVarbinary = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Arg1 = 1 + rand.Intn(512)
 	col.Tp = ColumnTypeVarBinary
-	return Strs("varbinary", "(", Num(col.Arg1), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesEnum = NewFn(func(state *State) Fn {
@@ -311,16 +311,7 @@ var ColumnDefinitionTypesEnum = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Args = []string{"Alice", "Bob", "Charlie", "David"}
 	col.Tp = ColumnTypeEnum
-	var sb strings.Builder
-	for i, v := range col.Args {
-		if i != 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString("'")
-		sb.WriteString(v)
-		sb.WriteString("'")
-	}
-	return Strs("enum", "(", sb.String(), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesSet = NewFn(func(state *State) Fn {
@@ -330,46 +321,37 @@ var ColumnDefinitionTypesSet = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Args = []string{"Alice", "Bob", "Charlie", "David"}
 	col.Tp = ColumnTypeSet
-	var sb strings.Builder
-	for i, v := range col.Args {
-		if i != 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString("'")
-		sb.WriteString(v)
-		sb.WriteString("'")
-	}
-	return Strs("set", "(", sb.String(), ")")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesDate = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeDate
-	return Str("date")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesTime = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeTime
-	return Str("time")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesDateTime = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeDatetime
-	return Str("datetime")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesTimestamp = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeTimestamp
-	return Str("timestamp")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesYear = NewFn(func(state *State) Fn {
 	col := state.env.Column
 	col.Tp = ColumnTypeYear
-	return Str("year")
+	return Str(col.TypeString())
 })
 
 var ColumnDefinitionTypesJSON = NewFn(func(state *State) Fn {
@@ -387,5 +369,5 @@ var ColumnDefinitionTypesJSON = NewFn(func(state *State) Fn {
 	// TODO: support non-array JSON column.
 	col.Array = true
 	col.SubType = randArrayTp[rand.Intn(len(randArrayTp))]
-	return Str("json")
+	return Str(col.TypeString())
 })

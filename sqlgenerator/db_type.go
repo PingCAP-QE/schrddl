@@ -64,10 +64,11 @@ type Column struct {
 	Array   bool
 	SubType string
 
-	Args        []string // for ColumnTypeSet and ColumnTypeEnum
-	DefaultVal  string
-	IsNotNull   bool
-	IsGenerated bool // for insert statement, specific value on generated column is not allowed
+	Args       []string // for ColumnTypeSet and ColumnTypeEnum
+	DefaultVal string
+	IsNotNull  bool
+
+	GeneratedFrom int // for insert statement, specific value on generated column is not allowed
 }
 
 type Index struct {
@@ -253,7 +254,8 @@ func (s *State) SetTableMeta(tableMeta []*model.TableInfo) {
 }
 
 func ColNotGenerated(col *Column) bool {
-	return !col.IsGenerated
+	// 0 presents not generated
+	return col.GeneratedFrom == 0
 }
 
 func ColHasDefaultVal(col *Column) bool {
