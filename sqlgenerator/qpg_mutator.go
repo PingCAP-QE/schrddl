@@ -25,6 +25,8 @@ var SetVariable = NewFn(func(state *State) Fn {
 		And(Str("set"), Str("tidb_index_lookup_size"), Str("="), Or(Str("16"), Str("64"), Str("20000"))),
 		And(Str("set"), Str("tidb_init_chunk_size"), Str("="), Or(Str("2"), Str("32"))),
 		And(Str("set"), Str("tidb_partition_prune_mode"), Str("="), Or(Str("'dynamic'"), Str("'static'"))),
+		And(Str("set"), Str("tidb_ddl_enable_fast_reorg"), Str("="), Or(Str("'0'"), Str("'1'"))),
+		And(Str("set"), Str("tidb_enable_dist_tasktidb_enable_dist_task"), Str("="), Or(Str("'0'"), Str("'1'"))),
 	)
 })
 
