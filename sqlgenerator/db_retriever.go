@@ -1,7 +1,6 @@
 package sqlgenerator
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"strings"
@@ -98,10 +97,6 @@ func (s *State) PopSubQuery() []*Table {
 
 func (s *State) PushSubQuery(sq *Table) {
 	s.subQuery[len(s.subQuery)-1] = append(s.subQuery[len(s.subQuery)-1], sq)
-}
-
-func (s *State) GetRandPrepare() *Prepare {
-	return s.prepareStmts[rand.Intn(len(s.prepareStmts))]
 }
 
 func (ts Tables) Copy() Tables {
@@ -353,12 +348,4 @@ func (i *Index) HasColumn(c *Column) bool {
 		}
 	}
 	return false
-}
-
-func (p *Prepare) UserVars() []string {
-	userVars := make([]string, len(p.Args))
-	for i := 0; i < len(p.Args); i++ {
-		userVars[i] = fmt.Sprintf("@i%d", i)
-	}
-	return userVars
 }

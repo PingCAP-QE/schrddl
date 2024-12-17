@@ -23,6 +23,7 @@ import (
 	"time"
 
 	. "github.com/PingCAP-QE/schrddl/framework"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 )
@@ -51,10 +52,14 @@ func prepareEnv() {
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
 	}
+	defer tiDb.Close()
+
 	tidbC, err := tiDb.Conn(context.Background())
 	if err != nil {
 		log.Fatalf("Can't connect to database, err: %s", err.Error())
 	}
+	defer tidbC.Close()
+
 	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", Local.String())); err != nil {
 		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
 			if _, err = tidbC.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
@@ -62,10 +67,23 @@ func prepareEnv() {
 			}
 		}
 	}
-	// Enable index join on aggregation
-	tidbC.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
-	tidbC.Close()
 
+	initSQLs := []string{
+		"create database if not exists testcache",
+		"set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'",
+		"set GLOBAL tidb_enable_instance_plan_cache=1",
+		"set global tidb_enable_global_index=true",
+	}
+	if util.RCIsolation {
+		initSQLs = append(initSQLs, "set global transaction_isolation='read-committed'")
+	}
+
+	for _, sql := range initSQLs {
+		_, err = tidbC.ExecContext(context.Background(), sql)
+		if err != nil {
+			log.Fatalf("[DDL] %s failed", sql)
+		}
+	}
 	mysql.SetLogger(log.Logger())
 }
 
@@ -79,7 +97,7 @@ func main() {
 		EnableTransactionTest = true
 	}
 	if *rc {
-		RCIsolation = true
+		util.RCIsolation = true
 	}
 	if *prepare {
 		Prepare = true
@@ -111,7 +129,17 @@ func main() {
 		http.ListenAndServe("127.0.0.1:6060", nil)
 	}()
 
-	Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
+	cfg := CaseConfig{
+		Concurrency:     *concurrency,
+		TablesToCreate:  *tablesToCreate,
+		MySQLCompatible: *mysqlCompatible,
+		DBName:          *dbName,
+		DBAddr:          *dbAddr,
+		TestTp:          testType,
+		TestPrepare:     *prepare,
+	}
+
+	Run(cfg, *testTime)
 	if TestFail {
 		log.Fatalf("test failed")
 	}

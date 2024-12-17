@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/PingCAP-QE/schrddl/norec"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/pkg/parser/format"
 	"github.com/pingcap/tidb/pkg/util/logutil"
@@ -44,7 +45,7 @@ func (n *norecChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	rs1, err := n.c.execQueryForCnt(querySQL)
 	//println(fmt.Sprintf("%s;", querySQL))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
@@ -92,7 +93,7 @@ func (n *norecChecker) check(sql string, isReduce bool) (ok bool, err error) {
 	rs2, err := n.c.execQuery(newQuery)
 	//println(fmt.Sprintf("%s;", newQuery))
 	if err != nil {
-		if dmlIgnoreError(err) {
+		if util.DMLIgnoreError(err) {
 			return false, nil
 		} else {
 			logutil.BgLogger().Error("unexpected error", zap.String("query", querySQL), zap.Error(err))
