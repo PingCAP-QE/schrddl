@@ -220,6 +220,7 @@ var ddlIgnoreList = []string{
 	"already exist on column",
 	"Unsupported",
 	"context canceled",
+	"cancelled by user",
 }
 
 func ddlIgnoreError(err error) bool {
