@@ -650,7 +650,7 @@ func (c *testCase) execute(ctx context.Context) error {
 			} else if rand.Intn(15) == 0 {
 				dmlSQL, err = sqlgenerator.SetVariable.Eval(state)
 				if err != nil {
-					log.Warnf("set variable error %s", err.Error())
+					return err
 				}
 			}
 			if rand.Intn(100) == 0 {

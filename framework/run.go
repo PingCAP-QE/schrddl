@@ -167,6 +167,7 @@ var ddlIgnoreList = []string{
 	"Illegal mix of collations for operation",
 	"Unsupported Global Index",
 	"settings for table contains gbk charset",
+	"Unsupported tidb_enable_dist_task setting",
 }
 
 func dmlIgnoreError(err error) bool {
