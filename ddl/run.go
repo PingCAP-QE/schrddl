@@ -120,7 +120,7 @@ var checkList = []string{
 
 	// bug
 	"unsupport column type for encode 225",
-	"decode data time",
+	"decode date time",
 }
 
 func dmlIgnoreError(err error) bool {
