@@ -531,7 +531,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 				case <-ctx.Done():
 					return
 				case <-tk:
-					rs, err := c.dbs[0].Query("select `job_id` from information_schema.ddl_jobs")
+					rs, err := c.dbs[0].Query("select `job_id` from information_schema.ddl_jobs limit 1")
 					if err == nil {
 						jobID := 0
 						rs.Next()
