@@ -24,7 +24,7 @@ var dmlIgnoreList = []string{
 	"writing inconsistent data in table",
 	"should ensure all columns have the same length",
 	"expected integer",
-	"invalid memory address or nil pointer dereference",
+	// "invalid memory address or nil pointer dereference",
 	"encoding failed",
 	"invalid input value",
 	"region not found for key",

@@ -303,6 +303,10 @@ func (p *Prepare) execAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool, 
 		}
 
 		_, p.err2 = conn.ExecContext(context.Background(), p.executeSQL)
+		if p.err2 != nil && (strings.Contains(p.err2.Error(), "invalid memory")) {
+			return errors.Trace(p.err2)
+		}
+
 		lastExecuteUseCache := checkLastUseCache(conn)
 
 		if err := CheckError(p.err1, p.err2); err != nil {
@@ -351,6 +355,10 @@ func (p *Prepare) queryAndCompare(dbWithCache, dbNoCache *sql.DB, genMatch bool,
 		}
 
 		resWithCache, err2 := util.FetchRowsWithConn(conn, p.executeSQL)
+		if err2 != nil && (strings.Contains(err2.Error(), "invalid memory")) {
+			return errors.Trace(p.err2)
+		}
+
 		lastExecuteUseCache := checkLastUseCache(conn)
 		p.err2 = err2
 
