@@ -415,6 +415,16 @@ var DropIndex = NewFn(func(state *State) Fn {
 	return Strs("drop index", idx.Name)
 })
 
+var AddOrDropIndex = NewFn(func(state *State) Fn {
+	tbl := state.Tables.Rand()
+	state.env.Table = tbl
+	return And(Str("alter table"), Str(tbl.Name),
+		Or(
+			AddIndex,
+			DropIndex,
+		))
+})
+
 var AddColumn = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	newCol := &Column{ID: state.alloc.AllocColumnID()}
