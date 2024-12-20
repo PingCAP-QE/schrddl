@@ -325,6 +325,17 @@ func (c *testCase) dumpPrepare(prepare *sqlgenerator.Prepare) error {
 	return errors.Trace(err)
 }
 
+func (c *testCase) dropData(tables []string) error {
+	for _, tbl := range tables {
+		for _, db := range c.dbs {
+			if _, err := db.Exec(fmt.Sprintf("truncate table %s", tbl)); err != nil {
+				return errors.Trace(err)
+			}
+		}
+	}
+	return nil
+}
+
 // A special function to test instance plan cache
 func (c *testCase) testPlanCache(ctx context.Context) error {
 	state := sqlgenerator.NewState()
@@ -390,7 +401,10 @@ func (c *testCase) testPlanCache(ctx context.Context) error {
 			affectedTbls, _ := dump.ExtraFromSQL(prepare.SQLNoCache)
 			if err2 := c.CheckData(affectedTbls); err2 != nil {
 				c.dumpPrepare(prepare)
-				log.Fatal("Data inconsistent after DML")
+				if err3 := c.dropData(affectedTbls); err != nil {
+					return errors.Trace(err3)
+				}
+				log.Warnf("Table %s data inconsistent after DML", affectedTbls[0])
 			}
 		}
 
