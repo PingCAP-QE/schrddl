@@ -561,7 +561,7 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 						// Wait for other gorountine to update
 						globalDDLSeqNumMu.Unlock()
 						time.Sleep(5 * time.Millisecond)
-						if time.Since(startTs) >= 10*time.Second {
+						if time.Since(startTs) >= 10*time.Second && rand.Intn(10) == 0 {
 							log.Errorf("wait for updating seq_num timeout, seq_num:%d, globalDDLSeqNum:%d", seqNum, globalDDLSeqNum)
 						}
 					} else {
