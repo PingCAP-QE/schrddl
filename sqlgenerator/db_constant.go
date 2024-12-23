@@ -275,6 +275,10 @@ func (c ColumnType) DisallowDefaultValue() bool {
 	return c == ColumnTypeText || c == ColumnTypeBlob || c == ColumnTypeJSON
 }
 
+func (c ColumnType) SupportCurrentTimestamp() bool {
+	return c == ColumnTypeTimestamp || c == ColumnTypeDatetime
+}
+
 func (c ColumnType) String() string {
 	switch c {
 	case ColumnTypeInt:

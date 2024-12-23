@@ -259,10 +259,6 @@ func (t *Table) RemoveIndex(idx *Index) {
 	t.Indexes = append(t.Indexes[:pos], t.Indexes[pos+1:]...)
 }
 
-func (t *Table) AppendRow(row []string) {
-	t.Values = append(t.Values, row)
-}
-
 func (i *Index) AppendColumn(col *Column, prefix int) {
 	i.Columns = append(i.Columns, col)
 	i.ColumnPrefix = append(i.ColumnPrefix, prefix)
