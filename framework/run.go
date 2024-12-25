@@ -169,6 +169,7 @@ var ddlIgnoreList = []string{
 	"Unsupported Global Index",
 	"settings for table contains gbk charset",
 	"Unsupported tidb_enable_dist_task setting",
+	"epoch_not_match",
 }
 
 func dmlIgnoreError(err error) bool {
