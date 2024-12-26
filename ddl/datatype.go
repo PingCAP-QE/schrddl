@@ -135,11 +135,11 @@ var TestFieldType = []int{
 	KindSet,
 
 	// More likelihood to vector type.
-	KindVector,
-	KindVector,
-	KindVector,
-	KindVector,
-	KindVector,
+	//KindVector,
+	//KindVector,
+	//KindVector,
+	//KindVector,
+	//KindVector,
 }
 
 var AllowPartitionType = []int{

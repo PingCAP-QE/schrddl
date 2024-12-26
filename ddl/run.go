@@ -110,7 +110,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 var checkList = []string{
 	"can't have a default value",
 	"strconv.Atoi",
-	"assertion failed",
+	//"assertion failed",
 	"cannot cast from bigint to vector",
 	"does not fit",
 	"Invalid vector text",
