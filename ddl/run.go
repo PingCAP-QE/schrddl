@@ -117,6 +117,7 @@ var checkList = []string{
 	"cannot cast",
 	"Data Truncated",
 	"context canceled",
+	"epoch_not_match",
 
 	// bug
 	"unsupport column type for encode 225",
