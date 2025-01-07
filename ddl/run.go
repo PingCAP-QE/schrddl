@@ -118,6 +118,7 @@ var checkList = []string{
 	"Data Truncated",
 	"context canceled",
 	"epoch_not_match",
+	"Invalid utf8mb4 character",
 
 	// bug
 	"unsupport column type for encode 225",
