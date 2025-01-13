@@ -776,7 +776,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 			if column.canBePrimary() {
 				column.isPrimaryKey = true
 				primaryKeys = append(primaryKeys, columnIndex)
-				if partitionColumn != nil && column.name == partitionColumn.name {
+				if rand.Intn(10) == 0 {
 					needGlobal = false
 				}
 			}
@@ -826,7 +826,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 	sql += fmt.Sprintf("COMMENT '%s' CHARACTER SET '%s' COLLATE '%s'",
 		tableInfo.comment, charset, collate)
 
-	if rand.Intn(5) == 0 && partitionColumn != nil {
+	if rand.Intn(30) == 0 && partitionColumn != nil {
 		sql += fmt.Sprintf(" partition by hash(`%s`) partitions %d ", partitionColumn.name, rand.Intn(10)+1)
 	}
 
