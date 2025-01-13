@@ -78,11 +78,6 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 			return c.DefaultVal != "null" && c.Tp != ColumnTypeJSON
 		})
 	}
-	if idx.Global {
-		totalCols = totalCols.Filter(func(c *Column) bool {
-			return partCol.Name != c.Name
-		})
-	}
 	if len(totalCols) == 0 {
 		return Empty
 	}
@@ -136,15 +131,7 @@ var IndexDefinitionColumnPrefix = NewFn(func(state *State) Fn {
 
 var IndexDefinitionTypeUnique = NewFn(func(state *State) Fn {
 	idx := state.env.Index
-	parCols := state.env.PartColumn
 	idx.Tp = IndexTypeUnique
-	if parCols != nil {
-		// If it's a partition table, random create an unique index.
-		return Or(
-			Str("unique key"),
-			IndexDefinitionUniqueGlobalIndex,
-		)
-	}
 	return Str("unique key")
 })
 
@@ -168,18 +155,19 @@ var IndexDefinitionTypePrimary = NewFn(func(state *State) Fn {
 	return Str("primary key")
 })
 
-// Only set `idx.Global = true` will print keyword in `IndexAddGlobalIndexKeyword` later.
-// We could delete it after global index support non-unique keys.
-var IndexDefinitionUniqueGlobalIndex = NewFn(func(state *State) Fn {
+var IndexDefinitionGlobalIndex = NewFn(func(state *State) Fn {
 	idx := state.env.Index
 	idx.Global = true
-	return Str("unique key")
+	return Str("/*T![global_index] global */")
 })
 
 var IndexAddGlobalIndexKeyword = NewFn(func(state *State) Fn {
-	idx := state.env.Index
-	if idx.Global {
-		return Str("global")
+	parCols := state.env.PartColumn
+	if parCols != nil {
+		return Or(
+			Empty,
+			IndexDefinitionGlobalIndex,
+		)
 	} else {
 		return Empty
 	}
@@ -187,8 +175,11 @@ var IndexAddGlobalIndexKeyword = NewFn(func(state *State) Fn {
 
 var IndexDefinitionClustered = NewFn(func(state *State) Fn {
 	idx := state.env.Index
-	if idx.Tp != IndexTypePrimary || idx.Global {
+	if idx.Tp != IndexTypePrimary {
 		return Empty
+	}
+	if idx.Global {
+		return IndexDefinitionKeywordNonClustered
 	}
 	return Or(
 		IndexDefinitionKeywordClustered,
