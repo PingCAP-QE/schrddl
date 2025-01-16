@@ -18,6 +18,14 @@ import (
 	"github.com/ngaut/log"
 )
 
+func isIgnoredError(s string) bool {
+	return s == "" ||
+		strings.Contains(s, "cannot be pushed down") ||
+		strings.Contains(s, "Truncated incorrect") ||
+		strings.Contains(s, "Duplicate entry") ||
+		strings.Contains(s, "Incorrect datetime value")
+}
+
 func CheckError(err1, err2 error) error {
 	if err1 == nil && err2 == nil {
 		return nil
@@ -32,12 +40,7 @@ func CheckError(err1, err2 error) error {
 	}
 
 	// Filter some errors
-	if strings.Contains(errStr1, "cannot be pushed down") ||
-		strings.Contains(errStr2, "cannot be pushed down") ||
-		strings.Contains(errStr1, "Truncated incorrect") ||
-		strings.Contains(errStr2, "Truncated incorrect") ||
-		strings.Contains(errStr1, "Incorrect datetime value") ||
-		strings.Contains(errStr2, "Incorrect datetime value") {
+	if isIgnoredError(errStr1) && isIgnoredError(errStr2) {
 		return nil
 	}
 
@@ -407,7 +410,7 @@ func (p *Prepare) CheckQuery(dbWithCache, dbNoCache *sql.DB) error {
 		return errors.Trace(err)
 	}
 
-	err = p.queryAndCompare(dbWithCache, dbNoCache, false, 10)
+	err = p.queryAndCompare(dbWithCache, dbNoCache, true, 10)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -421,7 +424,7 @@ func (p *Prepare) CheckExec(dbWithCache, dbNoCache *sql.DB) error {
 		return errors.Trace(err)
 	}
 
-	err = p.execAndCompare(dbWithCache, dbNoCache, false, 3)
+	err = p.execAndCompare(dbWithCache, dbNoCache, true, 3)
 	if err != nil {
 		return errors.Trace(err)
 	}

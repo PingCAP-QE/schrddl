@@ -365,8 +365,30 @@ func (c *testCase) testPlanCache(ctx context.Context) error {
 		tblNames = append(tblNames, m.Name.L)
 	}
 
+	stateDDL := sqlgenerator.NewState()
+	stateDDL.Tables = state.Tables
+	ddlFailed := false
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(time.Second)
+				// if err := c.runDDL(stateDDL); err != nil {
+				// 	ddlFailed = true
+				// 	return
+				// }
+			}
+		}
+	}()
+
 	noCache, withCache := 0, 0
 	for i := 0; i < 50000; i++ {
+		if ddlFailed {
+			break
+		}
+
 		if i%1000 == 0 {
 			if err := c.CheckData(tblNames); err != nil {
 				return errors.Trace(err)
@@ -463,6 +485,20 @@ func (c *testCase) dumpErrorTables(sql string) (string, error) {
 	bugNum := globalBugSeqNum.Add(1)
 	dir := fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), bugNum)
 	return dir, dump.DumpToFile("test", tblNames, dir, c.cfg.DBAddr)
+}
+
+// Run random DDL, currently we only support add/drop index
+func (c *testCase) runDDL(state *sqlgenerator.State) error {
+	sql, err := sqlgenerator.AddOrDropIndex.Eval(state)
+	if err != nil {
+		return err
+	}
+
+	if err = util.ExecSQLWithDB(c.dbs[0], sql); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // execute iterates over two list of operations concurrently, one is
