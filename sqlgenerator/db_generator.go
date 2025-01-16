@@ -250,7 +250,7 @@ func (c *Column) RandomValuesAsc(count int) []string {
 		} else if length > 20 {
 			length = 20
 		}
-		return RandStrings(length, count, c.Collation.CharsetName == "gbk")
+		return RandStrings(length, count, false)
 	case ColumnTypeText, ColumnTypeBlob:
 		length := c.Arg1
 		if length == 0 {
@@ -258,7 +258,7 @@ func (c *Column) RandomValuesAsc(count int) []string {
 		} else if length > 20 {
 			length = 20
 		}
-		return RandStrings(length, count, c.Collation.CharsetName == "gbk")
+		return RandStrings(length, count, false)
 	case ColumnTypeEnum, ColumnTypeSet:
 		return RandEnums(c.Args, count)
 	case ColumnTypeDate, ColumnTypeDatetime, ColumnTypeTimestamp:
