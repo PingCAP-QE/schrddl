@@ -3,13 +3,14 @@ package sqlgenerator
 import (
 	"bytes"
 	"fmt"
-	"github.com/twinj/uuid"
 	"log"
 	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/twinj/uuid"
 
 	"github.com/cznic/mathutil"
 	"gonum.org/v1/gonum/stat/distuv"
@@ -121,15 +122,20 @@ func GenNewPrepare(id int) *Prepare {
 	}
 }
 
-func (t *Table) GenRandValues(cols []*Column) []string {
-	if len(cols) == 0 {
-		cols = t.Columns
-	}
-	row := make([]string, len(cols))
-	for i, c := range cols {
+// Generate one row and return selected columns.
+func (t *Table) GenerateRow(cols []*Column) []string {
+	row := make([]string, len(t.Columns))
+	for i, c := range t.Columns {
 		row[i] = c.RandomValue()
 	}
-	return row
+	t.Values = append(t.Values, row)
+
+	selected := make([]string, len(cols))
+	for i, c := range cols {
+		selected[i] = row[c.Idx]
+	}
+
+	return selected
 }
 
 // GenMultipleRowsAscForHandleCols generates random values for *possible* handle columns.
