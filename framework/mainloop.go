@@ -545,7 +545,7 @@ func (c *testCase) execute(ctx context.Context) error {
 	// Sub query is hard for NoREC
 	//state.SetWeight(sqlgenerator.SubSelect, 0)
 
-	if !EnableApproximateQuerySynthesis {
+	if !EnableApproximateQuerySynthesis && !EnableEET {
 		state.SetWeight(sqlgenerator.ScalarSubQuery, 0)
 		state.SetWeight(sqlgenerator.SubSelect, 0)
 	}
@@ -671,6 +671,8 @@ func (c *testCase) execute(ctx context.Context) error {
 				ck = &certChecker{c: c}
 			} else if EnableTLP {
 				ck = &tlpChecker{c: c}
+			} else if EnableEET {
+				ck = &eetChecker{c: c}
 			} else {
 				ck = &norecChecker{c: c, rewriter: *rewriter, sb: sb}
 			}
@@ -716,6 +718,10 @@ func (c *testCase) execute(ctx context.Context) error {
 					_, err = c.outputWriter.WriteString(
 						fmt.Sprintf("old count of orginal SQL:%f, new count of orginal SQL:%f,\nold count of reduce SQL:%f, new count of reduce SQL:%f,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
 							c.oldEstCntOriginal, c.newEstCntOriginal, c.oldEstCntReduce, c.newEstCntReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
+				} else if EnableEET {
+					_, err = c.outputWriter.WriteString(
+						fmt.Sprintf("old count of orginal SQL:%d, new count of orginal SQL:%d,\nold count of reduce SQL:%d, new count of reduce SQL:%d,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
+							c.cntOfOldOriginal, c.cntOfNewOriginal, c.cntOfOldReduce, c.cntOfNewReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
 				} else {
 					_, err = c.outputWriter.WriteString(
 						fmt.Sprintf("old count of orginal SQL:%d, new count of orginal SQL:%d,\nold count of reduce SQL:%d, new count of reduce SQL:%d,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",

@@ -43,6 +43,7 @@ var (
 	aqs                  = flag.Bool("aqs", false, "enable Approximate Query Synthesis")
 	cert                 = flag.Bool("cert", false, "enable CERT")
 	tlp                  = flag.Bool("tlp", false, "enable TLP")
+	eet                  = flag.Bool("eet", false, "enable EET")
 )
 
 func prepareEnv() {
@@ -95,6 +96,9 @@ func main() {
 	}
 	if *tlp {
 		EnableTLP = true
+	}
+	if *eet {
+		EnableEET = true
 	}
 	log.Infof("[%s-ddl] start ddl", *mode)
 	var testType DDLTestType

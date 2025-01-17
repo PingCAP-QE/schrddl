@@ -23,6 +23,7 @@ var EnableApproximateQuerySynthesis = false
 var EnableCERT = false
 var EnableTLP = false
 var TestFail = false
+var EnableEET = false
 
 func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
@@ -142,6 +143,8 @@ var dmlIgnoreList = []string{
 	// unknown
 	"context canceled",
 	"cannot be pushed down",
+	"in tree based request",
+	"is ambiguous",
 }
 
 var ddlIgnoreList = []string{
