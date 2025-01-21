@@ -707,7 +707,9 @@ func (c *testCase) execute(ctx context.Context) error {
 			} else if EnableTLP {
 				ck = &tlpChecker{c: c}
 			} else if EnableEET {
-				ck = &eetChecker{c: c}
+				eetChecker := &eetChecker{c: c}
+				eetChecker.rewriter.SetSchemas(tableMetas)
+				ck = eetChecker
 			} else {
 				ck = &norecChecker{c: c, rewriter: *rewriter, sb: sb}
 			}
