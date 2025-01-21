@@ -523,20 +523,6 @@ type checker interface {
 	check(sql string, isReduce bool) (bool, error)
 }
 
-// Run random add/drop index
-func (c *testCase) runDDL(state *sqlgenerator.State) error {
-	sql, err := sqlgenerator.AddOrDropIndex.Eval(state)
-	if err != nil {
-		return err
-	}
-
-	if err = c.execSQL(sql); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // execute iterates over two list of operations concurrently, one is
 // ddl operations, one is dml operations.
 // When one list completes, it starts over from the beginning again.
@@ -625,30 +611,9 @@ func (c *testCase) execute(ctx context.Context) error {
 	sqlgenerator.PrepareIndexJoinColumns(state)
 	defer sqlgenerator.RemoveIndexJoinColumns(state)
 
-	stateDDL := sqlgenerator.NewState()
-	stateDDL.Tables = state.Tables
-	ddlFailed := false
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(time.Second)
-				if err := c.runDDL(stateDDL); err != nil {
-					ddlFailed = true
-					return
-				}
-			}
-		}
-	}()
-
 	cnt := 0
-	for {
-		if ddlFailed {
-			break
-		}
 
+	for {
 		cnt++
 		if cnt%10000 == 0 {
 			err := c.executeAdminCheck()
@@ -678,7 +643,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				return err
 			}
 			if rand.Intn(100) == 0 {
-				//dmlSQL, err = sqlgenerator.SetTiFlashReplica.Eval(state)
+				dmlSQL, err = sqlgenerator.SetTiFlashReplica.Eval(state)
 				if err != nil {
 					return err
 				}
@@ -764,7 +729,6 @@ func (c *testCase) execute(ctx context.Context) error {
 						fmt.Sprintf("old count of orginal SQL:%d, new count of orginal SQL:%d,\nold count of reduce SQL:%d, new count of reduce SQL:%d,\nold query of orginal SQL: %s\nnew query of reduce SQL: %s\nreduce query: %s\n\n\n",
 							c.cntOfOldOriginal, c.cntOfNewOriginal, c.cntOfOldReduce, c.cntOfNewReduce, c.originalSQL, c.reduceChangedSQL, c.reduceSQL))
 				}
-				c.outputWriter.Sync()
 				globalBugSeqNum++
 				num := globalBugSeqNum
 
