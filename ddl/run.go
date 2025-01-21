@@ -119,6 +119,7 @@ var checkList = []string{
 	"context canceled",
 	"epoch_not_match",
 	"Invalid utf8mb4 character",
+	"requested pd is not leader of cluster",
 
 	// bug
 	"unsupport column type for encode 225",
