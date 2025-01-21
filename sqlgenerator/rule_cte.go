@@ -200,7 +200,32 @@ func evalTypeToColumnType(evalType types.EvalType) ColumnType {
 	}
 }
 
-func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo) ([]ColumnType, error) {
+func EvalSingleExpr(n ast.ExprNode, buildOptions expression.BuildOption) (types.EvalType, error) {
+	// A temporarily workaround for building aggregation expression
+	if aggFunc, ok := n.(*ast.AggregateFuncExpr); n != nil && ok {
+		newArgList := make([]expression.Expression, 0, len(aggFunc.Args))
+		for _, arg := range aggFunc.Args {
+			expr, err := expression.BuildSimpleExpr(mock.NewContext(), arg, buildOptions)
+			if err != nil {
+				return types.ETInt, err
+			}
+			newArgList = append(newArgList, expr)
+		}
+		newFunc, err := aggregation.NewAggFuncDesc(mock.NewContext(), aggFunc.F, newArgList, aggFunc.Distinct)
+		if err != nil {
+			return types.ETInt, err
+		}
+		return newFunc.RetTp.EvalType(), nil
+	}
+
+	expr, err := expression.BuildSimpleExpr(mock.NewContext(), n, buildOptions)
+	if err != nil {
+		return types.ETInt, err
+	}
+	return expr.GetType(mock.NewContext()).EvalType(), nil
+}
+
+func GetBuildOptions(dbName string, schemas []*model.TableInfo) (expression.BuildOption, error) {
 	cols := make([]*expression.Column, 0)
 	var names types.NameSlice
 	for _, tbl := range schemas {
@@ -209,42 +234,30 @@ func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo)
 			return nil, err
 		}
 		cols = append(cols, column...)
-		for _, n := range name {
-			names = append(names, n)
-		}
+		names = append(names, name...)
 	}
+	return expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil), nil
+}
+
+func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo) ([]ColumnType, error) {
 	stmts, _, err := parser.New().ParseSQL(sql)
+	if err != nil {
+		return nil, err
+	}
+
+	buildOptions, err := GetBuildOptions(dbName, schemas)
 	if err != nil {
 		return nil, err
 	}
 
 	ts := make([]ColumnType, 0)
 	fields := stmts[0].(*ast.SelectStmt).Fields.Fields
-	buildOptions := expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil)
 	for _, field := range fields {
-		// A temporarily workaround for building aggregation expression
-		if aggFunc, ok := field.Expr.(*ast.AggregateFuncExpr); field.Expr != nil && ok {
-			newArgList := make([]expression.Expression, 0, len(aggFunc.Args))
-			for _, arg := range aggFunc.Args {
-				expr, err := expression.BuildSimpleExpr(mock.NewContext(), arg, buildOptions)
-				if err != nil {
-					return nil, err
-				}
-				newArgList = append(newArgList, expr)
-			}
-			newFunc, err := aggregation.NewAggFuncDesc(mock.NewContext(), aggFunc.F, newArgList, aggFunc.Distinct)
-			if err != nil {
-				return nil, err
-			}
-			ts = append(ts, evalTypeToColumnType(newFunc.RetTp.EvalType()))
-			continue
-		}
-
-		expr, err := expression.BuildSimpleExpr(mock.NewContext(), field.Expr, buildOptions)
+		tp, err := EvalSingleExpr(field.Expr, buildOptions)
 		if err != nil {
 			return nil, err
 		}
-		ts = append(ts, evalTypeToColumnType(expr.GetType(mock.NewContext()).EvalType()))
+		ts = append(ts, evalTypeToColumnType(tp))
 	}
 
 	return ts, nil
