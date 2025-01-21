@@ -1,7 +1,7 @@
 package sqlgenerator
 
 import (
-	"strconv"
+	"fmt"
 	"strings"
 )
 
@@ -29,25 +29,28 @@ func (t *Table) String() string {
 	return sb.String()
 }
 
-func (c *Column) String() string {
-	var sb strings.Builder
-	sb.WriteString(c.Name)
-	sb.WriteString(" ")
-	sb.WriteString(c.Tp.String())
-	switch {
-	case c.Arg1 == 0 && c.Arg2 == 0:
-	case c.Arg1 != 0 && c.Arg2 == 0:
-		sb.WriteString("(")
-		sb.WriteString(strconv.Itoa(c.Arg1))
-		sb.WriteString(")")
-	default:
-		sb.WriteString("(")
-		sb.WriteString(strconv.Itoa(c.Arg1))
-		sb.WriteString(",")
-		sb.WriteString(strconv.Itoa(c.Arg2))
-		sb.WriteString(")")
+// TypeString return the string represent the type of this column.
+func (c *Column) TypeString() string {
+	typeArg := ""
+	switch c.Tp {
+	case ColumnTypeBit, ColumnTypeChar, ColumnTypeBinary, ColumnTypeVarchar,
+		ColumnTypeText, ColumnTypeBlob, ColumnTypeVarBinary:
+		typeArg = fmt.Sprintf("(%d)", c.Arg1)
+	case ColumnTypeDecimal:
+		typeArg = fmt.Sprintf("(%d, %d)", c.Arg1, c.Arg2)
+	case ColumnTypeSet, ColumnTypeEnum:
+		s := make([]string, 0, len(c.Args))
+		for _, a := range c.Args {
+			s = append(s, fmt.Sprintf("'%s'", a))
+		}
+		typeArg = fmt.Sprintf("(%s)", strings.Join(s, ","))
 	}
-	return sb.String()
+
+	return fmt.Sprintf("%s%s", c.Tp.String(), typeArg)
+}
+
+func (c *Column) String() string {
+	return fmt.Sprintf("%s %s", c.Name, c.TypeString())
 }
 
 func (i *Index) String() string {

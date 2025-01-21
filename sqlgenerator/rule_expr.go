@@ -5,6 +5,68 @@ import (
 	"math/rand"
 )
 
+func CopyTypeInfo(dst, src *Column) {
+	dst.Tp = src.Tp
+	dst.Collation = src.Collation
+	dst.IsUnsigned = src.IsUnsigned
+	dst.Arg1 = src.Arg1
+	dst.Arg2 = src.Arg2
+	dst.Array = src.Array
+	dst.SubType = src.SubType
+	dst.Args = make([]string, len(src.Args))
+	copy(dst.Args, src.Args)
+	dst.DefaultVal = src.DefaultVal
+	dst.IsNotNull = src.IsNotNull
+}
+
+// TODO(joechenrh): support more flexible function generation
+var GenerateFunction = NewFn(func(state *State) Fn {
+	prevColumn := state.env.Table.Columns.Rand()
+	prevNameFn := Str(prevColumn.Name)
+	prevTp := prevColumn.Tp
+	col := state.env.Column
+
+	CopyTypeInfo(col, prevColumn)
+	col.GeneratedFrom = prevColumn.Idx + 1
+
+	var fns []Fn
+	switch prevTp {
+	case ColumnTypeInt, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeBigInt:
+		if RandomBool() {
+			col.Tp = ColumnTypeInt
+		}
+		fns = []Fn{Strf("[%fn] * 16", prevNameFn)}
+	case ColumnTypeFloat, ColumnTypeDouble, ColumnTypeDecimal:
+		if RandomBool() {
+			col.Tp = ColumnTypeDouble
+		}
+		fns = []Fn{Strf("[%fn] * 16.16", prevNameFn)}
+	case ColumnTypeChar, ColumnTypeVarchar, ColumnTypeText,
+		ColumnTypeBlob, ColumnTypeBinary, ColumnTypeVarBinary:
+		fns = []Fn{
+			Strf("concat([%fn], [%fn])", prevNameFn, prevNameFn),
+			Strf("elt(1, [%fn], 'a string')", prevNameFn),
+			Strf("elt(1, 'a string', [%fn])", prevNameFn),
+		}
+	case ColumnTypeTime, ColumnTypeTimestamp, ColumnTypeDate, ColumnTypeDatetime:
+		col.Tp = ColumnTypeDatetime
+		fns = []Fn{Strf("date_add([%fn], interval 1 day)", prevNameFn)}
+	default:
+		fns = []Fn{prevNameFn}
+	}
+
+	return And(
+		Str(col.TypeString()),
+		Str("as("),
+		Or(fns...),
+		Str(")"),
+		Or(
+			Str("virtual"),
+			Str("stored"),
+		),
+	)
+})
+
 var BuiltinFunction = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	cols := state.env.QColumns.Columns

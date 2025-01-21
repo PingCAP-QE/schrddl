@@ -30,7 +30,6 @@ var Start = NewFn(func(state *State) Fn {
 })
 
 var DMLStmt = NewFn(func(state *State) Fn {
-	state.env.Table = state.Tables.Rand()
 	return Or(
 		CommonDelete.W(1),
 		CommonInsertOrReplace.W(3),
@@ -132,8 +131,7 @@ var TableOptions = NewFn(func(state *State) Fn {
 
 var InsertInto = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
-	vals := tbl.GenRandValues(tbl.Columns)
-	tbl.AppendRow(vals)
+	vals := tbl.GenerateRow(tbl.Columns)
 	return And(
 		Str("insert into"),
 		Str(tbl.Name),
@@ -147,12 +145,14 @@ var InsertInto = NewFn(func(state *State) Fn {
 var CommonInsertOrReplace = NewFn(func(state *State) Fn {
 	tbl := state.Tables.Rand()
 	state.env.Table = tbl
+
+	columns := tbl.Columns.Filter(ColNotGenerated)
 	if RandomBool() {
-		cWithDef, cWithoutDef := tbl.Columns.Span(func(c *Column) bool {
-			return c.DefaultVal != ""
-		})
-		state.env.Columns = cWithoutDef.Concat(cWithDef.RandN())
+		cWithDef, cWithoutDef := columns.Span(ColHasDefaultVal)
+		columns = cWithoutDef.Concat(cWithDef.RandN()).Or(columns)
 	}
+	state.env.Columns = columns
+
 	// TODO: insert into t partition(p1) values(xxx)
 	// TODO: insert ... select... , it's hard to make the selected columns match the inserted columns.
 	return Or(
@@ -166,9 +166,6 @@ var CommonInsertOrReplace = NewFn(func(state *State) Fn {
 var CommonInsertSet = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	cols := state.env.Columns
-	if len(cols) == 0 {
-		cols = tbl.Columns
-	}
 	return And(
 		Str("insert"), Opt(Str("ignore")), Str("into"), Str(tbl.Name),
 		Str("set"),
@@ -192,13 +189,6 @@ var CommonInsertValues = NewFn(func(state *State) Fn {
 var CommonReplaceValues = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	cols := state.env.Columns
-	var sb strings.Builder
-	for i, c := range cols {
-		if i != 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(c.String())
-	}
 	return And(
 		Str("replace into"), Str(tbl.Name),
 		Str(PrintColumnNamesWithPar(cols, "")),
@@ -224,8 +214,7 @@ var MultipleRowVals = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
 	cols := state.env.Columns
 	var rowVal = NewFn(func(state *State) Fn {
-		vs := tbl.GenRandValues(cols)
-		tbl.Values = append(tbl.Values, vs)
+		vs := tbl.GenerateRow(cols)
 		return Strs("(", PrintRandValues(vs), ")")
 	})
 	return Repeat(rowVal.R(1, 7), Str(","))
@@ -233,13 +222,22 @@ var MultipleRowVals = NewFn(func(state *State) Fn {
 
 var AssignClause = NewFn(func(state *State) Fn {
 	tbl := state.env.Table
-	col := tbl.Columns.Rand()
-	return Strs(fmt.Sprintf("%s.%s", tbl.Name, col.Name), "=", col.RandomValue())
+	col := state.env.Columns.Rand()
+	colTp := col.Tp
+
+	var valStr string
+	if (colTp == ColumnTypeDate || colTp == ColumnTypeDatetime || colTp == ColumnTypeTime || colTp == ColumnTypeTimestamp) &&
+		RandomBool() {
+		valStr = "now()"
+	} else {
+		valStr = col.RandomValue()
+	}
+
+	return Str(fmt.Sprintf("%s.%s = %s", tbl.Name, col.Name, valStr))
 })
 
 var OnDuplicateUpdate = NewFn(func(state *State) Fn {
-	tbl := state.env.Table
-	cols := tbl.Columns.RandNNotNil()
+	cols := state.env.Columns
 	return Strs(
 		"on duplicate key update",
 		PrintRandomAssignments(cols),
@@ -249,6 +247,8 @@ var OnDuplicateUpdate = NewFn(func(state *State) Fn {
 var CommonUpdate = NewFn(func(state *State) Fn {
 	tbl := state.Tables.Rand()
 	state.env.Table = tbl
+	state.env.Columns = tbl.Columns.Filter(ColNotGenerated)
+
 	return And(
 		Str("update"),
 		Str(tbl.Name),
@@ -266,7 +266,8 @@ var AnalyzeTable = NewFn(func(state *State) Fn {
 })
 
 var NonTransactionalDelete = NewFn(func(state *State) Fn {
-	tbl := state.env.Table
+	tbl := state.Tables.Rand()
+	state.env.Table = tbl
 	col := tbl.Columns.Rand()
 	indexes := tbl.Indexes.Filter(func(i *Index) bool {
 		return isShardableColumn(i.Columns[0])
@@ -322,7 +323,10 @@ var NonTransactionalDelete = NewFn(func(state *State) Fn {
 })
 
 var NonTransactionalUpdate = NewFn(func(state *State) Fn {
-	tbl := state.env.Table
+	tbl := state.Tables.Rand()
+	state.env.Table = tbl
+	state.env.Columns = tbl.Columns.Filter(ColNotGenerated)
+
 	indexes := tbl.Indexes.Filter(func(i *Index) bool {
 		return isShardableColumn(i.Columns[0])
 	})
@@ -409,6 +413,16 @@ var DropIndex = NewFn(func(state *State) Fn {
 		return Str("drop primary key")
 	}
 	return Strs("drop index", idx.Name)
+})
+
+var AddOrDropIndex = NewFn(func(state *State) Fn {
+	tbl := state.Tables.Rand()
+	state.env.Table = tbl
+	return And(Str("alter table"), Str(tbl.Name),
+		Or(
+			AddIndex,
+			DropIndex,
+		))
 })
 
 var AddColumn = NewFn(func(state *State) Fn {

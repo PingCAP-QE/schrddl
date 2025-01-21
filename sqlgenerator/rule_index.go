@@ -73,9 +73,9 @@ var IndexDefinitionColumn = NewFn(func(state *State) Fn {
 		return !idx.HasColumn(c) && !state.env.MultiObjs.SameObject(c.Name)
 	})
 	if idx.Tp == IndexTypePrimary {
-		// All parts of a PRIMARY KEY must be NOT NULL.
-		totalCols = totalCols.Filter(func(c *Column) bool {
-			return c.DefaultVal != "null" && c.Tp != ColumnTypeJSON
+		// All parts of a PRIMARY KEY must be NOT NULL and non-generated.
+		totalCols = totalCols.Filter(ColNotGenerated).Filter(func(c *Column) bool {
+			return c.IsNotNull && c.Tp != ColumnTypeJSON
 		})
 	}
 	if len(totalCols) == 0 {

@@ -67,6 +67,8 @@ type Column struct {
 	Args       []string // for ColumnTypeSet and ColumnTypeEnum
 	DefaultVal string
 	IsNotNull  bool
+
+	GeneratedFrom int // for insert statement, specific value on generated column is not allowed
 }
 
 type Index struct {
@@ -156,15 +158,11 @@ func (s *State) GetPrerequisite(fn Fn) func(state *State) bool {
 }
 
 func (s *State) RemoveRepeat(fn Fn) {
-	if _, ok := s.repeat[fn.Info]; ok {
-		delete(s.repeat, fn.Info)
-	}
+	delete(s.repeat, fn.Info)
 }
 
 func (s *State) RemoveWeight(fn Fn) {
-	if _, ok := s.weight[fn.Info]; ok {
-		delete(s.weight, fn.Info)
-	}
+	delete(s.weight, fn.Info)
 }
 
 func (s *State) PickRandomCTEOrTableName() string {
@@ -185,9 +183,7 @@ func (s *State) PickRandomCTEOrTableName() string {
 func (s *State) GetRandomCTE() *Table {
 	ctes := make([]*Table, 0, 10)
 	for _, cteL := range s.ctes {
-		for _, cte := range cteL {
-			ctes = append(ctes, cte)
-		}
+		ctes = append(ctes, cteL...)
 	}
 
 	return ctes[rand.Intn(len(ctes))]
@@ -255,4 +251,13 @@ func (m *MultiObjs) AddName(name string) {
 
 func (s *State) SetTableMeta(tableMeta []*model.TableInfo) {
 	s.tableMeta = tableMeta
+}
+
+func ColNotGenerated(col *Column) bool {
+	// 0 presents not generated
+	return col.GeneratedFrom == 0
+}
+
+func ColHasDefaultVal(col *Column) bool {
+	return col.DefaultVal != ""
 }
