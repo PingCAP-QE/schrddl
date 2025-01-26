@@ -29,7 +29,7 @@ var ColumnDefinition = NewFn(func(state *State) Fn {
 				ColumnDefinitionDefault,
 				ColumnDefinitionOnUpdate,
 			).W(8),
-			ColumnDefinitionGenerated.P(MoreThan1Columns).W(2),
+			ColumnDefinitionGenerated.P(MoreThan1Columns).W(0),
 		),
 	).Eval(state)
 	if err != nil {
