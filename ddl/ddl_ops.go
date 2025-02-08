@@ -776,7 +776,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 			if column.canBePrimary() {
 				column.isPrimaryKey = true
 				primaryKeys = append(primaryKeys, columnIndex)
-				if partitionColumn != nil && column.name == partitionColumn.name {
+				if rand.Intn(10) == 0 {
 					needGlobal = false
 				}
 			}
@@ -1285,15 +1285,12 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		}
 	}
 
-	needGlobal := index.uniques && table.partitionColumn != nil
+	needGlobal := table.partitionColumn != nil
 	isVector := true
 
 	for i, column := range index.columns {
 		if !checkAddDropColumn(ctx, column) {
 			return nil
-		}
-		if table.partitionColumn != nil && column.name == table.partitionColumn.name {
-			needGlobal = false
 		}
 		if column.k != KindVector || i > 0 {
 			isVector = false
