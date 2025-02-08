@@ -124,6 +124,8 @@ var checkList = []string{
 	// bug
 	"unsupport column type for encode 225",
 	"decode date time",
+
+	"batchScanRegion from PD failed",
 }
 
 func dmlIgnoreError(err error) bool {
