@@ -145,6 +145,7 @@ var dmlIgnoreList = []string{
 	"cannot be pushed down",
 	"in tree based request",
 	"is ambiguous",
+	"generate timestamp failed",
 }
 
 var ddlIgnoreList = []string{
