@@ -146,6 +146,7 @@ var dmlIgnoreList = []string{
 	"in tree based request",
 	"is ambiguous",
 	"generate timestamp failed",
+	"epoch_not_match",
 }
 
 var ddlIgnoreList = []string{
