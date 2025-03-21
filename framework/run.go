@@ -113,12 +113,8 @@ var dmlIgnoreList = []string{
 	"character string",
 
 	// bug
-	"slice bounds out of range",
-	"index out of range",
-	"writing inconsistent data in table",
 	"should ensure all columns have the same length",
 	"expected integer",
-	"invalid memory address or nil pointer dereference",
 	"encoding failed",
 	"invalid input value",
 	"region not found for key",
@@ -126,6 +122,7 @@ var dmlIgnoreList = []string{
 	"Unexpected missing column",
 	"strconv.Atoi",
 	"Unsupported tidb_enable_dist_task setting",
+	"After column pruning, some operator got zero row output",
 	//"other error for mpp stream",
 
 	"Can't find a proper physical plan for this query",
