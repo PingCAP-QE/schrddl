@@ -128,6 +128,7 @@ var checkList = []string{
 	"decode date time",
 
 	"batchScanRegion from PD failed",
+	"PessimisticLockNotFound",
 }
 
 func dmlIgnoreError(err error) bool {
