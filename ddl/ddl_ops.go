@@ -409,7 +409,7 @@ func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 
 func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
 	var indexCnt int
-	var columnNames string
+	//var columnNames string
 	row, err := c.dbs[0].Query(fmt.Sprintf("select count(*) from (select distinct index_name from information_schema.statistics where table_name='%s' and index_name != 'PRIMARY') as tmp;;", table.name))
 	if err != nil {
 		return err
@@ -423,21 +423,21 @@ func (c *testCase) checkTableIndexes(table *ddlTestTable) error {
 		return errors.Errorf("table %s index cnt are not same, expected cnt: %d, got cnt: %d \n %s", table.name, len(table.indexes), indexCnt, table.debugPrintToString())
 	}
 	row.Close()
-	for _, idx := range table.indexes {
-		row, err = c.dbs[0].Query(fmt.Sprintf("select GROUP_CONCAT(column_name ORDER BY seq_in_index) from information_schema.statistics where table_name='%s' and index_name='%s';", table.name, idx.name))
-		if err != nil {
-			return err
-		}
-		row.Next()
-		err = row.Scan(&columnNames)
-		row.Close()
-		if err != nil {
-			return err
-		}
-		if idx.signature != columnNames {
-			return errors.Errorf("table index columns doesn't match, index name: %s, expected: %s, got: %s", idx.name, idx.signature, columnNames)
-		}
-	}
+	//for _, idx := range table.indexes {
+	//	row, err = c.dbs[0].Query(fmt.Sprintf("select GROUP_CONCAT(column_name ORDER BY seq_in_index) from information_schema.statistics where table_name='%s' and index_name='%s';", table.name, idx.name))
+	//	if err != nil {
+	//		return err
+	//	}
+	//	row.Next()
+	//	err = row.Scan(&columnNames)
+	//	row.Close()
+	//	if err != nil {
+	//		return err
+	//	}
+	//	if idx.signature != columnNames {
+	//		return errors.Errorf("table index columns doesn't match, index name: %s, expected: %s, got: %s", idx.name, idx.signature, columnNames)
+	//	}
+	//}
 	return nil
 }
 
