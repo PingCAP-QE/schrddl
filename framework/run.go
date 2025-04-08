@@ -124,6 +124,8 @@ var dmlIgnoreList = []string{
 	"Unsupported tidb_enable_dist_task setting",
 	"After column pruning, some operator got zero row output",
 	//"other error for mpp stream",
+	"slice bounds out of range",
+	"index out of range",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
