@@ -185,5 +185,6 @@ var CompareSymbol = NewFn(func(state *State) Fn {
 		Str(">="),
 		Str("<>"),
 		Str("!="),
+		Str("<=>"),
 	)
 })
