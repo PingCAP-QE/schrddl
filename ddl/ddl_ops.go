@@ -536,8 +536,8 @@ func (c *testCase) execParaDDLSQL(taskCh chan *ddlJobTask, num int) error {
 			seqNum, query, err := getLastDDLInfo(conn)
 			if err != nil {
 				// Don't know why it failed, just exit.
+				log.Errorf("get last ddl info failed, %s, do exit(0)", err.Error())
 				os.Exit(0)
-				log.Errorf("get last ddl info failed, %s", err.Error())
 				unExpectedErr = err
 				return
 			}
