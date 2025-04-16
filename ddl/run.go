@@ -229,6 +229,7 @@ var ddlIgnoreList = []string{
 	"Unsupported",
 	"context canceled",
 	"cancelled by user",
+	"error msg: injected random error, caller: github.com/pingcap/tidb/pkg/disttask/framework/storage.(*TaskManager).WithNewSession",
 }
 
 func ddlIgnoreError(err error) bool {
