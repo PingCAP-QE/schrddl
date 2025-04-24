@@ -103,7 +103,7 @@ var CreateTable = NewFn(func(state *State) Fn {
 	if err != nil {
 		return NoneBecauseOf(err)
 	}
-	state.env.PartColumn = tbl.Columns.Filter(func(c *Column) bool { return c.Tp.IsPartitionType() }).Rand()
+	state.env.PartColumn = tbl.Columns.Rand()
 	ePartitionDef, err := PartitionDefinition.Eval(state)
 	if err != nil {
 		return NoneBecauseOf(err)

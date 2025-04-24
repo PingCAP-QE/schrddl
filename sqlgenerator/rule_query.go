@@ -80,6 +80,9 @@ var SingleSelect = NewFn(func(state *State) Fn {
 				Attr:    make([]string, len(tbl.Columns)),
 			},
 		},
+		TableIndexes: map[*Table]Indexes{
+			tbl: tbl.Indexes,
+		},
 		AggCols: make(map[*Table]Columns),
 	}
 	return CommonSelect
@@ -161,7 +164,7 @@ var MultiSelect = NewFn(func(state *State) Fn {
 
 var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), HintJoin,
+		Str("select"), HintTiFlash, Or(Empty, HintIndexMerge, HintUseIndex), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, Opt(OrderBy), Opt(Limit),
 	)
@@ -194,7 +197,7 @@ var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.AggCols[tbl] = groupByCols
 
 	return And(
-		Str("select"), HintTiFlash, Opt(HintIndexMerge), Opt(HintAggToCop), HintJoin,
+		Str("select"), HintTiFlash, Or(Empty, HintIndexMerge, HintUseIndex), Opt(HintAggToCop), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderBy), Opt(Limit),
 	)
@@ -707,6 +710,24 @@ var HintAggToCop = NewFn(func(state *State) Fn {
 		Or(Empty, Str("hash_agg()"), Str("stream_agg()")),
 		Str("*/"),
 	)
+})
+
+// It only works with singleSelect
+var HintUseIndex = NewFn(func(state *State) Fn {
+	queryState := state.env.QState
+	if queryState.TableIndexes == nil {
+		return Empty
+	}
+	var tbs []*Table
+	for t := range queryState.SelectedCols {
+		tbs = append(tbs, t)
+	}
+	tb := tbs[rand.Int()%len(tbs)]
+	if rand.Int()%2 == 0 {
+		return Strs("/*+ use_index(", tb.Name, ",", queryState.TableIndexes[tb].Rand().Name, ") */")
+	} else {
+		return Strs("/*+ use_index(", tb.Name, ") */")
+	}
 })
 
 var SetOperator = NewFn(func(state *State) Fn {

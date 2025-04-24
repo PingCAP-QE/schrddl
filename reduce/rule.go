@@ -46,7 +46,7 @@ func simpleExprRule(node *ast.ExprNode) bool {
 	case *ast.BinaryOperationExpr:
 		l := rand.Intn(2) == 0
 		if l {
-			exprNode := v.L.(ast.ExprNode)
+			exprNode := v.L
 			// Recursively apply the rule.
 			if _, ok := exprNode.(*ast.BinaryOperationExpr); ok && rand.Intn(2) == 0 {
 				simpleExprRule(&exprNode)
@@ -55,7 +55,7 @@ func simpleExprRule(node *ast.ExprNode) bool {
 			node = &exprNode
 			return true
 		} else {
-			exprNode := v.R.(ast.ExprNode)
+			exprNode := v.R
 			// Recursively apply the rule.
 			if _, ok := exprNode.(*ast.BinaryOperationExpr); ok && rand.Intn(2) == 0 {
 				simpleExprRule(&exprNode)
@@ -93,10 +93,7 @@ func (r *removeHintRule) apply(node *ast.StmtNode) bool {
 	randIdx := rand.Intn(len(sel.TableHints))
 	sel.TableHints = append(sel.TableHints[:randIdx], sel.TableHints[randIdx+1:]...)
 
-	if len(sel.TableHints) == 0 {
-		return false
-	}
-	return true
+	return len(sel.TableHints) != 0
 }
 
 type removeOrderByRule struct {
