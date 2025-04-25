@@ -164,7 +164,7 @@ var MultiSelect = NewFn(func(state *State) Fn {
 
 var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
-		Str("select"), HintTiFlash, Or(Empty, HintIndexMerge, HintUseIndex), HintJoin,
+		Str("select"), HintTiFlash, Or(HintIndexMerge, HintUseIndex), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, Opt(OrderBy), Opt(Limit),
 	)
@@ -197,7 +197,7 @@ var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.AggCols[tbl] = groupByCols
 
 	return And(
-		Str("select"), HintTiFlash, Or(Empty, HintIndexMerge, HintUseIndex), Opt(HintAggToCop), HintJoin,
+		Str("select"), HintTiFlash, Or(HintIndexMerge, HintUseIndex), Opt(HintAggToCop), HintJoin,
 		SelectFields, Str("from"), TableReference,
 		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderBy), Opt(Limit),
 	)
@@ -723,7 +723,7 @@ var HintUseIndex = NewFn(func(state *State) Fn {
 		tbs = append(tbs, t)
 	}
 	tb := tbs[rand.Int()%len(tbs)]
-	if rand.Int()%2 == 0 {
+	if rand.Int()%2 == 0 && len(queryState.TableIndexes[tb]) != 0 {
 		return Strs("/*+ use_index(", tb.Name, ",", queryState.TableIndexes[tb].Rand().Name, ") */")
 	} else {
 		return Strs("/*+ use_index(", tb.Name, ") */")

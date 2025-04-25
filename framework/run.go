@@ -340,7 +340,9 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Invalid JSON text") ||
 		strings.Contains(errStr, "since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption") ||
 		strings.Contains(errStr, "Defining a virtual generated column as primary key' is not supported for generated columns") ||
-		strings.Contains(errStr, "doesn't yet support") {
+		strings.Contains(errStr, "doesn't yet support") ||
+		strings.Contains(errStr, "Partition column values of incorrect type") ||
+		strings.Contains(errStr, "near") {
 		return true
 	}
 	return false

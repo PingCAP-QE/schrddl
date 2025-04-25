@@ -108,6 +108,9 @@ var CreateTable = NewFn(func(state *State) Fn {
 	if err != nil {
 		return NoneBecauseOf(err)
 	}
+	if len(ePartitionDef) == 0 {
+		state.env.PartColumn = nil
+	}
 	eTableOption, err := TableOptions.Eval(state)
 	if err != nil {
 		return NoneBecauseOf(err)
