@@ -42,5 +42,13 @@ You can change the concurrency by setting `--concurrency` flag.
 - [x] Non-recursive CTE with common select
 - [ ] Nested CTE
 - [ ] Recursive CTE
+- [ ] Partition Table
+  - [x] one column partitions, such as `range`, `list`, `hash`, `key`, `list columns` and `range columns`
+  - [ ] multi columns partitions
+  - [ ] ddl operates
+    - [ ] exchange partition
+    - [ ] add/drop partition
+    - [ ] truncate partition
+    - [ ] reorg partition
 - [ ] Subquery
   - [x] Scalar Subquery

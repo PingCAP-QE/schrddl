@@ -201,6 +201,7 @@ func (s *State) GetCTECount() int {
 // QueryState represent an intermediate state during a query generation.
 type QueryState struct {
 	SelectedCols map[*Table]QueryStateColumns
+	TableIndexes map[*Table]Indexes
 	IsWindow     bool
 	// AggCols is the aggregate columns in the select list. It's the available columns used in
 	// select field, having clause and order by clause.
