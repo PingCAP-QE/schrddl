@@ -60,10 +60,9 @@ var PartitionDefinitionKey = NewFn(func(state *State) Fn {
 
 var PartitionDefinitionRange = NewFn(func(state *State) Fn {
 	partitionedCol := state.env.PartColumn
-	partitionCount := rand.Intn(5) + 1
-	vals := partitionedCol.RandomValuesAsc(partitionCount)
+	vals := partitionedCol.RandomValuesAsc(rand.Intn(5) + 1)
+	vals = uniqueOrderedStrings(vals)
 	if rand.Intn(2) == 0 {
-		partitionCount++
 		vals = append(vals, "maxvalue")
 	}
 	return Strs(
@@ -76,10 +75,9 @@ var PartitionDefinitionRange = NewFn(func(state *State) Fn {
 
 var PartitionDefinitionRangeColumns = NewFn(func(state *State) Fn {
 	partitionedCol := state.env.PartColumn
-	partitionCount := rand.Intn(5) + 1
-	vals := partitionedCol.RandomValuesAsc(partitionCount)
+	vals := partitionedCol.RandomValuesAsc(rand.Intn(5) + 1)
+	vals = uniqueOrderedStrings(vals)
 	if rand.Intn(2) == 0 {
-		partitionCount++
 		vals = append(vals, "maxvalue")
 	}
 	return Strs(
@@ -93,6 +91,7 @@ var PartitionDefinitionRangeColumns = NewFn(func(state *State) Fn {
 var PartitionDefinitionList = NewFn(func(state *State) Fn {
 	partitionedCol := state.env.PartColumn
 	listVals := partitionedCol.RandomValuesAsc(20)
+	listVals = uniqueOrderedStrings(listVals)
 	listGroups := RandomGroups(listVals, rand.Intn(3)+1)
 	return Strs(
 		"partition by list (",
@@ -105,6 +104,7 @@ var PartitionDefinitionList = NewFn(func(state *State) Fn {
 var PartitionDefinitionListColumns = NewFn(func(state *State) Fn {
 	partitionedCol := state.env.PartColumn
 	listVals := partitionedCol.RandomValuesAsc(20)
+	listVals = uniqueOrderedStrings(listVals)
 	listGroups := RandomGroups(listVals, rand.Intn(3)+1)
 	return Strs(
 		"partition by list columns(",
@@ -113,3 +113,18 @@ var PartitionDefinitionListColumns = NewFn(func(state *State) Fn {
 		")",
 	)
 })
+
+func uniqueOrderedStrings(input []string) []string {
+	if len(input) == 0 {
+		return input
+	}
+	var result []string
+	prev := ""
+	for i, str := range input {
+		if i == 0 || str != prev {
+			result = append(result, str)
+			prev = str
+		}
+	}
+	return result
+}

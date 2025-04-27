@@ -342,7 +342,7 @@ func ddlIgnoreError(err error) bool {
 		strings.Contains(errStr, "Defining a virtual generated column as primary key' is not supported for generated columns") ||
 		strings.Contains(errStr, "doesn't yet support") ||
 		strings.Contains(errStr, "Partition column values of incorrect type") ||
-		strings.Contains(errStr, "near") {
+		strings.Contains(errStr, "line 1 column 17 near \"0x\"") {
 		return true
 	}
 	return false
