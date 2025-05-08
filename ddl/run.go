@@ -126,6 +126,7 @@ var checkList = []string{
 	// bug
 	"unsupport column type for encode 225",
 	"decode date time",
+	"Unexpected ExprType String and EvalType Enum",
 
 	"batchScanRegion from PD failed",
 	"PessimisticLockNotFound",
