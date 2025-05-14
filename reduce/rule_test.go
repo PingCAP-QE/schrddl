@@ -1,14 +1,13 @@
 package reduce
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-type checkFunc func(sql string) bool
-
 func TestReduceSQL(t *testing.T) {
-	mockChcker := func(sql string) (bool, error) {
+	mockChcker := func(sql string, isReduce bool) (bool, error) {
 		switch sql {
 		case "select * from t":
 			return false, nil

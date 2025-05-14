@@ -180,9 +180,9 @@ func PrintColumnWithFunction(col *Column) string {
 func PrintConstantWithFunction(tp ColumnType) string {
 	switch tp {
 	case ColumnTypeInt:
-		return fmt.Sprintf("1+1")
+		return "1+1"
 	case ColumnTypeChar:
-		return fmt.Sprintf("concat('a', 1)")
+		return "concat('a', 1)"
 	}
 
 	return "1"

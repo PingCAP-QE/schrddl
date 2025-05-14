@@ -90,7 +90,7 @@ func (f Fn) Eval(state *State) (res string, err error) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			fmt.Println(fmt.Sprintf("Panic in NewFn: %v, info: %s", r, state.FnStack))
+			fmt.Printf("Panic in NewFn: %v, info: %s\n", r, state.FnStack)
 		}
 	}()
 	newFn := f

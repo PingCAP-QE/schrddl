@@ -246,18 +246,37 @@ func (c ColumnType) IsTimeType() bool {
 	return false
 }
 
-func (c ColumnType) IsPartitionType() bool {
-	// A partitioning key must be either an integer column or
-	// an expression that resolves to an integer.
+func (c ColumnType) IsRangePartitionType() bool {
+	return c.IsIntegerType()
+}
+
+func (c ColumnType) IsListPartitionType() bool {
+	return c.IsIntegerType()
+}
+
+func (c ColumnType) IsHashPartitionType() bool {
 	return c.IsIntegerType()
 }
 
 func (c ColumnType) IsKeyPartitionType() bool {
 	switch c {
-	case ColumnTypeBlob, ColumnTypeJSON:
+	case ColumnTypeBlob, ColumnTypeJSON, ColumnTypeText:
 		return false
 	default:
 		return true
+	}
+}
+
+func (c ColumnType) IsColumnsPartitionType() bool {
+	switch c {
+	case ColumnTypeInt, ColumnTypeTinyInt, ColumnTypeSmallInt, ColumnTypeMediumInt, ColumnTypeBigInt:
+		return true
+	case ColumnTypeDate, ColumnTypeDatetime:
+		return true
+	case ColumnTypeChar, ColumnTypeVarchar, ColumnTypeBinary, ColumnTypeVarBinary:
+		return true
+	default:
+		return false
 	}
 }
 
