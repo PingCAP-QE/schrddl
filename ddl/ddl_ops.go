@@ -73,7 +73,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn(0); err != nil {
+	if err := c.generateModifyColumn(5); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateDropColumn(defaultTime); err != nil {
@@ -82,7 +82,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn2(0); err != nil {
+	if err := c.generateModifyColumn2(5); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateMultiSchemaChange(2); err != nil {
