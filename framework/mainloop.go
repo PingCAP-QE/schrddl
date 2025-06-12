@@ -615,7 +615,7 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	for {
 		cnt++
-		if cnt%10000 == 0 {
+		if cnt%100 == 0 {
 			err := c.executeAdminCheck()
 			if err != nil {
 				return errors.Trace(err)
@@ -627,7 +627,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 			}
 		}
-		if cnt%10000 == 0 && rand.Intn(2) == 0 {
+		if cnt%1000 == 0 && rand.Intn(2) == 0 {
 			break
 		}
 
