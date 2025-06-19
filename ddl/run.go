@@ -90,7 +90,14 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		dbss[0][0].Exec("set global tidb_enable_dist_task=1")
 		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
 	} else {
-		dbss[0][0].Exec("set global tidb_cloud_storage_uri=''")
+		version := ""
+		err := dbss[0][0].QueryRow("select tidb_version()").Scan(&version)
+		if err != nil {
+			log.Fatalf("[ddl] get tidb version error %v", err)
+		}
+		if !strings.Contains(version, "Generation") {
+			dbss[0][0].Exec("set global tidb_cloud_storage_uri=''")
+		}
 	}
 	dbss[0][0].Exec("set global max_execution_time=5000")
 
