@@ -1,7 +1,7 @@
 name: Build
 on:
   push:
-    branches: [ master ]
+    branches: [ importinto_addindex ]
 jobs:
   build:
     runs-on: [arc-runner-set]
@@ -9,7 +9,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
     - name: Build
-      run: docker build -t hub.pingcap.net/qa/schrddl-master .
+      run: docker build -t hub.pingcap.net/qa/schrddl-importintoaddindex .
     - name: Docker Login
       uses: docker/login-action@v1
       with:
@@ -17,4 +17,4 @@ jobs:
         username: ${{ secrets.HARBOR_USERNAME }}
         password: ${{ secrets.HARBOR_PASSWORD }}
     - name: Push
-      run: docker push hub.pingcap.net/qa/schrddl-master
+      run: docker push hub.pingcap.net/qa/schrddl-importintoaddindex
