@@ -126,6 +126,7 @@ var dmlIgnoreList = []string{
 	//"other error for mpp stream",
 	"slice bounds out of range",
 	"index out of range",
+	"too many partitions matching for PointGetPlan",
 
 	"Can't find a proper physical plan for this query",
 	"Your query has been cancelled due to exceeding the allowed memory limit",
