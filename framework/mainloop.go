@@ -908,24 +908,18 @@ func (c *testCase) executeAdminCheck() error {
 
 	// build SQL
 	sql := "ADMIN CHECK TABLE "
-	i := 0
-	for _, table := range c.tables {
-		if i > 0 {
-			sql += ", "
-		}
-		sql += fmt.Sprintf("`%s`", table.name)
-		i++
-	}
 	dbIdx := rand.Intn(len(c.dbs))
 	db := c.dbs[dbIdx]
-	// execute
-	log.Infof("[ddl] [instance %d] %s", c.caseIndex, sql)
-	_, err := db.Exec(sql)
-	if err != nil {
-		if dmlIgnoreError(err) {
-			return nil
+	for _, table := range c.tables {
+		_, err := db.Exec(fmt.Sprintf("ADMIN CHECK TABLE `%s`", table.name))
+		if err != nil {
+			if dmlIgnoreError(err) {
+				return nil
+			}
+			return errors.Annotatef(err, "Error when executing SQL: %s", sql)
 		}
-		return errors.Annotatef(err, "Error when executing SQL: %s", sql)
 	}
+	// execute
+	log.Infof("[ddl] [instance %d]", c.caseIndex)
 	return nil
 }
