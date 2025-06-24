@@ -33,6 +33,7 @@ var (
 	output        = flag.String("output", "", "output file")
 	globalSortUri = flag.String("global-sort-uri", "", "global sort uri")
 	password      = flag.String("password", "", "database password")
+	platform      = flag.String("platform", "ks3", "platform, ks3 or s3")
 )
 
 var GlobalSortUri string
@@ -62,7 +63,8 @@ func timeoutExitLoop(timeout time.Duration) {
 	os.Exit(0)
 }
 
-var importIntoDataSource = []string{"s3://sql-data-service/csv/wide_table_1t/*/*"}
+var S3ImportIntoDataSource = []string{"s3://sql-data-service/csv/wide_table_1t/*/*"}
+var KS3ImportIntoDataSource = []string{"s3://qe-testing/kernel-testing/sql_data_service/csv/wide_table_1t/*/*.csv"}
 var schemaList = []string{
 	`CREATE TABLE sbtest1 (
     id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -166,7 +168,10 @@ func main() {
 		}
 
 		// 2. Pick a random data source to import data
-		dataSource := importIntoDataSource[rand.Intn(len(importIntoDataSource))]
+		dataSource := S3ImportIntoDataSource[rand.Intn(len(S3ImportIntoDataSource))]
+		if *platform == "ks3" {
+			dataSource = KS3ImportIntoDataSource[rand.Intn(len(KS3ImportIntoDataSource))]
+		}
 		importSQL := fmt.Sprintf("IMPORT INTO sbtest1 FROM '%s' WITH FIELDS_DEFINED_NULL_BY='NULL', SPLIT_FILE, THREAD=8,LINES_TERMINATED_BY='\n'", dataSource)
 		_, err = tidbC.ExecContext(context.Background(), importSQL)
 		if err != nil {
