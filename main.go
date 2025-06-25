@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -171,6 +172,8 @@ func main() {
 		dataSource := S3ImportIntoDataSource[rand.Intn(len(S3ImportIntoDataSource))]
 		if *platform == "ks3" {
 			dataSource = KS3ImportIntoDataSource[rand.Intn(len(KS3ImportIntoDataSource))]
+			aksk := (*globalSortUri)[strings.Index(*globalSortUri, "?"):]
+			dataSource += aksk
 		}
 		importSQL := fmt.Sprintf("IMPORT INTO sbtest1 FROM '%s' WITH FIELDS_DEFINED_NULL_BY='NULL', SPLIT_FILE, THREAD=8,LINES_TERMINATED_BY='\n'", dataSource)
 		_, err = tidbC.ExecContext(context.Background(), importSQL)
