@@ -8,13 +8,13 @@ require (
 	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef
 	github.com/emirpasic/gods v1.18.1
 	github.com/go-sql-driver/mysql v1.8.1
+	github.com/google/uuid v1.6.0
 	github.com/juju/errors v0.0.0-20200330140219-3fe23663418f
 	github.com/ngaut/log v0.0.0-20221012222132-f3329cba28a5
 	github.com/pingcap/errors v0.11.5-0.20240318064555-6bd07397691f
 	github.com/pingcap/tidb/parser v0.0.0-20220507103032-9339955f0d84
 	github.com/prometheus/client_golang v1.20.4
 	github.com/stretchr/testify v1.9.0
-	github.com/twinj/uuid v1.0.0
 	golang.org/x/net v0.30.0
 )
 
@@ -86,7 +86,6 @@ require (
 	github.com/google/flatbuffers v2.0.8+incompatible // indirect
 	github.com/google/pprof v0.0.0-20241001023024-f4c0cfd0cf1d // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.2 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
@@ -166,6 +165,7 @@ require (
 	github.com/tikv/pd/client v0.0.0-20240926021936-642f0e919b0d // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/twinj/uuid v1.0.0 // indirect
 	github.com/twmb/murmur3 v1.1.6 // indirect
 	github.com/uber/jaeger-client-go v2.22.1+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect

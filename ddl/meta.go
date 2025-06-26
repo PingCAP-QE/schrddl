@@ -15,7 +15,7 @@ import (
 
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/emirpasic/gods/lists/arraylist"
-	"github.com/twinj/uuid"
+	"github.com/google/uuid"
 )
 
 type testCase struct {
@@ -479,7 +479,7 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      "col" + uuid.NewV4().String()[:4],
+		name:      "col" + uuid.New().String()[:4],
 		fieldType: ALLFieldType[n],
 		rows:      arraylist.New(),
 		deleted:   0,
@@ -552,7 +552,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 	// Shadow copy of column col.
 	modifiedColumn := *col
 	if renameCol {
-		modifiedColumn.name = uuid.NewV4().String()[:8]
+		modifiedColumn.name = uuid.New().String()[:8]
 	} else {
 		modifiedColumn.name = col.name
 	}
@@ -589,7 +589,7 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestColumn {
 	newColumn := getRandDDLTestColumn()
 	if renameCol {
-		newColumn.name = uuid.NewV4().String()[:8]
+		newColumn.name = uuid.New().String()[:8]
 	} else {
 		newColumn.name = col.name
 	}
@@ -632,7 +632,7 @@ func getRandJsonCol() []*ddlTestColumn {
 
 	column := &ddlTestColumn{
 		k:         KindJSON,
-		name:      uuid.NewV4().String()[:8],
+		name:      uuid.New().String()[:8],
 		fieldType: ALLFieldType[KindJSON],
 		rows:      arraylist.New(),
 		deleted:   0,
