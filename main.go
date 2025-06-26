@@ -1,4 +1,4 @@
-// Copyright 2018 PingCAP, Inc.
+// Copyright 2025 PingCAP, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -131,6 +131,48 @@ var schemaList = []string{
     PRIMARY KEY(c, id),
     unique key (c, id, k)
 ) partition by hash(id) partitions 256;`,
+	`CREATE TABLE sbtest1 (
+    id bigint NOT NULL AUTO_INCREMENT,
+    k int NOT NULL DEFAULT '0',
+    c char(120) NOT NULL DEFAULT '',
+    pad char(60) NOT NULL DEFAULT '',
+    int_0 int NOT NULL DEFAULT '0', -- stdDev=10000.0, mean=0.0,
+    int_1 int NOT NULL DEFAULT '0', -- stdDev=1000000.0, mean=0.0,
+    int_2 int NOT NULL DEFAULT '0', -- stdDev=700000000.0, mean=0.0,
+    bigint_0 bigint DEFAULT NULL UNIQUE KEY, -- TOTAL ORDERED
+    bigint_1 bigint DEFAULT NULL UNIQUE KEY, -- PARTIAL ORDERED
+    bigint_2 bigint DEFAULT NULL UNIQUE KEY, -- TOTAL RANDOM
+    varchar_0 varchar(768) DEFAULT NULL UNIQUE KEY,
+    text_0 text DEFAULT NULL, -- varchar(61440)
+    json_0 json DEFAULT NULL,
+    PRIMARY KEY(id, c)
+);`,
+	`CREATE TABLE sbtest1 (
+    id bigint NOT NULL AUTO_INCREMENT,
+    k int NOT NULL DEFAULT '0',
+    c char(120) NOT NULL DEFAULT '',
+    pad char(60) NOT NULL DEFAULT '',
+    int_0 int NOT NULL DEFAULT '0', -- stdDev=10000.0, mean=0.0,
+    int_1 int NOT NULL DEFAULT '0', -- stdDev=1000000.0, mean=0.0,
+    int_2 int NOT NULL DEFAULT '0', -- stdDev=700000000.0, mean=0.0,
+    bigint_0 bigint DEFAULT NULL UNIQUE KEY GLOBAL, -- TOTAL ORDERED
+    bigint_1 bigint DEFAULT NULL UNIQUE KEY GLOBAL, -- PARTIAL ORDERED
+    bigint_2 bigint DEFAULT NULL UNIQUE KEY GLOBAL, -- TOTAL RANDOM
+    varchar_0 varchar(768) DEFAULT NULL UNIQUE KEY GLOBAL,
+    text_0 text DEFAULT NULL, -- varchar(61440)
+    json_0 json DEFAULT NULL,
+    PRIMARY KEY(id, c),
+    unique key (id, c, k)
+) partition by hash(id) partitions 256;`,
+}
+
+var IndexList = [][]string{
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(id, k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(id, c)"},
+	{"alter table sbtest1 add index idx_k(c, id, k)", "alter table sbtest1 add index idx_id(c, id)"},
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(id, c, k)", "alter table sbtest1 add index idx_id(id, c)"},
 }
 
 func main() {
@@ -162,13 +204,25 @@ func main() {
 	}
 	for {
 		// 1. Pick a random schema
-		tbl := schemaList[rand.Intn(len(schemaList))]
+		i := rand.Intn(len(schemaList))
+		tbl := schemaList[i]
+		log.Infof("create table with schema: %s", tbl)
 		_, err = tidbC.ExecContext(context.Background(), tbl)
 		if err != nil {
 			log.Fatalf("Can't create table, err: %s", err.Error())
 		}
 
-		// 2. Pick a random data source to import data
+		// 2. Set variable
+		if rand.Intn(2) == 0 {
+			_, err = tidbC.ExecContext(context.Background(), "set global tidb_max_dist_task_nodes = 1")
+		} else {
+			_, err = tidbC.ExecContext(context.Background(), "set global tidb_max_dist_task_nodes = 3")
+		}
+		if err != nil {
+			log.Fatalf("Can't set variable, err: %s", err.Error())
+		}
+
+		// 3. Pick a random data source to import data
 		dataSource := S3ImportIntoDataSource[rand.Intn(len(S3ImportIntoDataSource))]
 		if *platform == "ks3" {
 			dataSource = KS3ImportIntoDataSource[rand.Intn(len(KS3ImportIntoDataSource))]
@@ -181,7 +235,15 @@ func main() {
 			log.Fatalf("Can't import table, err: %s", err.Error())
 		}
 
-		// 3. Drop the table
+		// 4. Pick an index to add
+		addIndexSQL := IndexList[i][rand.Intn(len(IndexList[i]))]
+		log.Infof("add index with sql: %s", addIndexSQL)
+		_, err = tidbC.ExecContext(context.Background(), addIndexSQL)
+		if err != nil {
+			log.Fatalf("Can't add index, err: %s", err.Error())
+		}
+
+		// 5. Drop the table
 		_, err = tidbC.ExecContext(context.Background(), "DROP TABLE sbtest1")
 		if err != nil {
 			log.Fatalf("Can't drop table, err: %s", err.Error())
