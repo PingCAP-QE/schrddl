@@ -15,8 +15,8 @@ import (
 
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/google/uuid"
 	"github.com/pingcap/tidb/pkg/parser"
-	"github.com/twinj/uuid"
 )
 
 type testCase struct {
@@ -508,7 +508,7 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      uuid.NewV4().String()[:8],
+		name:      uuid.New().String()[:8],
 		fieldType: ALLFieldType[n],
 		rows:      arraylist.New(),
 		deleted:   0,

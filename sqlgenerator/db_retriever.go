@@ -7,11 +7,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/pingcap/tidb/pkg/util/logutil"
-	"github.com/twinj/uuid"
-	"go.uber.org/zap"
-
 	"github.com/cznic/mathutil"
+	"github.com/google/uuid"
+	"github.com/pingcap/tidb/pkg/util/logutil"
+	"go.uber.org/zap"
 )
 
 var GlobalFetchJsonRowValCnt atomic.Int64
@@ -210,7 +209,7 @@ func (t *Table) GetRandArraySubVal(col *Column) string {
 func (t *Table) CloneCreateTableLike(state *State) *Table {
 	newTable := t.Clone()
 	newTable.ID = state.alloc.AllocTableID()
-	newTable.Name = "tl" + uuid.NewV4().String()[:8]
+	newTable.Name = "tl" + uuid.New().String()[:8]
 	for _, c := range newTable.Columns {
 		c.ID = state.alloc.AllocColumnID()
 	}

@@ -10,15 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twinj/uuid"
-
 	"github.com/cznic/mathutil"
+	"github.com/google/uuid"
 	"gonum.org/v1/gonum/stat/distuv"
 )
 
 func (s *State) GenNewTable() *Table {
 	id := s.alloc.AllocTableID()
-	tblName := "t" + uuid.NewV4().String()[:8]
+	tblName := "t" + uuid.New().String()[:8]
 	newTbl := &Table{ID: id, Name: tblName}
 	newTbl.Collate = Collations[CollationType(rand.Intn(int(CollationTypeMax)-1)+1)]
 	newTbl.ChildTables = []*Table{newTbl}
