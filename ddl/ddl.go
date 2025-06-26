@@ -526,7 +526,7 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		var err1 error
 		for {
 			go func() {
-				tk := time.Tick(time.Second)
+				tk := time.Tick(5 * time.Second)
 				select {
 				case <-ctx.Done():
 					return
