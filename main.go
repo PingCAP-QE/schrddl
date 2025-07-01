@@ -167,11 +167,11 @@ var schemaList = []string{
 }
 
 var IndexList = [][]string{
-	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
-	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
-	{"alter table sbtest1 add index idx_k(id, k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(id, c)"},
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id)", "alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id)", "alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(id, k)", "alter table sbtest1 add index idx_id(id)", "alter table sbtest1 add index idx_c(id, c)"},
 	{"alter table sbtest1 add index idx_k(c, id, k)", "alter table sbtest1 add index idx_id(c, id)"},
-	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id), alter table sbtest1 add index idx_c(c)"},
+	{"alter table sbtest1 add index idx_k(k)", "alter table sbtest1 add index idx_id(id)", "alter table sbtest1 add index idx_c(c)"},
 	{"alter table sbtest1 add index idx_k(id, c, k)", "alter table sbtest1 add index idx_id(id, c)"},
 }
 
