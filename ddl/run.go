@@ -139,88 +139,94 @@ var checkList = []string{
 	"PessimisticLockNotFound",
 }
 
+var dmlCheckLists = []string{
+	"slice bounds out of range",
+	"bad connection",
+	"try again later",
+	"invalid connection",
+	"Unsupported multi schema change",
+
+	// Sometimes, there might be duplicated entry error caused by concurrent dml.
+	// So we ignore here.
+	"Duplicate entry",
+
+	// Sometimes, a insert to a table might generate an error caused by exceeding maximum auto increment id,
+	// we ignore this error here.
+	"Failed to read auto-increment value from storage engine",
+
+	"doesn't exist",
+	"column is deleted",
+	"Can't find column",
+	"converting driver.Value type",
+	"column specified twice",
+	"Out of range value for column",
+	"Unknown column",
+	"column has index reference",
+	"Data too long for column",
+	"Data truncated",
+	"no rows in result set",
+	"Truncated incorrect",
+	"Data truncated for column",
+	"Incorrect", // eg: For Incorrect tinyint value, Incorrect data value...
+	"overflows", // eg: For constant 20030522161944 overflows tinyint
+	"Bad Number",
+	"invalid year",
+	"value is out of range in",
+	"Data Too Long",
+	"doesn't have a default value",
+	"specified twice",
+	"cannot convert datum from",
+	"sql_mode=only_full_group_by",
+	"cannot be null",
+	"Column count doesn't match value count",
+	"Percentage value",
+	"Index column",
+	"Illegal mix of collations",
+	"Cannot convert string",
+	"interface conversion",
+	"connection is already closed",
+	"should contain a UNION",
+	"have different column counts",
+	"followed by one or more recursive ones",
+	"Not unique table/alias",
+	"have a different number of columns",
+	"Split table region lower value count",
+	"Out Of Memory",
+	"invalid syntax",
+	"newer than query schema version",
+	"PD server timeout",
+	"Information schema is out of date",
+	"Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query",
+
+	// JSON related errors
+	"cannot be pushed down",
+}
+
 func dmlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
+
 	errStr := err.Error()
 	for _, check := range checkList {
 		if strings.Contains(errStr, check) {
 			return true
 		}
 	}
-	if strings.Contains(errStr, "slice bounds out of range") {
-		return true
+
+	for _, check := range dmlCheckLists {
+		if strings.Contains(errStr, check) {
+			return true
+		}
 	}
-	if strings.Contains(errStr, "bad connection") {
-		return true
+
+	if !RCIsolation {
+		if strings.Contains(errStr, "Information schema is changed") ||
+			strings.Contains(errStr, "public column") {
+			return true
+		}
 	}
-	if strings.Contains(errStr, "Information schema is changed") && !RCIsolation {
-		return true
-	}
-	if strings.Contains(errStr, "try again later") {
-		return true
-	}
-	// Sometimes, there might be duplicated entry error caused by concurrent.
-	// So we ignore here.
-	if strings.Contains(errStr, "Duplicate entry") {
-		return true
-	}
-	// Sometimes, a insert to a table might generate an error caused by exceeding maximum auto increment id,
-	// we ignore this error here.
-	if strings.Contains(errStr, "Failed to read auto-increment value from storage engine") {
-		return true
-	}
-	if strings.Contains(errStr, "invalid connection") {
-		return true
-	}
-	if strings.Contains(errStr, "doesn't exist") ||
-		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
-		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
-		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
-		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
-		strings.Contains(errStr, "Truncated incorrect") || strings.Contains(errStr, "Data truncated for column") ||
-		// eg: For Incorrect tinyint value, Incorrect data value...
-		strings.Contains(errStr, "Incorrect") ||
-		// eg: For constant 20030522161944 overflows tinyint
-		strings.Contains(errStr, "overflows") ||
-		strings.Contains(errStr, "Bad Number") ||
-		strings.Contains(errStr, "invalid year") ||
-		strings.Contains(errStr, "value is out of range in") ||
-		strings.Contains(errStr, "Data Too Long") ||
-		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr, "specified twice") ||
-		strings.Contains(errStr, "cannot convert datum from") ||
-		strings.Contains(errStr, "sql_mode=only_full_group_by") ||
-		strings.Contains(errStr, "cannot be null") ||
-		strings.Contains(errStr, "Column count doesn't match value count") ||
-		strings.Contains(errStr, "Percentage value") ||
-		strings.Contains(errStr, "Index column") ||
-		strings.Contains(errStr, "Illegal mix of collations") ||
-		strings.Contains(errStr, "Cannot convert string") ||
-		strings.Contains(errStr, "interface conversion") ||
-		strings.Contains(errStr, "connection is already closed") ||
-		strings.Contains(errStr, "should contain a UNION") ||
-		strings.Contains(errStr, "have different column counts") ||
-		strings.Contains(errStr, "followed by one or more recursive ones") ||
-		strings.Contains(errStr, "Not unique table/alias") ||
-		strings.Contains(errStr, "have a different number of columns") ||
-		strings.Contains(errStr, "Split table region lower value count") ||
-		strings.Contains(errStr, "Out Of Memory") ||
-		strings.Contains(errStr, "invalid syntax") ||
-		strings.Contains(errStr, "newer than query schema version") ||
-		strings.Contains(errStr, "PD server timeout") ||
-		strings.Contains(errStr, "Information schema is out of date") ||
-		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") {
-		return true
-	}
-	if strings.Contains(errStr, "Unsupported multi schema change") {
-		return true
-	}
-	if !RCIsolation && strings.Contains(errStr, "public column") {
-		return true
-	}
+
 	return false
 }
 
