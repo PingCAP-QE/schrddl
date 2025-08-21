@@ -105,16 +105,10 @@ func randNum(n int) []byte {
 	return b
 }
 
-func RandMD() (m int, d int) {
-	for m == 0 {
-		m = rand.Intn(MAXDECIMALM)
-	}
-	min := m
-	if min > MAXDECIMALN {
-		min = MAXDECIMALN
-	}
-	d = rand.Intn(min)
-	return
+func RandMD() (int, int) {
+	m := rand.Intn(MAXDECIMALM-1) + 1
+	d := rand.Intn(min(m, MAXDECIMALN))
+	return m, d
 }
 
 // RandMDN returns a filedTypeM and filedTypeD randomly which are not smaller

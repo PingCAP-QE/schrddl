@@ -202,6 +202,19 @@ func (table *ddlTestTable) predicateAll(col *ddlTestColumn) bool {
 	return true
 }
 
+// findColumn returns the index of the column in the table's columns list.
+// If the column is not found, it returns -1.
+func (table *ddlTestTable) findColumn(target *ddlTestColumn) int {
+	for i := 0; i < table.columns.Size(); i++ {
+		col := getColumnFromArrayList(table.columns, i)
+		if col.name == target.name {
+			return i
+		}
+	}
+
+	return -1
+}
+
 func (table *ddlTestTable) chooseIndexColumns(ctx any, strategy ddlTestIndexStrategy) []*ddlTestColumn {
 	numTableColumns := table.columns.Size()
 	chosen := make([]int, 0, 1)
@@ -265,19 +278,6 @@ func (table *ddlTestTable) pickupRandomColumn() (int, *ddlTestColumn) {
 	}
 	index := rand.Intn(len(columns))
 	return index, columns[index]
-}
-
-// isColumnDeleted checks the col is deleted in this table
-// col.isDeleted() will be true before when dropColumnJob(),
-// but the col is really deleted after remote TiDB successful execute drop column ddl, and then, the col will be deleted from table.columns.
-func (table *ddlTestTable) isColumnDeleted(col *ddlTestColumn) bool {
-	for i := 0; i < table.columns.Size(); i++ {
-		columnI := getColumnFromArrayList(table.columns, i)
-		if col.name == columnI.name {
-			return false
-		}
-	}
-	return true
 }
 
 // newRandAutoID returns a feasible new random auto_increment id according to
@@ -372,28 +372,27 @@ func (ddlt *ddlTestColumnDescriptor) buildConditionSQL() string {
 
 type ddlTestColumn struct {
 	k         int
-	subK      int
 	fieldType string
 
 	deleted int32
 	renamed int32
 	name    string
 
-	filedTypeM      int //such as:  VARCHAR(10) ,    filedTypeM = 10
-	filedTypeD      int //such as:  DECIMAL(10,5) ,  filedTypeD = 5
-	filedPrecision  int
+	flen            int // flen in types.FieldType
+	decimal         int // decimal in types.FieldType
 	defaultValue    any
 	isPrimaryKey    bool
 	rows            *arraylist.List
 	indexReferences int
 
 	// Belows are for JSON columns
-	dependenciedCols []*ddlTestColumn
-	dependency       *ddlTestColumn
-	jsonValues       map[string]any
-	jsonPaths        string
+	dependents []*ddlTestColumn
+	dependency *ddlTestColumn
+	jsonValues map[string]any
+	jsonPaths  string
 
-	setValue []string //for enum , set data type
+	// Belows are for enum
+	setValue []string
 }
 
 func (col *ddlTestColumn) nameForIndex() string {
@@ -402,11 +401,11 @@ func (col *ddlTestColumn) nameForIndex() string {
 	}
 
 	// JSON columns can't be indexed directly, so it must be MV index.
-	if len(col.dependenciedCols) == 0 {
+	if len(col.dependents) == 0 {
 		return fmt.Sprintf("CAST(`%s` AS SIGNED ARRAY)", col.name)
 	}
-	idx := rand.Intn(len(col.dependenciedCols))
-	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependenciedCols[idx].jsonPaths)
+	idx := rand.Intn(len(col.dependents))
+	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependents[idx].jsonPaths)
 }
 
 func (col *ddlTestColumn) isDeleted() bool {
@@ -525,21 +524,21 @@ func getDDLTestColumn(n int) *ddlTestColumn {
 	switch n {
 	case KindChar, KindVarChar, KindBLOB, KindTEXT, KindBit:
 		maxLen := GetMaxLenByKind(n)
-		column.filedTypeM = int(rand.Intn(maxLen))
-		for column.filedTypeM == 0 && column.k == KindBit {
-			column.filedTypeM = int(rand.Intn(maxLen))
+		column.flen = int(rand.Intn(maxLen))
+		for column.flen == 0 && column.k == KindBit {
+			column.flen = int(rand.Intn(maxLen))
 		}
 
-		for column.filedTypeM < 3 && column.k != KindBit { // len('""') = 2
-			column.filedTypeM = int(rand.Intn(maxLen))
+		for column.flen < 3 && column.k != KindBit { // len('""') = 2
+			column.flen = int(rand.Intn(maxLen))
 		}
-		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 	case KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
-		column.filedTypeM = GetMaxLenByKind(n)
-		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+		column.flen = GetMaxLenByKind(n)
+		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 	case KindDECIMAL:
-		column.filedTypeM, column.filedTypeD = RandMD()
-		column.fieldType = fmt.Sprintf("%s(%d,%d)", ALLFieldType[n], column.filedTypeM, column.filedTypeD)
+		column.flen, column.decimal = RandMD()
+		column.fieldType = fmt.Sprintf("%s(%d,%d)", ALLFieldType[n], column.flen, column.decimal)
 	case KindEnum, KindSet:
 		maxLen := GetMaxLenByKind(n)
 		l := maxLen + 1
@@ -555,11 +554,11 @@ func getDDLTestColumn(n int) *ddlTestColumn {
 		}
 		column.fieldType += ")"
 	case KindVector:
-		column.filedTypeM = rand.Intn(8)
-		if rand.Intn(2) == 1 {
-			column.fieldType = fmt.Sprintf("%s", ALLFieldType[n])
+		column.flen = rand.Intn(8)
+		if percentChance(50) {
+			column.fieldType = ALLFieldType[n]
 		} else {
-			column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+			column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 		}
 	}
 
@@ -609,13 +608,13 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 		// We ignore here.
 	case KindChar, KindVarChar:
 		modifiedColumn.k = rand.Intn(KindVarChar-col.k+1) + col.k
-		modifiedColumn.filedTypeM = rand.Intn(GetMaxLenByKind(modifiedColumn.k)-col.filedTypeM) + col.filedTypeM
-		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[modifiedColumn.k], modifiedColumn.filedTypeM)
+		modifiedColumn.flen = rand.Intn(GetMaxLenByKind(modifiedColumn.k)-col.flen) + col.flen
+		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[modifiedColumn.k], modifiedColumn.flen)
 	case KindTEXT, KindBLOB:
 		// Only types on `TestFieldType` are considered.
 		// See ./datatype.go for more detail.
-		modifiedColumn.filedTypeM = rand.Intn(GetMaxLenByKind(col.k)-col.filedTypeM) + col.filedTypeM
-		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[col.k], modifiedColumn.filedTypeM)
+		modifiedColumn.flen = rand.Intn(GetMaxLenByKind(col.k)-col.flen) + col.flen
+		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[col.k], modifiedColumn.flen)
 	}
 	if modifiedColumn.canHaveDefaultValue() {
 		modifiedColumn.defaultValue = modifiedColumn.randValue()
@@ -669,7 +668,7 @@ func getRandJsonCol() []*ddlTestColumn {
 		col.dependency = baseColumn
 
 		baseColumn.jsonValues[col.jsonPaths] = col.randValue()
-		baseColumn.dependenciedCols = append(baseColumn.dependenciedCols, col)
+		baseColumn.dependents = append(baseColumn.dependents, col)
 		addedCols = append(addedCols, col)
 	}
 
@@ -686,7 +685,7 @@ func (col *ddlTestColumn) notGenerated() bool {
 }
 
 func (col *ddlTestColumn) hasGenerateCol() bool {
-	return len(col.dependenciedCols) > 0
+	return len(col.dependents) > 0
 }
 
 // randValue return a rand value of the column
@@ -706,11 +705,11 @@ func (col *ddlTestColumn) randValue() any {
 		}
 		return -1 - rand.Int63()
 	case KindBit:
-		if col.filedTypeM >= 64 {
+		if col.flen >= 64 {
 			return fmt.Sprintf("%b", rand.Uint64())
 		} else {
-			m := col.filedTypeM
-			if col.filedTypeM > 7 { // it is a bug
+			m := col.flen
+			if col.flen > 7 { // it is a bug
 				m = m - 1
 			}
 			n := (int64)((1 << (uint)(m)) - 1)
@@ -721,18 +720,18 @@ func (col *ddlTestColumn) randValue() any {
 	case KindDouble:
 		return rand.Float64() + 1
 	case KindDECIMAL:
-		return RandDecimal(col.filedTypeM, col.filedTypeD)
+		return RandDecimal(col.flen, col.decimal)
 	case KindChar, KindVarChar, KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
-		if col.filedTypeM == 0 {
+		if col.flen == 0 {
 			return ""
 		} else {
 			if col.isGenerated() {
-				if col.filedTypeM <= 2 {
+				if col.flen <= 2 {
 					return ""
 				}
-				return RandSeq(rand.Intn(col.filedTypeM - 2))
+				return RandSeq(rand.Intn(col.flen - 2))
 			}
-			return RandSeq(rand.Intn(col.filedTypeM))
+			return RandSeq(rand.Intn(col.flen))
 		}
 	case KindBool:
 		return rand.Intn(2)
@@ -793,8 +792,8 @@ func (col *ddlTestColumn) randValue() any {
 		return s
 	case KindVector:
 		cnt := rand.Intn(8) + 1
-		if col.filedTypeM != 0 {
-			cnt = col.filedTypeM
+		if col.flen != 0 {
+			cnt = col.flen
 		}
 		str := "["
 		for i := 0; i < cnt; i++ {
@@ -824,7 +823,7 @@ func randTime(minTime time.Time, gap int64) time.Time {
 }
 
 func (col *ddlTestColumn) randJsonValue() string {
-	for _, dCol := range col.dependenciedCols {
+	for _, dCol := range col.dependents {
 		col.jsonValues[dCol.jsonPaths] = dCol.randValue()
 	}
 	jsonRow, _ := json.Marshal(col.jsonValues)
@@ -854,7 +853,7 @@ func (col *ddlTestColumn) canBePrimary() bool {
 func (col *ddlTestColumn) canBeIndex() bool {
 	switch col.k {
 	case KindChar, KindVarChar, KindVector:
-		if col.filedTypeM == 0 {
+		if col.flen == 0 {
 			return false
 		} else {
 			return true
@@ -907,6 +906,15 @@ func (index *ddlTestIndex) Build() {
 	index.generateDefinition()
 }
 
+func (index *ddlTestIndex) Contains(col *ddlTestColumn) bool {
+	for _, c := range index.columns {
+		if c.name == col.name {
+			return true
+		}
+	}
+	return false
+}
+
 func (index *ddlTestIndex) generateSignature() {
 	if len(index.columns) == 0 {
 		index.signature = ""
@@ -948,17 +956,17 @@ func (col *ddlTestColumn) normalizeDataType() string {
 	case KindBigInt:
 		return "bigint"
 	case KindBit:
-		return fmt.Sprintf("bit(%d)", col.filedTypeM)
+		return fmt.Sprintf("bit(%d)", col.flen)
 	case KindDECIMAL:
-		return fmt.Sprintf("decimal(%d,%d)", col.filedTypeM, col.filedTypeD)
+		return fmt.Sprintf("decimal(%d,%d)", col.flen, col.decimal)
 	case KindFloat:
 		return "float"
 	case KindDouble:
 		return "double"
 	case KindChar:
-		return fmt.Sprintf("char(%d)", col.filedTypeM)
+		return fmt.Sprintf("char(%d)", col.flen)
 	case KindVarChar:
-		return fmt.Sprintf("varchar(%d)", col.filedTypeM)
+		return fmt.Sprintf("varchar(%d)", col.flen)
 	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB:
 		return "xxx"
 	case KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
@@ -1116,8 +1124,8 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
-			Arg1:       col.filedTypeM,
-			Arg2:       col.filedTypeD,
+			Arg1:       col.flen,
+			Arg2:       col.decimal,
 			Args:       col.setValue,
 			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
 			IsNotNull:  false,

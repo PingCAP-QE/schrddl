@@ -1267,10 +1267,11 @@ func (c *testCase) addIndexJob(task *ddlJobTask) error {
 	}
 
 	for _, column := range jobArg.index.columns {
-		if tblInfo.isColumnDeleted(column) {
-			return fmt.Errorf("local Execute add index %s on column %s error , column is deleted", jobArg.index.name, column.name)
+		if tblInfo.findColumn(column) == -1 {
+			return fmt.Errorf("execute add index %s on column %s error, column is deleted", jobArg.index.name, column.name)
 		}
 	}
+
 	tblInfo.indexes = append(tblInfo.indexes, jobArg.index)
 	for _, column := range jobArg.index.columns {
 		column.indexReferences++
@@ -1522,14 +1523,7 @@ func (c *testCase) addColumnJob(task *ddlJobTask) error {
 	case ddlTestAddDropColumnStrategyAtEnd:
 		table.columns.Add(newColumn)
 	case ddlTestAddDropColumnStrategyAtRandom:
-		insertAfterPosition := -1
-		for i := 0; i < table.columns.Size(); i++ {
-			column := getColumnFromArrayList(table.columns, i)
-			if jobArg.insertAfterColumn.name == column.name {
-				insertAfterPosition = i
-				break
-			}
-		}
+		insertAfterPosition := table.findColumn(jobArg.insertAfterColumn)
 		if insertAfterPosition == -1 {
 			return fmt.Errorf("table %s ,insert column %s after column, column %s is not exists ", table.name, newColumn.name, jobArg.insertAfterColumn.name)
 		}
@@ -1725,26 +1719,20 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 		return fmt.Errorf("table %s is not exists", table.name)
 	}
 	arg := (*ddlColumnJobArg)(task.arg)
-	if c.isColumnDeleted(arg.origColumn, table) {
+
+	origColumnIndex := table.findColumn(arg.origColumn)
+	if origColumnIndex == -1 {
 		return fmt.Errorf("column %s on table %s is not exists", arg.origColumn.name, table.name)
 	}
 
-	origColumnIndex := 0
-	for i := 0; i < table.columns.Size(); i++ {
-		col := getColumnFromArrayList(table.columns, i)
-		if col.name == arg.origColumn.name {
-			origColumnIndex = i
-			break
-		}
-	}
 	arg.origColumn.k = arg.column.k
 	if arg.column.name != "" {
 		// Rename
 		arg.origColumn.name = arg.column.name
 	}
 	arg.origColumn.fieldType = arg.column.fieldType
-	arg.origColumn.filedTypeM = arg.column.filedTypeM
-	arg.origColumn.filedTypeD = arg.column.filedTypeD
+	arg.origColumn.flen = arg.column.flen
+	arg.origColumn.decimal = arg.column.decimal
 	if arg.updateDefault {
 		arg.origColumn.defaultValue = arg.column.defaultValue
 	}
@@ -1854,7 +1842,7 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 	dropIndexCnt := 0
 	tempIdx := table.indexes[:0]
 	for _, idx := range table.indexes {
-		if len(idx.columns) == 1 && idx.columns[0].name == columnToDrop.name {
+		if idx.Contains(columnToDrop) {
 			dropIndexCnt++
 		} else {
 			tempIdx = append(tempIdx, idx)
@@ -1865,29 +1853,22 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 		return fmt.Errorf("local Execute drop column %s on table %s error , column has index reference %d, drop index cnt %d", jobArg.column.name, table.name, columnToDrop.indexReferences, dropIndexCnt)
 	}
 
-	dropColumnPosition := -1
-	for i := 0; i < table.columns.Size(); i++ {
-		column := getColumnFromArrayList(table.columns, i)
-		if columnToDrop.name == column.name {
-			dropColumnPosition = i
-			break
-		}
-	}
+	dropColumnPosition := table.findColumn(columnToDrop)
 	if dropColumnPosition == -1 {
-		return fmt.Errorf("table %s ,drop column , column %s is not exists ", table.name, columnToDrop.name)
+		return fmt.Errorf("table %s drop column %s, but it's not exists", table.name, columnToDrop.name)
 	}
 	// update table definitions
 	table.columns.Remove(dropColumnPosition)
-	// if the drop column is a generated column , we should update the dependency column
+	// if the drop column is a generated column, we should update the dependency column
 	if columnToDrop.isGenerated() {
 		col := columnToDrop.dependency
 		i := 0
-		for i = range col.dependenciedCols {
-			if col.dependenciedCols[i].name == columnToDrop.name {
+		for i = range col.dependents {
+			if col.dependents[i].name == columnToDrop.name {
 				break
 			}
 		}
-		col.dependenciedCols = append(col.dependenciedCols[:i], col.dependenciedCols[i+1:]...)
+		col.dependents = append(col.dependents[:i], col.dependents[i+1:]...)
 	}
 	val := c.tableMap[table.name].Values
 	c.tableMap[table.name] = table.mapTableToRandTestTable()
