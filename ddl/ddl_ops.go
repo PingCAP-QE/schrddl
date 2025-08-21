@@ -1204,8 +1204,8 @@ const (
 	ddlTestIndexStrategySingleColumnAtBeginning
 	ddlTestIndexStrategySingleColumnAtEnd
 	ddlTestIndexStrategySingleColumnRandom
-	ddlTestIndexStrategyMultipleColumnRandom
 	ddlTestIndexStrategyMultiValued
+	ddlTestIndexStrategyMultipleColumnRandom
 	ddlTestIndexStrategyEnd
 )
 
@@ -1230,100 +1230,28 @@ func (c *testCase) prepareAddIndex(ctx any, taskCh chan *ddlJobTask) error {
 		return nil
 	}
 
-	var jsonCol *ddlTestColumn
-	for i := range table.columns.Size() {
-		col := getColumnFromArrayList(table.columns, i)
-		if col.k == KindJSON {
-			jsonCol = col
-			break
-		}
-	}
+	strategy := rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
 
-	strategy := rand.Intn(ddlTestIndexStrategyMultiValued) + ddlTestIndexStrategySingleColumnAtBeginning
-	if jsonCol == nil {
-		strategy = rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
-	}
-
-	// build index definition
-	index := ddlTestIndex{
-		name:      uuid.New().String()[:8],
-		signature: "",
-		columns:   make([]*ddlTestColumn, 0),
-		uniques:   rand.Intn(3) == 0,
-	}
-
-	switch strategy {
-	case ddlTestIndexStrategySingleColumnAtBeginning:
-		column0 := getColumnFromArrayList(table.columns, 0)
-		if !column0.canBeIndex() {
-			return nil
-		}
-		index.columns = append(index.columns, column0)
-	case ddlTestIndexStrategySingleColumnAtEnd:
-		lastColumn := getColumnFromArrayList(table.columns, table.columns.Size()-1)
-		if !lastColumn.canBeIndex() {
-			return nil
-		}
-		index.columns = append(index.columns, lastColumn)
-	case ddlTestIndexStrategySingleColumnRandom:
-		col := getColumnFromArrayList(table.columns, rand.Intn(table.columns.Size()))
-		if !col.canBeIndex() {
-			return nil
-		}
-		index.columns = append(index.columns, col)
-	case ddlTestIndexStrategyMultipleColumnRandom:
-		index.columns = table.chooseRandomColumns()
-	case ddlTestIndexStrategyMultiValued:
-		index.columns = table.chooseRandomColumns()
-		index.columns = append(index.columns, jsonCol)
-	}
-
-	needGlobal := table.partitionColumn != nil
-	isVector := true
-
-	for i, column := range index.columns {
-		if !checkAddDropColumn(ctx, column) {
-			return nil
-		}
-		if column.k != KindVector || i > 0 {
-			isVector = false
-		}
+	index := &ddlTestIndex{
+		name:    uuid.New().String()[:8],
+		columns: table.chooseIndexColumns(ctx, strategy),
+		uniques: percentChance(33),
+		global:  table.partitionColumn != nil,
 	}
 
 	if len(index.columns) == 0 {
 		return nil
 	}
-	index.GenerateIndexSignture()
 
-	// check whether index duplicates
-	for _, idx := range table.indexes {
-		if idx.signature == index.signature {
-			return nil
-		}
-	}
+	index.Build()
 
-	uniqueString := ""
-	if index.uniques {
-		uniqueString = "unique"
-	}
-	// build SQL
-	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (%s)", table.name, uniqueString, index.name, index.signature)
-	if needGlobal {
-		sql += " GLOBAL"
-	}
-
-	if isVector {
-		sql = fmt.Sprintf("ALTER TABLE `%s` ADD VECTOR INDEX `%s` ((VEC_COSINE_DISTANCE(`%s`))) USING HNSW", table.name, index.name, index.columns[0].name)
-	}
-
-	arg := &ddlIndexJobArg{index: &index}
-	task := &ddlJobTask{
+	taskCh <- &ddlJobTask{
 		k:       ddlAddIndex,
-		sql:     sql,
+		sql:     fmt.Sprintf("ALTER TABLE `%s` ADD %s ", table.name, index.definition),
 		tblInfo: table,
-		arg:     ddlJobArg(arg),
+		arg:     ddlJobArg(&ddlIndexJobArg{index}),
 	}
-	taskCh <- task
+
 	return nil
 }
 
@@ -1839,7 +1767,7 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 		table.columns.Insert(insertPosition+1, arg.origColumn)
 	}
 	for _, idx := range table.indexes {
-		idx.GenerateIndexSignture()
+		idx.generateSignature()
 	}
 	val := c.tableMap[table.name].Values
 	c.tableMap[table.name] = table.mapTableToRandTestTable()

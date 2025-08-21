@@ -155,6 +155,16 @@ func RandDataType() int {
 	return TestFieldType[i]
 }
 
+// RandDataTypeForJSONDeps returns a random data type that can be used in JSON dependencies.
+// Currently, only integer is supported for JSON dependencies.
+func RandDataTypeForJSONDeps() int {
+	var available = []int{
+		KindBigInt,
+	}
+	i := rand.Intn(len(available))
+	return available[i]
+}
+
 const (
 	BitMaxLen        = 64
 	CharMaxLen       = 256

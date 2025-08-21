@@ -202,17 +202,41 @@ func (table *ddlTestTable) predicateAll(col *ddlTestColumn) bool {
 	return true
 }
 
-func (table *ddlTestTable) chooseRandomColumns() []*ddlTestColumn {
-	numberOfColumns := min(rand.Intn(table.columns.Size())+1, 10)
-	columns := make([]*ddlTestColumn, 0, numberOfColumns)
+func (table *ddlTestTable) chooseIndexColumns(ctx any, strategy ddlTestIndexStrategy) []*ddlTestColumn {
+	numTableColumns := table.columns.Size()
+	chosen := make([]int, 0, 1)
+	columns := make([]*ddlTestColumn, 0, len(chosen))
 
-	perm := rand.Perm(table.columns.Size())[:numberOfColumns]
-	for _, idx := range perm {
-		column := getColumnFromArrayList(table.columns, idx)
-		if column.k == KindVector {
-			continue
+	if strategy == ddlTestIndexStrategyMultiValued {
+		// MV Index need only one JSON column, if there is no JSON column,
+		// fall back to random strategy.
+		for i := range table.columns.Size() {
+			col := getColumnFromArrayList(table.columns, i)
+			if col.k == KindJSON {
+				columns = append(columns, col)
+				break
+			}
 		}
-		if column.canBeIndex() {
+	}
+
+	supportVector := true
+
+	switch strategy {
+	case ddlTestIndexStrategySingleColumnAtBeginning:
+		chosen = append(chosen, 0)
+	case ddlTestIndexStrategySingleColumnAtEnd:
+		chosen = append(chosen, numTableColumns-1)
+	case ddlTestIndexStrategySingleColumnRandom:
+		chosen = append(chosen, rand.Intn(numTableColumns))
+	case ddlTestIndexStrategyMultipleColumnRandom, ddlTestIndexStrategyMultiValued:
+		supportVector = false
+		numberOfColumns := min(rand.Intn(numTableColumns)+1, 10)
+		chosen = rand.Perm(table.columns.Size())[:numberOfColumns]
+	}
+
+	for _, idx := range chosen {
+		column := getColumnFromArrayList(table.columns, idx)
+		if (supportVector || column.k != KindVector) && column.canBeIndex() && checkAddDropColumn(ctx, column) {
 			columns = append(columns, column)
 		}
 	}
@@ -349,10 +373,11 @@ func (ddlt *ddlTestColumnDescriptor) buildConditionSQL() string {
 type ddlTestColumn struct {
 	k         int
 	subK      int
-	deleted   int32
-	renamed   int32
-	name      string
 	fieldType string
+
+	deleted int32
+	renamed int32
+	name    string
 
 	filedTypeM      int //such as:  VARCHAR(10) ,    filedTypeM = 10
 	filedTypeD      int //such as:  DECIMAL(10,5) ,  filedTypeD = 5
@@ -365,8 +390,8 @@ type ddlTestColumn struct {
 	// Belows are for JSON columns
 	dependenciedCols []*ddlTestColumn
 	dependency       *ddlTestColumn
-	mValue           map[string]any
-	nameOfGen        string
+	jsonValues       map[string]any
+	jsonPaths        string
 
 	setValue []string //for enum , set data type
 }
@@ -375,12 +400,13 @@ func (col *ddlTestColumn) nameForIndex() string {
 	if col.k != KindJSON {
 		return fmt.Sprintf("`%s`", col.name)
 	}
+
+	// JSON columns can't be indexed directly, so it must be MV index.
 	if len(col.dependenciedCols) == 0 {
 		return fmt.Sprintf("CAST(`%s` AS SIGNED ARRAY)", col.name)
 	}
-
 	idx := rand.Intn(len(col.dependenciedCols))
-	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependenciedCols[idx].nameOfGen)
+	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependenciedCols[idx].jsonPaths)
 }
 
 func (col *ddlTestColumn) isDeleted() bool {
@@ -425,7 +451,7 @@ func (col *ddlTestColumn) getDefinition() string {
 	}
 
 	if col.isGenerated() {
-		return fmt.Sprintf("%s AS (JSON_EXTRACT(`%s`,'$.%s'))", col.fieldType, col.dependency.name, col.nameOfGen)
+		return fmt.Sprintf("%s AS (JSON_EXTRACT(`%s`,'$.%s'))", col.fieldType, col.dependency.name, col.jsonPaths)
 	}
 
 	if col.canHaveDefaultValue() {
@@ -460,10 +486,10 @@ func (col *ddlTestColumn) isEqual(r int, str string) bool {
 }
 
 func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) any {
-	if col.mValue == nil {
+	if col.jsonValues == nil {
 		return nil
 	}
-	v := col.mValue[genCol.nameOfGen]
+	v := col.jsonValues[genCol.jsonPaths]
 	switch genCol.k {
 	case KindChar, KindVarChar, KindTEXT, KindBLOB:
 		v = fmt.Sprintf("\"%v\"", v)
@@ -491,8 +517,8 @@ func (col *ddlTestColumn) canBeModified() bool {
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      "col" + uuid.New().String()[:4],
 		fieldType: ALLFieldType[n],
+		name:      "col" + uuid.New().String()[:4],
 		rows:      arraylist.New(),
 		deleted:   0,
 	}
@@ -608,17 +634,6 @@ func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestCol
 	return newColumn
 }
 
-func getRandDDLTestColumnForJson() *ddlTestColumn {
-	var n int
-	for {
-		n = RandDataType()
-		if n != KindJSON && n != KindBit && n != KindSet && n != KindEnum {
-			break
-		}
-	}
-	return getDDLTestColumn(n)
-}
-
 func getRandDDLTestColumns() []*ddlTestColumn {
 	n := RandDataType()
 	cols := make([]*ddlTestColumn, 0)
@@ -638,38 +653,28 @@ func getRandDDLTestColumns() []*ddlTestColumn {
 const JsonFieldNum = 5
 
 func getRandJsonCol() []*ddlTestColumn {
-	// 	TODO(joechenrh): currently sqlgenerator doesn't support generating JSON column with dependencies,
-	// maybe we can support it later.
-	// fieldNum := rand.Intn(JsonFieldNum) + 1
-	fieldNum := 0
+	fieldNum := rand.Intn(JsonFieldNum) + 1
 
-	cols := make([]*ddlTestColumn, 0, fieldNum+1)
+	// TODO(joechenrh): currently sqlgenerator doesn't support generating
+	// JSON column with dependencies like "{'field1': [], 'field2': []}".
+	// Maybe we can support it later.
+	fieldNum = 0
 
-	column := &ddlTestColumn{
-		k:         KindJSON,
-		subK:      KindJSON,
-		name:      uuid.New().String()[:8],
-		fieldType: ALLFieldType[KindJSON],
-		rows:      arraylist.New(),
-		deleted:   0,
+	addedCols := make([]*ddlTestColumn, 0, fieldNum+1)
 
-		dependenciedCols: make([]*ddlTestColumn, 0, fieldNum),
-	}
-
-	m := make(map[string]any, 0)
+	baseColumn := getDDLTestColumn(KindJSON)
 	for i := 0; i < fieldNum; i++ {
-		col := getRandDDLTestColumnForJson()
-		col.nameOfGen = RandFieldName(m)
-		m[col.nameOfGen] = col.randValue()
-		col.dependency = column
+		col := getDDLTestColumn(RandDataTypeForJSONDeps())
+		col.jsonPaths = fmt.Sprintf("field_%d", i)
+		col.dependency = baseColumn
 
-		column.dependenciedCols = append(column.dependenciedCols, col)
-		cols = append(cols, col)
+		baseColumn.jsonValues[col.jsonPaths] = col.randValue()
+		baseColumn.dependenciedCols = append(baseColumn.dependenciedCols, col)
+		addedCols = append(addedCols, col)
 	}
-	column.mValue = m
 
-	cols = append(cols, column)
-	return cols
+	addedCols = append(addedCols, baseColumn)
+	return addedCols
 }
 
 func (col *ddlTestColumn) isGenerated() bool {
@@ -820,9 +825,9 @@ func randTime(minTime time.Time, gap int64) time.Time {
 
 func (col *ddlTestColumn) randJsonValue() string {
 	for _, dCol := range col.dependenciedCols {
-		col.mValue[dCol.nameOfGen] = dCol.randValue()
+		col.jsonValues[dCol.jsonPaths] = dCol.randValue()
 	}
-	jsonRow, _ := json.Marshal(col.mValue)
+	jsonRow, _ := json.Marshal(col.jsonValues)
 	return string(jsonRow)
 }
 
@@ -885,13 +890,24 @@ func (col *ddlTestColumn) canHaveDefaultValue() bool {
 }
 
 type ddlTestIndex struct {
-	name      string
+	name string
+	// signature is a string representation of the index columns, used to identify the index.
 	signature string
-	columns   []*ddlTestColumn
-	uniques   bool
+
+	// definition is the index definition string, such as "KEY `idx_name` (`col1`, `col2`)"
+	definition string
+
+	columns []*ddlTestColumn
+	uniques bool
+	global  bool
 }
 
-func (index *ddlTestIndex) GenerateIndexSignture() {
+func (index *ddlTestIndex) Build() {
+	index.generateSignature()
+	index.generateDefinition()
+}
+
+func (index *ddlTestIndex) generateSignature() {
 	if len(index.columns) == 0 {
 		index.signature = ""
 		return
@@ -902,6 +918,21 @@ func (index *ddlTestIndex) GenerateIndexSignture() {
 		parts = append(parts, col.nameForIndex())
 	}
 	index.signature = strings.Join(parts, ",")
+}
+
+func (index *ddlTestIndex) generateDefinition() {
+	if len(index.columns) == 1 && index.columns[0].k == KindVector {
+		index.definition = fmt.Sprintf("VECTOR INDEX `%s` ((VEC_COSINE_DISTANCE(`%s`))) USING HNSW", index.name, index.columns[0].name)
+	} else {
+		uniqueString := ""
+		if index.uniques {
+			uniqueString = "UNIQUE"
+		}
+		index.definition = fmt.Sprintf("%s INDEX `%s` (%s)", uniqueString, index.name, index.signature)
+		if index.global {
+			index.definition += " GLOBAL"
+		}
+	}
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {

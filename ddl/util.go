@@ -22,6 +22,10 @@ import (
 	"github.com/ngaut/log"
 )
 
+func percentChance(n int) bool {
+	return rand.Intn(100) < n
+}
+
 func PadLeft(str, pad string, length int) string {
 	if len(str) >= length {
 		return str
