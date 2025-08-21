@@ -236,7 +236,7 @@ func (c *testCase) generateInsert() error {
 	return nil
 }
 
-func (c *testCase) prepareInsert(cfg interface{}, taskCh chan *dmlJobTask) error {
+func (c *testCase) prepareInsert(cfg any, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	table := c.pickupRandomTable()
@@ -266,7 +266,7 @@ func (c *testCase) generateUpdate() error {
 	return nil
 }
 
-func (c *testCase) prepareUpdate(cfg interface{}, taskCh chan *dmlJobTask) error {
+func (c *testCase) prepareUpdate(cfg any, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 
@@ -301,7 +301,7 @@ func (c *testCase) generateDelete() error {
 	return nil
 }
 
-func (c *testCase) prepareDelete(cfg interface{}, taskCh chan *dmlJobTask) error {
+func (c *testCase) prepareDelete(cfg any, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 
@@ -336,7 +336,7 @@ func (c *testCase) generateSelect() error {
 	return nil
 }
 
-func (c *testCase) prepareSelect(cfg interface{}, taskCh chan *dmlJobTask) error {
+func (c *testCase) prepareSelect(cfg any, taskCh chan *dmlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 

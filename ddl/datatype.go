@@ -130,7 +130,7 @@ var TestFieldType = []int{
 	KindTIMESTAMP,
 	KindYEAR,
 
-	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
+	KindJSON,
 	KindEnum,
 	KindSet,
 

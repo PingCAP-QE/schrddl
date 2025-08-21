@@ -340,7 +340,7 @@ func (c *testCase) checkSchema() error {
 
 func (c *testCase) checkTableColumns(table *ddlTestTable) error {
 	var columnCnt int
-	var defaultValueRaw interface{}
+	var defaultValueRaw any
 	//var defaultValue string
 	var dateType string
 
@@ -487,7 +487,7 @@ func getLastDDLInfo(conn *sql.Conn) (uint64, string, error) {
 	return seqNum, query, row.Close()
 }
 
-func (c *testCase) getTable(t interface{}) *ddlTestTable {
+func (c *testCase) getTable(t any) *ddlTestTable {
 	if t == nil {
 		return c.pickupRandomTable()
 	} else {
@@ -687,7 +687,7 @@ func (c *testCase) generateCreateSchema(repeat int) error {
 
 var dbSchemaSyntax = [...]string{"DATABASE", "SCHEMA"}
 
-func (c *testCase) prepareCreateSchema(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareCreateSchema(_ any, taskCh chan *ddlJobTask) error {
 	charset, collate := c.pickupRandomCharsetAndCollate()
 	schema := ddlTestSchema{
 		name:    uuid.New().String()[:8],
@@ -718,7 +718,7 @@ func (c *testCase) generateDropSchema(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropSchema(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareDropSchema(_ any, taskCh chan *ddlJobTask) error {
 	schema := c.pickupRandomSchema()
 	if schema == nil {
 		return nil
@@ -749,7 +749,7 @@ func (c *testCase) generateAddTable(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareAddTable(cfg any, taskCh chan *ddlJobTask) error {
 	columnCount := rand.Intn(5) + 2
 	tableColumns := arraylist.New()
 	var partitionColumn *ddlTestColumn
@@ -856,7 +856,7 @@ func (c *testCase) generateRenameTable(repeat int) error {
 
 var toAsSyntax = [...]string{"TO", "AS"}
 
-func (c *testCase) prepareRenameTable(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareRenameTable(_ any, taskCh chan *ddlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	table := c.pickupRandomTable()
@@ -901,7 +901,7 @@ func (c *testCase) generateTruncateTable(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareTruncateTable(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareTruncateTable(_ any, taskCh chan *ddlJobTask) error {
 	tableToTruncate := c.pickupRandomTable()
 	if tableToTruncate == nil {
 		return nil
@@ -940,7 +940,7 @@ func (c *testCase) generateModifyTableComment(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyTableComment(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareModifyTableComment(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -980,7 +980,7 @@ func (c *testCase) generateModifyTableCharsetAndCollate(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyTableCharsetAndCollate(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareModifyTableCharsetAndCollate(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -1044,7 +1044,7 @@ func (c *testCase) generateShardRowID(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareShardRowID(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareShardRowID(_ any, taskCh chan *ddlJobTask) error {
 	// For table has auto_increment column, cannot set shard_row_id_bits to a non-zero value.
 	// Since current create table, add column, and modify column job wouldn't create
 	// auto_increment column, so ignore checking whether table has an auto_increment column
@@ -1084,7 +1084,7 @@ func (c *testCase) generateRebaseAutoID(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareRebaseAutoID(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareRebaseAutoID(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -1126,7 +1126,7 @@ func (c *testCase) generateDropTable(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropTable(cfg interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareDropTable(cfg any, taskCh chan *ddlJobTask) error {
 	c.tablesLock.Lock()
 	defer c.tablesLock.Unlock()
 	tableToDrop := c.pickupRandomTable()
@@ -1163,7 +1163,7 @@ func (c *testCase) generateCreateView(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareCreateView(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareCreateView(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -1205,6 +1205,7 @@ const (
 	ddlTestIndexStrategySingleColumnAtEnd
 	ddlTestIndexStrategySingleColumnRandom
 	ddlTestIndexStrategyMultipleColumnRandom
+	ddlTestIndexStrategyMultiValued
 	ddlTestIndexStrategyEnd
 )
 
@@ -1223,23 +1224,26 @@ func (c *testCase) generateAddIndex(repeat int) error {
 	return nil
 }
 
-func generateIndexSignture(index ddlTestIndex) string {
-	signature := ""
-	for i, col := range index.columns {
-		signature += col.name
-		if i != len(index.columns)-1 {
-			signature += ","
-		}
-	}
-	return signature
-}
-
-func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareAddIndex(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
 	}
-	strategy := rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
+
+	var jsonCol *ddlTestColumn
+	for i := range table.columns.Size() {
+		col := getColumnFromArrayList(table.columns, i)
+		if col.k == KindJSON {
+			jsonCol = col
+			break
+		}
+	}
+
+	strategy := rand.Intn(ddlTestIndexStrategyMultiValued) + ddlTestIndexStrategySingleColumnAtBeginning
+	if jsonCol == nil {
+		strategy = rand.Intn(ddlTestIndexStrategyMultipleColumnRandom) + ddlTestIndexStrategySingleColumnAtBeginning
+	}
+
 	// build index definition
 	index := ddlTestIndex{
 		name:      uuid.New().String()[:8],
@@ -1268,21 +1272,10 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		}
 		index.columns = append(index.columns, col)
 	case ddlTestIndexStrategyMultipleColumnRandom:
-		numberOfColumns := rand.Intn(table.columns.Size()) + 1
-		// Multiple columns of one index should no more than 16.
-		if numberOfColumns > 10 {
-			numberOfColumns = 10
-		}
-		perm := rand.Perm(table.columns.Size())[:numberOfColumns]
-		for _, idx := range perm {
-			column := getColumnFromArrayList(table.columns, idx)
-			if column.k == KindVector {
-				continue
-			}
-			if column.canBeIndex() {
-				index.columns = append(index.columns, column)
-			}
-		}
+		index.columns = table.chooseRandomColumns()
+	case ddlTestIndexStrategyMultiValued:
+		index.columns = table.chooseRandomColumns()
+		index.columns = append(index.columns, jsonCol)
 	}
 
 	needGlobal := table.partitionColumn != nil
@@ -1300,7 +1293,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 	if len(index.columns) == 0 {
 		return nil
 	}
-	index.signature = generateIndexSignture(index)
+	index.GenerateIndexSignture()
 
 	// check whether index duplicates
 	for _, idx := range table.indexes {
@@ -1314,15 +1307,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		uniqueString = "unique"
 	}
 	// build SQL
-	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (", table.name, uniqueString, index.name)
-	for i, column := range index.columns {
-		if i > 0 {
-			sql += ", "
-		}
-		sql += fmt.Sprintf("`%s`", column.name)
-	}
-	sql += ")"
-
+	sql := fmt.Sprintf("ALTER TABLE `%s` ADD %s INDEX `%s` (%s)", table.name, uniqueString, index.name, index.signature)
 	if needGlobal {
 		sql += " GLOBAL"
 	}
@@ -1380,7 +1365,7 @@ func (c *testCase) generateRenameIndex(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareRenameIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareRenameIndex(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil || len(table.indexes) == 0 {
 		return nil
@@ -1444,7 +1429,7 @@ func (c *testCase) generateDropIndex(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropIndex(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareDropIndex(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
@@ -1540,7 +1525,7 @@ func (c *testCase) generateAddColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareAddColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareAddColumn(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
@@ -1635,7 +1620,7 @@ func (c *testCase) generateModifyColumn2(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyColumn2(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareModifyColumn2(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
@@ -1725,7 +1710,7 @@ func (c *testCase) generateModifyColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareModifyColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareModifyColumn(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
@@ -1854,7 +1839,7 @@ func (c *testCase) modifyColumnJob(task *ddlJobTask) error {
 		table.columns.Insert(insertPosition+1, arg.origColumn)
 	}
 	for _, idx := range table.indexes {
-		idx.signature = generateIndexSignture(*idx)
+		idx.GenerateIndexSignture()
 	}
 	val := c.tableMap[table.name].Values
 	c.tableMap[table.name] = table.mapTableToRandTestTable()
@@ -1869,7 +1854,7 @@ func (c *testCase) generateDropColumn(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareDropColumn(ctx interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareDropColumn(ctx any, taskCh chan *ddlJobTask) error {
 	table := c.getTable(ctx)
 	if table == nil {
 		return nil
@@ -1985,7 +1970,7 @@ func (c *testCase) dropColumnJob(task *ddlJobTask) error {
 type ddlSetDefaultValueArg struct {
 	columnIndex     int
 	column          *ddlTestColumn
-	newDefaultValue interface{}
+	newDefaultValue any
 }
 
 func (c *testCase) generateSetDefaultValue(repeat int) error {
@@ -1995,7 +1980,7 @@ func (c *testCase) generateSetDefaultValue(repeat int) error {
 	return nil
 }
 
-func (c *testCase) prepareSetDefaultValue(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareSetDefaultValue(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -2058,7 +2043,7 @@ type ddlSetTiflashReplicaArg struct {
 	cnt int
 }
 
-func (c *testCase) prepareSetTiflashReplica(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareSetTiflashReplica(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil
@@ -2125,7 +2110,7 @@ func (c *testCase) getHistoryDDLJobs(db *sql.DB, tasks []*ddlJobTask) ([]*ddlJob
 
 		rawResult := make([][]byte, len(cols))
 		result := make([]string, len(cols))
-		dest := make([]interface{}, len(cols))
+		dest := make([]any, len(cols))
 		for i := range rawResult {
 			dest[i] = &rawResult[i]
 		}

@@ -167,7 +167,7 @@ func RandDecimal(m, d int) string {
 
 const FieldNameLen = 8
 
-func RandFieldName(m map[string]interface{}) string {
+func RandFieldName(m map[string]any) string {
 	name := RandSeq(FieldNameLen)
 	_, ok := m[name]
 	for ok {
@@ -202,7 +202,7 @@ func getColumnFromArrayList(list *arraylist.List, i int) *ddlTestColumn {
 }
 
 // getRowFromArrayList is a helper for simply fetching a row from row arraylist.
-func getRowFromArrayList(list *arraylist.List, i int) interface{} {
+func getRowFromArrayList(list *arraylist.List, i int) any {
 	ele, _ := list.Get(i)
 	return ele
 }

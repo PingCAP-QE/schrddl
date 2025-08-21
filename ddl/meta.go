@@ -202,24 +202,22 @@ func (table *ddlTestTable) predicateAll(col *ddlTestColumn) bool {
 	return true
 }
 
-func (table *ddlTestTable) predicateNotGenerated(col *ddlTestColumn) bool {
-	return col.notGenerated()
-}
+func (table *ddlTestTable) chooseRandomColumns() []*ddlTestColumn {
+	numberOfColumns := min(rand.Intn(table.columns.Size())+1, 10)
+	columns := make([]*ddlTestColumn, 0, numberOfColumns)
 
-func (table *ddlTestTable) predicatePrimaryKey(col *ddlTestColumn) bool {
-	return col.isPrimaryKey
-}
+	perm := rand.Perm(table.columns.Size())[:numberOfColumns]
+	for _, idx := range perm {
+		column := getColumnFromArrayList(table.columns, idx)
+		if column.k == KindVector {
+			continue
+		}
+		if column.canBeIndex() {
+			columns = append(columns, column)
+		}
+	}
 
-func (table *ddlTestTable) predicateNonPrimaryKey(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey
-}
-
-func (table *ddlTestTable) predicateNonPrimaryKeyAndCanBeWhere(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey && col.canBeWhere()
-}
-
-func (table *ddlTestTable) predicateNonPrimaryKeyAndNotGen(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey && col.notGenerated()
+	return columns
 }
 
 // pickupRandomColumns picks columns from `table.columns` randomly and return them.
@@ -319,7 +317,7 @@ type ddlTestView struct {
 
 type ddlTestColumnDescriptor struct {
 	column *ddlTestColumn
-	value  interface{}
+	value  any
 }
 
 func (ddlt *ddlTestColumnDescriptor) getValueString() string {
@@ -350,6 +348,7 @@ func (ddlt *ddlTestColumnDescriptor) buildConditionSQL() string {
 
 type ddlTestColumn struct {
 	k         int
+	subK      int
 	deleted   int32
 	renamed   int32
 	name      string
@@ -358,17 +357,30 @@ type ddlTestColumn struct {
 	filedTypeM      int //such as:  VARCHAR(10) ,    filedTypeM = 10
 	filedTypeD      int //such as:  DECIMAL(10,5) ,  filedTypeD = 5
 	filedPrecision  int
-	defaultValue    interface{}
+	defaultValue    any
 	isPrimaryKey    bool
 	rows            *arraylist.List
 	indexReferences int
 
+	// Belows are for JSON columns
 	dependenciedCols []*ddlTestColumn
 	dependency       *ddlTestColumn
-	mValue           map[string]interface{}
+	mValue           map[string]any
 	nameOfGen        string
 
 	setValue []string //for enum , set data type
+}
+
+func (col *ddlTestColumn) nameForIndex() string {
+	if col.k != KindJSON {
+		return fmt.Sprintf("`%s`", col.name)
+	}
+	if len(col.dependenciedCols) == 0 {
+		return fmt.Sprintf("CAST(`%s` AS SIGNED ARRAY)", col.name)
+	}
+
+	idx := rand.Intn(len(col.dependenciedCols))
+	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependenciedCols[idx].nameOfGen)
 }
 
 func (col *ddlTestColumn) isDeleted() bool {
@@ -434,7 +446,7 @@ func (col *ddlTestColumn) getSelectName() string {
 
 // getDefaultValueString returns a string representation of `defaultValue` according
 // to the type `k` of column.
-func getDefaultValueString(k int, defaultValue interface{}) string {
+func getDefaultValueString(k int, defaultValue any) string {
 	if k == KindBit {
 		return fmt.Sprintf("b'%v'", defaultValue)
 	} else {
@@ -447,7 +459,7 @@ func (col *ddlTestColumn) isEqual(r int, str string) bool {
 	return strings.Compare(vstr, str) == 0
 }
 
-func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) interface{} {
+func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) any {
 	if col.mValue == nil {
 		return nil
 	}
@@ -626,12 +638,16 @@ func getRandDDLTestColumns() []*ddlTestColumn {
 const JsonFieldNum = 5
 
 func getRandJsonCol() []*ddlTestColumn {
-	fieldNum := rand.Intn(JsonFieldNum) + 1
+	// 	TODO(joechenrh): currently sqlgenerator doesn't support generating JSON column with dependencies,
+	// maybe we can support it later.
+	// fieldNum := rand.Intn(JsonFieldNum) + 1
+	fieldNum := 0
 
 	cols := make([]*ddlTestColumn, 0, fieldNum+1)
 
 	column := &ddlTestColumn{
 		k:         KindJSON,
+		subK:      KindJSON,
 		name:      uuid.New().String()[:8],
 		fieldType: ALLFieldType[KindJSON],
 		rows:      arraylist.New(),
@@ -640,7 +656,7 @@ func getRandJsonCol() []*ddlTestColumn {
 		dependenciedCols: make([]*ddlTestColumn, 0, fieldNum),
 	}
 
-	m := make(map[string]interface{}, 0)
+	m := make(map[string]any, 0)
 	for i := 0; i < fieldNum; i++ {
 		col := getRandDDLTestColumnForJson()
 		col.nameOfGen = RandFieldName(m)
@@ -651,6 +667,7 @@ func getRandJsonCol() []*ddlTestColumn {
 		cols = append(cols, col)
 	}
 	column.mValue = m
+
 	cols = append(cols, column)
 	return cols
 }
@@ -668,7 +685,7 @@ func (col *ddlTestColumn) hasGenerateCol() bool {
 }
 
 // randValue return a rand value of the column
-func (col *ddlTestColumn) randValue() interface{} {
+func (col *ddlTestColumn) randValue() any {
 	switch col.k {
 	case KindTINYINT:
 		return rand.Int31n(1<<8) - 1<<7
@@ -810,7 +827,7 @@ func (col *ddlTestColumn) randJsonValue() string {
 }
 
 // randValueUnique use for primary key column to get unique value
-func (col *ddlTestColumn) randValueUnique(rows *arraylist.List) (interface{}, bool) {
+func (col *ddlTestColumn) randValueUnique(rows *arraylist.List) (any, bool) {
 	// retry times
 	for i := 0; i < 10; i++ {
 		v := col.randValue()
@@ -872,6 +889,19 @@ type ddlTestIndex struct {
 	signature string
 	columns   []*ddlTestColumn
 	uniques   bool
+}
+
+func (index *ddlTestIndex) GenerateIndexSignture() {
+	if len(index.columns) == 0 {
+		index.signature = ""
+		return
+	}
+
+	var parts []string
+	for _, col := range index.columns {
+		parts = append(parts, col.nameForIndex())
+	}
+	index.signature = strings.Join(parts, ",")
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
@@ -1060,6 +1090,8 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
 			Args:       col.setValue,
 			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
 			IsNotNull:  false,
+			// TODO(joechenrh): support more subtypes
+			SubType: "SIGNED",
 		}
 		if toCol.Tp == sqlgenerator.ColumnTypeBinary || toCol.Tp == sqlgenerator.ColumnTypeBlob || toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
 			toCol.Collation = sqlgenerator.Collations[sqlgenerator.CollationBinary]
