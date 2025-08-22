@@ -1639,17 +1639,14 @@ func (c *testCase) prepareModifyColumn(ctx any, taskCh chan *ddlJobTask) error {
 	}
 	table.lock.Lock()
 	defer table.lock.Unlock()
+
 	origColIndex, origColumn := table.pickupRandomColumn()
 	if origColumn == nil || !origColumn.canBeModified() {
 		return nil
 	}
 	var modifiedColumn *ddlTestColumn
 	var sql string
-	if rand.Float64() > 0.5 {
-		// If a column has dependency, it cannot be renamed.
-		if origColumn.hasGenerateCol() {
-			return nil
-		}
+	if percentChance(50) {
 		modifiedColumn = generateRandModifiedColumn(origColumn, true)
 		if !checkAddDropColumn(ctx, origColumn) || !checkAddDropColumn(ctx, modifiedColumn) {
 			return nil

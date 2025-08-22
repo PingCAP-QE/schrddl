@@ -17,10 +17,21 @@ import (
 	"database/sql"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 
 	"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/ngaut/log"
 )
+
+type allocator struct {
+	id atomic.Int64
+}
+
+func (a *allocator) Alloc() int {
+	return int(a.id.Add(1))
+}
+
+var globalAllocator = &allocator{}
 
 func percentChance(n int) bool {
 	return rand.Intn(100) < n

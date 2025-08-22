@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"math/rand"
 	"sort"
 	"strings"
@@ -402,10 +401,10 @@ func (col *ddlTestColumn) nameForIndex() string {
 
 	// JSON columns can't be indexed directly, so it must be MV index.
 	if len(col.dependents) == 0 {
-		return fmt.Sprintf("CAST(`%s` AS SIGNED ARRAY)", col.name)
+		return fmt.Sprintf("(CAST(`%s` AS SIGNED ARRAY))", col.name)
 	}
 	idx := rand.Intn(len(col.dependents))
-	return fmt.Sprintf("CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY)", col.name, col.dependents[idx].jsonPaths)
+	return fmt.Sprintf("(CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY))", col.name, col.dependents[idx].jsonPaths)
 }
 
 func (col *ddlTestColumn) isDeleted() bool {
@@ -499,18 +498,17 @@ func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) any {
 // canBeModified returns whether this column can be changed by a SQL query `change column` or `modify column`.
 // Only a few type columns are supported. See https://pingcap.com/docs/sql/ddl/ for more detail.
 func (col *ddlTestColumn) canBeModified() bool {
-	typeSupported := false
 	switch col.k {
-	case KindTINYINT, KindSMALLINT, KindMEDIUMINT, KindInt32, KindBigInt:
-		typeSupported = true
-	case KindDECIMAL:
-		typeSupported = true
-	case KindChar, KindVarChar:
-		typeSupported = true
-	case KindTEXT, KindBLOB:
-		typeSupported = true
+	case KindTINYINT, KindSMALLINT, KindMEDIUMINT, KindInt32, KindBigInt, KindDECIMAL,
+		KindChar, KindVarChar, KindTEXT, KindBLOB:
+		return true
 	}
-	return typeSupported
+
+	if col.hasGenerateCol() {
+		return false
+	}
+
+	return false
 }
 
 func getDDLTestColumn(n int) *ddlTestColumn {
@@ -1104,23 +1102,17 @@ func toCollation(coll string) *sqlgenerator.Collation {
 	}
 }
 
-// FNV64a hashes using fnv32a algorithm
-func FNV64a(text string) int {
-	algorithm := fnv.New64a()
-	algorithm.Write([]byte(text))
-	return int(algorithm.Sum64())
-}
-
 func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
 	tbl := &sqlgenerator.Table{
-		ID:   FNV64a(table.name),
+		ID:   globalAllocator.Alloc(),
 		Name: fmt.Sprintf("`%s`", table.name),
 	}
+
 	tbl.Collate = toCollation(table.collate)
-	for i := 0; i < table.columns.Size(); i++ {
+	for i := range table.columns.Size() {
 		col := getColumnFromArrayList(table.columns, i)
 		toCol := &sqlgenerator.Column{
-			ID:         FNV64a(table.name),
+			ID:         globalAllocator.Alloc(),
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
@@ -1132,13 +1124,16 @@ func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
 			// TODO(joechenrh): support more subtypes
 			SubType: "SIGNED",
 		}
-		if toCol.Tp == sqlgenerator.ColumnTypeBinary || toCol.Tp == sqlgenerator.ColumnTypeBlob || toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
+		if toCol.Tp == sqlgenerator.ColumnTypeBinary ||
+			toCol.Tp == sqlgenerator.ColumnTypeBlob ||
+			toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
 			toCol.Collation = sqlgenerator.Collations[sqlgenerator.CollationBinary]
 		} else {
 			toCol.Collation = tbl.Collate
 		}
 		tbl.Columns = append(tbl.Columns, toCol)
 	}
+
 	for _, idx := range table.indexes {
 		toIdx := &sqlgenerator.Index{
 			Name: fmt.Sprintf("`%s`", idx.name),
