@@ -165,7 +165,7 @@ var dmlIgnorePatterns = []string{
 	// Column and table related
 	"doesn't exist",
 	"column is deleted",
-	"Can't find column",
+	"find column",
 	"Unknown column",
 	"column specified twice",
 	"specified twice",
@@ -212,6 +212,8 @@ var dmlIgnorePatterns = []string{
 	"cannot be pushed down",
 	"document root",
 	"Illegal Json text",
+	"Invalid JSON text",
+	"Invalid data type for JSON",
 }
 
 func dmlIgnoreError(err error) bool {
@@ -284,7 +286,7 @@ var ddlIgnorePatterns = []string{
 	"is not exists",
 	"column does not exist",
 	"column is deleted",
-	"Can't find column",
+	"find column",
 	"Unknown table",
 	"Unknown column",
 	"Duplicate column name",
