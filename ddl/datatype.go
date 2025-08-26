@@ -130,7 +130,7 @@ var TestFieldType = []int{
 	KindTIMESTAMP,
 	KindYEAR,
 
-	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
+	KindJSON,
 	KindEnum,
 	KindSet,
 
@@ -153,6 +153,16 @@ var AllowPartitionType = []int{
 func RandDataType() int {
 	i := rand.Intn(len(TestFieldType))
 	return TestFieldType[i]
+}
+
+// RandDataTypeForJSONDeps returns a random data type that can be used in JSON dependencies.
+// Currently, only integer is supported for JSON dependencies.
+func RandDataTypeForJSONDeps() int {
+	var available = []int{
+		KindBigInt,
+	}
+	i := rand.Intn(len(available))
+	return available[i]
 }
 
 const (

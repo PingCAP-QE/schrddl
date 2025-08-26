@@ -116,213 +116,248 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 }
 
-var checkList = []string{
+// DML errors that should be ignored during testing
+var dmlIgnorePatterns = []string{
+	// Default value related
 	"can't have a default value",
-	"strconv.Atoi",
-	//"assertion failed",
-	"cannot cast from bigint to vector",
-	"does not fit",
-	"Invalid vector text",
-	"cannot cast",
-	"Data Truncated",
-	"context canceled",
-	"epoch_not_match",
-	"Invalid utf8mb4 character",
-	"requested pd is not leader of cluster",
+	"doesn't have a default value",
 
-	// bug
+	// Data type and casting related
+	"strconv.Atoi",
+	"cannot cast from bigint to vector",
+	"cannot cast",
+	"Invalid vector text",
+	"does not fit",
+	"Data Truncated",
+	"Data truncated",
+	"Data truncated for column",
+	"Data too long for column",
+	"Data Too Long",
+	"Truncated incorrect",
+	"cannot convert datum from",
+	"Cannot convert string",
+	"converting driver.Value type",
+	"interface conversion",
+
+	// Value range and validation related
+	"Out of range value for column",
+	"value is out of range in",
+	"overflows",
+	"Bad Number",
+	"invalid year",
+	"Incorrect",
+	"cannot be null",
+
+	// Character encoding related
+	"Invalid utf8mb4 character",
+
+	// Connection and network related
+	"context canceled",
+	"bad connection",
+	"invalid connection",
+	"connection is already closed",
+	"epoch_not_match",
+	"requested pd is not leader of cluster",
+	"batchScanRegion from PD failed",
+	"PD server timeout",
+	"try again later",
+
+	// Column and table related
+	"doesn't exist",
+	"column is deleted",
+	"find column",
+	"Unknown column",
+	"column specified twice",
+	"specified twice",
+	"column has index reference",
+	"no rows in result set",
+
+	// Auto increment related
+	"Failed to read auto-increment value from storage engine",
+
+	// Concurrency related
+	"Duplicate entry",
+	"PessimisticLockNotFound",
+
+	// SQL syntax and structure related
+	"Column count doesn't match value count",
+	"sql_mode=only_full_group_by",
+	"should contain a UNION",
+	"have different column counts",
+	"have a different number of columns",
+	"followed by one or more recursive ones",
+	"Not unique table/alias",
+
+	// Value formatting related
+	"Percentage value",
+	"Index column",
+	"Illegal mix of collations",
+
+	// System and runtime related
+	"Out Of Memory",
+	"invalid syntax",
+	"slice bounds out of range",
+	"Split table region lower value count",
+	"newer than query schema version",
+	"Information schema is out of date",
+	"Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query",
+	"Unsupported multi schema change",
+
+	// Known bugs
 	"unsupport column type for encode 225",
 	"decode date time",
 	"Unexpected ExprType String and EvalType Enum",
 
-	"batchScanRegion from PD failed",
-	"PessimisticLockNotFound",
+	// JSON related errors
+	"cannot be pushed down",
+	"document root",
+	"Illegal Json text",
+	"Invalid JSON value",
+	"Invalid JSON text",
+	"Invalid data type for JSON",
 }
 
 func dmlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
+
 	errStr := err.Error()
-	for _, check := range checkList {
-		if strings.Contains(errStr, check) {
+
+	for _, pattern := range dmlIgnorePatterns {
+		if strings.Contains(errStr, pattern) {
 			return true
 		}
 	}
-	if strings.Contains(errStr, "slice bounds out of range") {
-		return true
+
+	if !RCIsolation {
+		if strings.Contains(errStr, "Information schema is changed") || strings.Contains(errStr, "public column") {
+			return true
+		}
 	}
-	if strings.Contains(errStr, "bad connection") {
-		return true
-	}
-	if strings.Contains(errStr, "Information schema is changed") && !RCIsolation {
-		return true
-	}
-	if strings.Contains(errStr, "try again later") {
-		return true
-	}
-	// Sometimes, there might be duplicated entry error caused by concurrent.
-	// So we ignore here.
-	if strings.Contains(errStr, "Duplicate entry") {
-		return true
-	}
-	// Sometimes, a insert to a table might generate an error caused by exceeding maximum auto increment id,
-	// we ignore this error here.
-	if strings.Contains(errStr, "Failed to read auto-increment value from storage engine") {
-		return true
-	}
-	if strings.Contains(errStr, "invalid connection") {
-		return true
-	}
-	if strings.Contains(errStr, "doesn't exist") ||
-		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
-		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
-		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
-		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
-		strings.Contains(errStr, "Truncated incorrect") || strings.Contains(errStr, "Data truncated for column") ||
-		// eg: For Incorrect tinyint value, Incorrect data value...
-		strings.Contains(errStr, "Incorrect") ||
-		// eg: For constant 20030522161944 overflows tinyint
-		strings.Contains(errStr, "overflows") ||
-		strings.Contains(errStr, "Bad Number") ||
-		strings.Contains(errStr, "invalid year") ||
-		strings.Contains(errStr, "value is out of range in") ||
-		strings.Contains(errStr, "Data Too Long") ||
-		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr, "specified twice") ||
-		strings.Contains(errStr, "cannot convert datum from") ||
-		strings.Contains(errStr, "sql_mode=only_full_group_by") ||
-		strings.Contains(errStr, "cannot be null") ||
-		strings.Contains(errStr, "Column count doesn't match value count") ||
-		strings.Contains(errStr, "Percentage value") ||
-		strings.Contains(errStr, "Index column") ||
-		strings.Contains(errStr, "Illegal mix of collations") ||
-		strings.Contains(errStr, "Cannot convert string") ||
-		strings.Contains(errStr, "interface conversion") ||
-		strings.Contains(errStr, "connection is already closed") ||
-		strings.Contains(errStr, "should contain a UNION") ||
-		strings.Contains(errStr, "have different column counts") ||
-		strings.Contains(errStr, "followed by one or more recursive ones") ||
-		strings.Contains(errStr, "Not unique table/alias") ||
-		strings.Contains(errStr, "have a different number of columns") ||
-		strings.Contains(errStr, "Split table region lower value count") ||
-		strings.Contains(errStr, "Out Of Memory") ||
-		strings.Contains(errStr, "invalid syntax") ||
-		strings.Contains(errStr, "newer than query schema version") ||
-		strings.Contains(errStr, "PD server timeout") ||
-		strings.Contains(errStr, "Information schema is out of date") ||
-		strings.Contains(errStr, "Your query has been cancelled due to exceeding the allowed memory limit for a single SQL query") {
-		return true
-	}
-	if strings.Contains(errStr, "Unsupported multi schema change") {
-		return true
-	}
-	if !RCIsolation && strings.Contains(errStr, "public column") {
-		return true
-	}
+
 	return false
 }
 
-var ddlIgnoreList = []string{
-	"Specified key was too long",
-	"Too many keys specified",
-	"Incorrect date value",
-	"can't have a literal default",
+// DDL errors that should be ignored during testing
+var ddlIgnorePatterns = []string{
+	// MV index related
+	"has an expression index dependency",
+
+	// Vector index related
 	"Unsupported add vector index",
-	"does not fit",
 	"can only be defined on fixed-dimension vector columns",
 	"with Vector Key covered",
+
+	// Key and index related
+	"Specified key was too long",
+	"Too many keys specified",
+	"used in key specification without a key length",
+	"A UNIQUE INDEX must include all columns in the table's partitioning function",
+	"A CLUSTERED INDEX must include all columns in the table's partitioning function",
+	"Unsupported Global Index",
+	"found index conflict records",
+	"column has index reference",
+	"with composite index covered or Primary Key covered now",
+
+	// Data type and value related
+	"Incorrect date value",
+	"Incorrect time value",
+	"Incorrect datetime value",
+	"Incorrect timestamp value",
+	"Invalid year value",
+	"Invalid default value",
+	"can't have a literal default",
+	"can't have a default value",
+	"doesn't have a default value",
+	"overflows",
+	"value is out of range",
+	"Out of range value for column",
+	"Data truncated",
+	"Data too long for column",
+	"Data Too Long",
+	"Bad Number",
+	"Truncated incorrect",
+
+	// Column and table related
 	"already exist on column",
+	"table doesn't exist",
+	"doesn't exist",
+	"does not exist",
+	"is not exists",
+	"column does not exist",
+	"column is deleted",
+	"find column",
+	"Unknown table",
+	"Unknown column",
+	"Duplicate column name",
+	"Duplicate entry",
+	"can't drop only column",
+	"not found",
+	"column specified twice",
+
+	// Schema and DDL related
+	"Information schema is changed",
+	"Information schema is out of date",
+	"Cancelled DDL job",
+	"admin show ddl jobs len != len(tasks)",
+	"with tidb_enable_change_multi_schema is disable",
+	"does not exist, this column may have been updated by other DDL",
+
+	// Unsupported operations
 	"Unsupported",
+	"Unsupported modify column",
+	"Unsupported modify charset from",
+	"Unsupported modifying collation of column",
+	"Unsupported shard_row_id_bits for table with primary key as row id",
+	"Unsupported ALTER TiFlash settings",
+
+	// Partitioning related
+	"not allowed type for this type of partitioning",
+	"since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption",
+	"has a partitioning function dependency and cannot be dropped or renamed",
+
+	// Primary key related
+	"All parts of a PRIMARY KEY must be NOT NULL",
+
+	// Connection and system related
 	"context canceled",
 	"cancelled by user",
+	"invalid connection",
+	"PD server timeout",
+	"should be less than the total tiflash server count",
+
+	// Conversion related
+	"cannot convert",
+	"cannot convert datum",
+	"converting driver.Value type",
+
+	// Testing related
 	"error msg: injected random error, caller: github.com/pingcap/tidb/pkg/disttask/framework/storage.(*TaskManager).WithNewSession",
-	"found index conflict records",
+	"check that column/key exists",
+	"no rows in result set",
+	"does not fit",
 }
 
 func ddlIgnoreError(err error) bool {
 	if err == nil {
 		return true
 	}
+
 	errStr := err.Error()
 	log.Warnf("check DDL err:%s", errStr)
-	for _, l := range ddlIgnoreList {
-		if strings.Contains(errStr, l) {
+
+	// Check against predefined patterns
+	for _, pattern := range ddlIgnorePatterns {
+		if strings.Contains(errStr, pattern) {
 			return true
 		}
 	}
-	if strings.Contains(errStr, "Information schema is changed") {
-		return true
-	}
-	if strings.Contains(errStr, "can't have a default value") {
-		return true
-	}
-	// Sometimes, set shard row id bits to a large value might cause global auto ID overflow error.
-	// We ignore this error here.
+
+	// Special regex check for auto ID overflow
 	if match, _ := regexp.MatchString(`cause next global auto ID( \d+ | )overflow`, errStr); match {
 		return true
 	}
-	if strings.Contains(errStr, "invalid connection") {
-		return true
-	}
-	if strings.Contains(errStr, "Unsupported shard_row_id_bits for table with primary key as row id") {
-		return true
-	}
-	// Ignore Column Type Change error.
-	if strings.Contains(errStr, "Unsupported modify column") ||
-		strings.Contains(errStr, "Cancelled DDL job") ||
-		strings.Contains(errStr, "Truncated incorrect") ||
-		strings.Contains(errStr, "overflows") ||
-		strings.Contains(errStr, "Invalid year value") ||
-		strings.Contains(errStr, "Incorrect time value") ||
-		strings.Contains(errStr, "Incorrect datetime value") ||
-		strings.Contains(errStr, "Incorrect timestamp value") ||
-		strings.Contains(errStr, "All parts of a PRIMARY KEY must be NOT NULL") ||
-		strings.Contains(errStr, "value is out of range") ||
-		strings.Contains(errStr, "Unsupported modify charset from") ||
-		strings.Contains(errStr, "Unsupported modifying collation of column") ||
-		strings.Contains(errStr, "Data truncated") ||
-		strings.Contains(errStr, "Bad Number") ||
-		strings.Contains(errStr, "cannot convert") ||
-		strings.Contains(errStr, "Data Too Long") ||
-		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
-		strings.Contains(errStr, "used in key specification without a key length") ||
-		strings.Contains(errStr, "Specified key was too long; max key length is ") ||
-		strings.Contains(errStr, "should be less than the total tiflash server count") ||
-		strings.Contains(errStr, "Unsupported ALTER TiFlash settings") {
-		fmt.Println(errStr)
-		return true
-	}
-	if strings.Contains(errStr, "table doesn't exist") ||
-		strings.Contains(errStr, "doesn't have a default value") ||
-		strings.Contains(errStr, "with composite index covered or Primary Key covered now") ||
-		strings.Contains(errStr, "does not exist, this column may have been updated by other DDL") ||
-		strings.Contains(errStr, "is not exists") || strings.Contains(errStr, "column does not exist") ||
-		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "Unknown table") ||
-		strings.Contains(errStr, "admin show ddl jobs len != len(tasks)") ||
-		strings.Contains(errStr, "check that column/key exists") ||
-		strings.Contains(errStr, "Invalid default value") ||
-		strings.Contains(errStr, "Duplicate column name") ||
-		strings.Contains(errStr, "can't drop only column") ||
-		strings.Contains(errStr, "doesn't exist") || strings.Contains(errStr, "not found") ||
-		strings.Contains(errStr, "column is deleted") || strings.Contains(errStr, "Can't find column") ||
-		strings.Contains(errStr, "converting driver.Value type") || strings.Contains(errStr, "column specified twice") ||
-		strings.Contains(errStr, "Out of range value for column") || strings.Contains(errStr, "Unknown column") ||
-		strings.Contains(errStr, "column has index reference") || strings.Contains(errStr, "Data too long for column") ||
-		strings.Contains(errStr, "Data truncated") || strings.Contains(errStr, "no rows in result set") ||
-		strings.Contains(errStr, "with tidb_enable_change_multi_schema is disable") ||
-		strings.Contains(errStr, "not allowed type for this type of partitioning") ||
-		strings.Contains(errStr, "since the unique index is not including all partitioning columns, and GLOBAL is not given as IndexOption") ||
-		strings.Contains(errStr, "A UNIQUE INDEX must include all columns in the table's partitioning function") ||
-		strings.Contains(errStr, "Unsupported Global Index") ||
-		strings.Contains(errStr, "cannot convert datum") ||
-		strings.Contains(errStr, "Duplicate entry") ||
-		strings.Contains(errStr, "has a partitioning function dependency and cannot be dropped or renamed") ||
-		strings.Contains(errStr, "A CLUSTERED INDEX must include all columns in the table's partitioning function") ||
-		strings.Contains(errStr, "PD server timeout") ||
-		strings.Contains(errStr, "Information schema is out of date") {
-		return true
-	}
+
 	return false
 }

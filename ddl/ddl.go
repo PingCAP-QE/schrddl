@@ -321,14 +321,14 @@ const (
 )
 
 type ddlTestOpExecutor struct {
-	executeFunc func(interface{}, chan *ddlJobTask) error
-	config      interface{}
+	executeFunc func(any, chan *ddlJobTask) error
+	config      any
 	ddlKind     DDLKind
 }
 
 type dmlTestOpExecutor struct {
-	prepareFunc func(interface{}, chan *dmlJobTask) error
-	config      interface{}
+	prepareFunc func(any, chan *dmlJobTask) error
+	config      any
 }
 
 type DMLKind int
@@ -653,7 +653,7 @@ func (c *testCase) readDataFromTiDB() error {
 			// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
 			rawResult := make([][]byte, len(cols))
 			result := make([]string, len(cols))
-			dest := make([]interface{}, len(cols))
+			dest := make([]any, len(cols))
 			for i := range rawResult {
 				dest[i] = &rawResult[i]
 			}
@@ -706,7 +706,7 @@ func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, er
 		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
 		rawResult := make([][]byte, len(cols))
 		result := make([]string, len(cols))
-		dest := make([]interface{}, len(cols))
+		dest := make([]any, len(cols))
 		for i := range rawResult {
 			dest[i] = &rawResult[i]
 		}

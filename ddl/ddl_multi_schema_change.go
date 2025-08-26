@@ -32,7 +32,7 @@ type multiSchemaChangeCtx struct {
 	arg         *ddlMultiSchemaChangeJobArg
 }
 
-func checkAddDropColumn(ctx interface{}, col *ddlTestColumn) bool {
+func checkAddDropColumn(ctx any, col *ddlTestColumn) bool {
 	if ctx == nil {
 		return true
 	}
@@ -50,7 +50,7 @@ func checkAddDropColumn(ctx interface{}, col *ddlTestColumn) bool {
 	return true
 }
 
-func checkModifyColumn(ctx interface{}, col *ddlTestColumn) bool {
+func checkModifyColumn(ctx any, col *ddlTestColumn) bool {
 	if ctx == nil {
 		return true
 	}
@@ -65,7 +65,7 @@ func checkModifyColumn(ctx interface{}, col *ddlTestColumn) bool {
 	return true
 }
 
-func checkRelatedColumn(ctx interface{}, col *ddlTestColumn) bool {
+func checkRelatedColumn(ctx any, col *ddlTestColumn) bool {
 	if ctx == nil {
 		return true
 	}
@@ -77,7 +77,7 @@ func checkRelatedColumn(ctx interface{}, col *ddlTestColumn) bool {
 	return true
 }
 
-func checkModifyIdx(ctx interface{}, idx *ddlTestIndex) bool {
+func checkModifyIdx(ctx any, idx *ddlTestIndex) bool {
 	if ctx == nil {
 		return true
 	}
@@ -167,7 +167,7 @@ func (c *testCase) prepareSubJobs(ctx *multiSchemaChangeCtx, ddlKind DDLKind) er
 	return nil
 }
 
-func (c *testCase) prepareMultiSchemaChange(_ interface{}, taskCh chan *ddlJobTask) error {
+func (c *testCase) prepareMultiSchemaChange(_ any, taskCh chan *ddlJobTask) error {
 	table := c.pickupRandomTable()
 	if table == nil {
 		return nil

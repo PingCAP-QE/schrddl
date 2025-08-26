@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"math/rand"
 	"sort"
 	"strings"
@@ -202,24 +201,59 @@ func (table *ddlTestTable) predicateAll(col *ddlTestColumn) bool {
 	return true
 }
 
-func (table *ddlTestTable) predicateNotGenerated(col *ddlTestColumn) bool {
-	return col.notGenerated()
+// findColumn returns the index of the column in the table's columns list.
+// If the column is not found, it returns -1.
+func (table *ddlTestTable) findColumn(target *ddlTestColumn) int {
+	for i := 0; i < table.columns.Size(); i++ {
+		col := getColumnFromArrayList(table.columns, i)
+		if col.name == target.name {
+			return i
+		}
+	}
+
+	return -1
 }
 
-func (table *ddlTestTable) predicatePrimaryKey(col *ddlTestColumn) bool {
-	return col.isPrimaryKey
-}
+func (table *ddlTestTable) chooseIndexColumns(ctx any, strategy ddlTestIndexStrategy) []*ddlTestColumn {
+	numTableColumns := table.columns.Size()
+	chosen := make([]int, 0, 1)
+	columns := make([]*ddlTestColumn, 0, len(chosen))
 
-func (table *ddlTestTable) predicateNonPrimaryKey(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey
-}
+	if strategy == ddlTestIndexStrategyMultiValued {
+		// MV Index need only one JSON column, if there is no JSON column,
+		// fall back to random strategy.
+		for i := range table.columns.Size() {
+			col := getColumnFromArrayList(table.columns, i)
+			if col.k == KindJSON {
+				columns = append(columns, col)
+				break
+			}
+		}
+	}
 
-func (table *ddlTestTable) predicateNonPrimaryKeyAndCanBeWhere(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey && col.canBeWhere()
-}
+	supportVector := true
 
-func (table *ddlTestTable) predicateNonPrimaryKeyAndNotGen(col *ddlTestColumn) bool {
-	return !col.isPrimaryKey && col.notGenerated()
+	switch strategy {
+	case ddlTestIndexStrategySingleColumnAtBeginning:
+		chosen = append(chosen, 0)
+	case ddlTestIndexStrategySingleColumnAtEnd:
+		chosen = append(chosen, numTableColumns-1)
+	case ddlTestIndexStrategySingleColumnRandom:
+		chosen = append(chosen, rand.Intn(numTableColumns))
+	case ddlTestIndexStrategyMultipleColumnRandom, ddlTestIndexStrategyMultiValued:
+		supportVector = false
+		numberOfColumns := min(rand.Intn(numTableColumns)+1, 10)
+		chosen = rand.Perm(table.columns.Size())[:numberOfColumns]
+	}
+
+	for _, idx := range chosen {
+		column := getColumnFromArrayList(table.columns, idx)
+		if (supportVector || column.k != KindVector) && column.canBeIndex() && checkAddDropColumn(ctx, column) {
+			columns = append(columns, column)
+		}
+	}
+
+	return columns
 }
 
 // pickupRandomColumns picks columns from `table.columns` randomly and return them.
@@ -243,19 +277,6 @@ func (table *ddlTestTable) pickupRandomColumn() (int, *ddlTestColumn) {
 	}
 	index := rand.Intn(len(columns))
 	return index, columns[index]
-}
-
-// isColumnDeleted checks the col is deleted in this table
-// col.isDeleted() will be true before when dropColumnJob(),
-// but the col is really deleted after remote TiDB successful execute drop column ddl, and then, the col will be deleted from table.columns.
-func (table *ddlTestTable) isColumnDeleted(col *ddlTestColumn) bool {
-	for i := 0; i < table.columns.Size(); i++ {
-		columnI := getColumnFromArrayList(table.columns, i)
-		if col.name == columnI.name {
-			return false
-		}
-	}
-	return true
 }
 
 // newRandAutoID returns a feasible new random auto_increment id according to
@@ -319,7 +340,7 @@ type ddlTestView struct {
 
 type ddlTestColumnDescriptor struct {
 	column *ddlTestColumn
-	value  interface{}
+	value  any
 }
 
 func (ddlt *ddlTestColumnDescriptor) getValueString() string {
@@ -350,25 +371,40 @@ func (ddlt *ddlTestColumnDescriptor) buildConditionSQL() string {
 
 type ddlTestColumn struct {
 	k         int
-	deleted   int32
-	renamed   int32
-	name      string
 	fieldType string
 
-	filedTypeM      int //such as:  VARCHAR(10) ,    filedTypeM = 10
-	filedTypeD      int //such as:  DECIMAL(10,5) ,  filedTypeD = 5
-	filedPrecision  int
-	defaultValue    interface{}
+	deleted int32
+	renamed int32
+	name    string
+
+	flen            int // flen in types.FieldType
+	decimal         int // decimal in types.FieldType
+	defaultValue    any
 	isPrimaryKey    bool
 	rows            *arraylist.List
 	indexReferences int
 
-	dependenciedCols []*ddlTestColumn
-	dependency       *ddlTestColumn
-	mValue           map[string]interface{}
-	nameOfGen        string
+	// Belows are for JSON columns
+	dependents []*ddlTestColumn
+	dependency *ddlTestColumn
+	jsonValues map[string]any
+	jsonPaths  string
 
-	setValue []string //for enum , set data type
+	// Belows are for enum
+	setValue []string
+}
+
+func (col *ddlTestColumn) nameForIndex() string {
+	if col.k != KindJSON {
+		return fmt.Sprintf("`%s`", col.name)
+	}
+
+	// JSON columns can't be indexed directly, so it must be MV index.
+	if len(col.dependents) == 0 {
+		return fmt.Sprintf("(CAST(`%s` AS SIGNED ARRAY))", col.name)
+	}
+	idx := rand.Intn(len(col.dependents))
+	return fmt.Sprintf("(CAST(JSON_EXTRACT(`%s`, '$.%s') AS SIGNED ARRAY))", col.name, col.dependents[idx].jsonPaths)
 }
 
 func (col *ddlTestColumn) isDeleted() bool {
@@ -413,7 +449,7 @@ func (col *ddlTestColumn) getDefinition() string {
 	}
 
 	if col.isGenerated() {
-		return fmt.Sprintf("%s AS (JSON_EXTRACT(`%s`,'$.%s'))", col.fieldType, col.dependency.name, col.nameOfGen)
+		return fmt.Sprintf("%s AS (JSON_EXTRACT(`%s`,'$.%s'))", col.fieldType, col.dependency.name, col.jsonPaths)
 	}
 
 	if col.canHaveDefaultValue() {
@@ -434,7 +470,7 @@ func (col *ddlTestColumn) getSelectName() string {
 
 // getDefaultValueString returns a string representation of `defaultValue` according
 // to the type `k` of column.
-func getDefaultValueString(k int, defaultValue interface{}) string {
+func getDefaultValueString(k int, defaultValue any) string {
 	if k == KindBit {
 		return fmt.Sprintf("b'%v'", defaultValue)
 	} else {
@@ -447,11 +483,11 @@ func (col *ddlTestColumn) isEqual(r int, str string) bool {
 	return strings.Compare(vstr, str) == 0
 }
 
-func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) interface{} {
-	if col.mValue == nil {
+func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) any {
+	if col.jsonValues == nil {
 		return nil
 	}
-	v := col.mValue[genCol.nameOfGen]
+	v := col.jsonValues[genCol.jsonPaths]
 	switch genCol.k {
 	case KindChar, KindVarChar, KindTEXT, KindBLOB:
 		v = fmt.Sprintf("\"%v\"", v)
@@ -462,46 +498,45 @@ func (col *ddlTestColumn) getDependenciedColsValue(genCol *ddlTestColumn) interf
 // canBeModified returns whether this column can be changed by a SQL query `change column` or `modify column`.
 // Only a few type columns are supported. See https://pingcap.com/docs/sql/ddl/ for more detail.
 func (col *ddlTestColumn) canBeModified() bool {
-	typeSupported := false
 	switch col.k {
-	case KindTINYINT, KindSMALLINT, KindMEDIUMINT, KindInt32, KindBigInt:
-		typeSupported = true
-	case KindDECIMAL:
-		typeSupported = true
-	case KindChar, KindVarChar:
-		typeSupported = true
-	case KindTEXT, KindBLOB:
-		typeSupported = true
+	case KindTINYINT, KindSMALLINT, KindMEDIUMINT, KindInt32, KindBigInt, KindDECIMAL,
+		KindChar, KindVarChar, KindTEXT, KindBLOB:
+		return true
 	}
-	return typeSupported
+
+	if col.hasGenerateCol() {
+		return false
+	}
+
+	return false
 }
 
 func getDDLTestColumn(n int) *ddlTestColumn {
 	column := &ddlTestColumn{
 		k:         n,
-		name:      "col" + uuid.New().String()[:4],
 		fieldType: ALLFieldType[n],
+		name:      "col" + uuid.New().String()[:4],
 		rows:      arraylist.New(),
 		deleted:   0,
 	}
 	switch n {
 	case KindChar, KindVarChar, KindBLOB, KindTEXT, KindBit:
 		maxLen := GetMaxLenByKind(n)
-		column.filedTypeM = int(rand.Intn(maxLen))
-		for column.filedTypeM == 0 && column.k == KindBit {
-			column.filedTypeM = int(rand.Intn(maxLen))
+		column.flen = int(rand.Intn(maxLen))
+		for column.flen == 0 && column.k == KindBit {
+			column.flen = int(rand.Intn(maxLen))
 		}
 
-		for column.filedTypeM < 3 && column.k != KindBit { // len('""') = 2
-			column.filedTypeM = int(rand.Intn(maxLen))
+		for column.flen < 3 && column.k != KindBit { // len('""') = 2
+			column.flen = int(rand.Intn(maxLen))
 		}
-		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 	case KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
-		column.filedTypeM = GetMaxLenByKind(n)
-		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+		column.flen = GetMaxLenByKind(n)
+		column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 	case KindDECIMAL:
-		column.filedTypeM, column.filedTypeD = RandMD()
-		column.fieldType = fmt.Sprintf("%s(%d,%d)", ALLFieldType[n], column.filedTypeM, column.filedTypeD)
+		column.flen, column.decimal = RandMD()
+		column.fieldType = fmt.Sprintf("%s(%d,%d)", ALLFieldType[n], column.flen, column.decimal)
 	case KindEnum, KindSet:
 		maxLen := GetMaxLenByKind(n)
 		l := maxLen + 1
@@ -517,11 +552,11 @@ func getDDLTestColumn(n int) *ddlTestColumn {
 		}
 		column.fieldType += ")"
 	case KindVector:
-		column.filedTypeM = rand.Intn(8)
-		if rand.Intn(2) == 1 {
-			column.fieldType = fmt.Sprintf("%s", ALLFieldType[n])
+		column.flen = rand.Intn(8)
+		if percentChance(50) {
+			column.fieldType = ALLFieldType[n]
 		} else {
-			column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.filedTypeM)
+			column.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[n], column.flen)
 		}
 	}
 
@@ -571,13 +606,13 @@ func generateRandModifiedColumn(col *ddlTestColumn, renameCol bool) *ddlTestColu
 		// We ignore here.
 	case KindChar, KindVarChar:
 		modifiedColumn.k = rand.Intn(KindVarChar-col.k+1) + col.k
-		modifiedColumn.filedTypeM = rand.Intn(GetMaxLenByKind(modifiedColumn.k)-col.filedTypeM) + col.filedTypeM
-		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[modifiedColumn.k], modifiedColumn.filedTypeM)
+		modifiedColumn.flen = rand.Intn(GetMaxLenByKind(modifiedColumn.k)-col.flen) + col.flen
+		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[modifiedColumn.k], modifiedColumn.flen)
 	case KindTEXT, KindBLOB:
 		// Only types on `TestFieldType` are considered.
 		// See ./datatype.go for more detail.
-		modifiedColumn.filedTypeM = rand.Intn(GetMaxLenByKind(col.k)-col.filedTypeM) + col.filedTypeM
-		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[col.k], modifiedColumn.filedTypeM)
+		modifiedColumn.flen = rand.Intn(GetMaxLenByKind(col.k)-col.flen) + col.flen
+		modifiedColumn.fieldType = fmt.Sprintf("%s(%d)", ALLFieldType[col.k], modifiedColumn.flen)
 	}
 	if modifiedColumn.canHaveDefaultValue() {
 		modifiedColumn.defaultValue = modifiedColumn.randValue()
@@ -594,17 +629,6 @@ func generateRandModifiedColumn2(col *ddlTestColumn, renameCol bool) *ddlTestCol
 		newColumn.name = col.name
 	}
 	return newColumn
-}
-
-func getRandDDLTestColumnForJson() *ddlTestColumn {
-	var n int
-	for {
-		n = RandDataType()
-		if n != KindJSON && n != KindBit && n != KindSet && n != KindEnum {
-			break
-		}
-	}
-	return getDDLTestColumn(n)
 }
 
 func getRandDDLTestColumns() []*ddlTestColumn {
@@ -628,31 +652,26 @@ const JsonFieldNum = 5
 func getRandJsonCol() []*ddlTestColumn {
 	fieldNum := rand.Intn(JsonFieldNum) + 1
 
-	cols := make([]*ddlTestColumn, 0, fieldNum+1)
+	// TODO(joechenrh): currently sqlgenerator doesn't support generating
+	// JSON column with dependencies like "{'field1': [], 'field2': []}".
+	// Maybe we can support it later.
+	fieldNum = 0
 
-	column := &ddlTestColumn{
-		k:         KindJSON,
-		name:      uuid.New().String()[:8],
-		fieldType: ALLFieldType[KindJSON],
-		rows:      arraylist.New(),
-		deleted:   0,
+	addedCols := make([]*ddlTestColumn, 0, fieldNum+1)
 
-		dependenciedCols: make([]*ddlTestColumn, 0, fieldNum),
-	}
-
-	m := make(map[string]interface{}, 0)
+	baseColumn := getDDLTestColumn(KindJSON)
 	for i := 0; i < fieldNum; i++ {
-		col := getRandDDLTestColumnForJson()
-		col.nameOfGen = RandFieldName(m)
-		m[col.nameOfGen] = col.randValue()
-		col.dependency = column
+		col := getDDLTestColumn(RandDataTypeForJSONDeps())
+		col.jsonPaths = fmt.Sprintf("field_%d", i)
+		col.dependency = baseColumn
 
-		column.dependenciedCols = append(column.dependenciedCols, col)
-		cols = append(cols, col)
+		baseColumn.jsonValues[col.jsonPaths] = col.randValue()
+		baseColumn.dependents = append(baseColumn.dependents, col)
+		addedCols = append(addedCols, col)
 	}
-	column.mValue = m
-	cols = append(cols, column)
-	return cols
+
+	addedCols = append(addedCols, baseColumn)
+	return addedCols
 }
 
 func (col *ddlTestColumn) isGenerated() bool {
@@ -664,11 +683,11 @@ func (col *ddlTestColumn) notGenerated() bool {
 }
 
 func (col *ddlTestColumn) hasGenerateCol() bool {
-	return len(col.dependenciedCols) > 0
+	return len(col.dependents) > 0
 }
 
 // randValue return a rand value of the column
-func (col *ddlTestColumn) randValue() interface{} {
+func (col *ddlTestColumn) randValue() any {
 	switch col.k {
 	case KindTINYINT:
 		return rand.Int31n(1<<8) - 1<<7
@@ -684,11 +703,11 @@ func (col *ddlTestColumn) randValue() interface{} {
 		}
 		return -1 - rand.Int63()
 	case KindBit:
-		if col.filedTypeM >= 64 {
+		if col.flen >= 64 {
 			return fmt.Sprintf("%b", rand.Uint64())
 		} else {
-			m := col.filedTypeM
-			if col.filedTypeM > 7 { // it is a bug
+			m := col.flen
+			if col.flen > 7 { // it is a bug
 				m = m - 1
 			}
 			n := (int64)((1 << (uint)(m)) - 1)
@@ -699,18 +718,18 @@ func (col *ddlTestColumn) randValue() interface{} {
 	case KindDouble:
 		return rand.Float64() + 1
 	case KindDECIMAL:
-		return RandDecimal(col.filedTypeM, col.filedTypeD)
+		return RandDecimal(col.flen, col.decimal)
 	case KindChar, KindVarChar, KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB, KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
-		if col.filedTypeM == 0 {
+		if col.flen == 0 {
 			return ""
 		} else {
 			if col.isGenerated() {
-				if col.filedTypeM <= 2 {
+				if col.flen <= 2 {
 					return ""
 				}
-				return RandSeq(rand.Intn(col.filedTypeM - 2))
+				return RandSeq(rand.Intn(col.flen - 2))
 			}
-			return RandSeq(rand.Intn(col.filedTypeM))
+			return RandSeq(rand.Intn(col.flen))
 		}
 	case KindBool:
 		return rand.Intn(2)
@@ -771,8 +790,8 @@ func (col *ddlTestColumn) randValue() interface{} {
 		return s
 	case KindVector:
 		cnt := rand.Intn(8) + 1
-		if col.filedTypeM != 0 {
-			cnt = col.filedTypeM
+		if col.flen != 0 {
+			cnt = col.flen
 		}
 		str := "["
 		for i := 0; i < cnt; i++ {
@@ -802,15 +821,15 @@ func randTime(minTime time.Time, gap int64) time.Time {
 }
 
 func (col *ddlTestColumn) randJsonValue() string {
-	for _, dCol := range col.dependenciedCols {
-		col.mValue[dCol.nameOfGen] = dCol.randValue()
+	for _, dCol := range col.dependents {
+		col.jsonValues[dCol.jsonPaths] = dCol.randValue()
 	}
-	jsonRow, _ := json.Marshal(col.mValue)
+	jsonRow, _ := json.Marshal(col.jsonValues)
 	return string(jsonRow)
 }
 
 // randValueUnique use for primary key column to get unique value
-func (col *ddlTestColumn) randValueUnique(rows *arraylist.List) (interface{}, bool) {
+func (col *ddlTestColumn) randValueUnique(rows *arraylist.List) (any, bool) {
 	// retry times
 	for i := 0; i < 10; i++ {
 		v := col.randValue()
@@ -832,7 +851,7 @@ func (col *ddlTestColumn) canBePrimary() bool {
 func (col *ddlTestColumn) canBeIndex() bool {
 	switch col.k {
 	case KindChar, KindVarChar, KindVector:
-		if col.filedTypeM == 0 {
+		if col.flen == 0 {
 			return false
 		} else {
 			return true
@@ -868,10 +887,58 @@ func (col *ddlTestColumn) canHaveDefaultValue() bool {
 }
 
 type ddlTestIndex struct {
-	name      string
+	name string
+	// signature is a string representation of the index columns, used to identify the index.
 	signature string
-	columns   []*ddlTestColumn
-	uniques   bool
+
+	// definition is the index definition string, such as "KEY `idx_name` (`col1`, `col2`)"
+	definition string
+
+	columns []*ddlTestColumn
+	uniques bool
+	global  bool
+}
+
+func (index *ddlTestIndex) Build() {
+	index.generateSignature()
+	index.generateDefinition()
+}
+
+func (index *ddlTestIndex) Contains(col *ddlTestColumn) bool {
+	for _, c := range index.columns {
+		if c.name == col.name {
+			return true
+		}
+	}
+	return false
+}
+
+func (index *ddlTestIndex) generateSignature() {
+	if len(index.columns) == 0 {
+		index.signature = ""
+		return
+	}
+
+	var parts []string
+	for _, col := range index.columns {
+		parts = append(parts, col.nameForIndex())
+	}
+	index.signature = strings.Join(parts, ",")
+}
+
+func (index *ddlTestIndex) generateDefinition() {
+	if len(index.columns) == 1 && index.columns[0].k == KindVector {
+		index.definition = fmt.Sprintf("VECTOR INDEX `%s` ((VEC_COSINE_DISTANCE(`%s`))) USING HNSW", index.name, index.columns[0].name)
+	} else {
+		uniqueString := ""
+		if index.uniques {
+			uniqueString = "UNIQUE"
+		}
+		index.definition = fmt.Sprintf("%s INDEX `%s` (%s)", uniqueString, index.name, index.signature)
+		if index.global {
+			index.definition += " GLOBAL"
+		}
+	}
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
@@ -887,17 +954,17 @@ func (col *ddlTestColumn) normalizeDataType() string {
 	case KindBigInt:
 		return "bigint"
 	case KindBit:
-		return fmt.Sprintf("bit(%d)", col.filedTypeM)
+		return fmt.Sprintf("bit(%d)", col.flen)
 	case KindDECIMAL:
-		return fmt.Sprintf("decimal(%d,%d)", col.filedTypeM, col.filedTypeD)
+		return fmt.Sprintf("decimal(%d,%d)", col.flen, col.decimal)
 	case KindFloat:
 		return "float"
 	case KindDouble:
 		return "double"
 	case KindChar:
-		return fmt.Sprintf("char(%d)", col.filedTypeM)
+		return fmt.Sprintf("char(%d)", col.flen)
 	case KindVarChar:
-		return fmt.Sprintf("varchar(%d)", col.filedTypeM)
+		return fmt.Sprintf("varchar(%d)", col.flen)
 	case KindBLOB, KindTINYBLOB, KindMEDIUMBLOB, KindLONGBLOB:
 		return "xxx"
 	case KindTEXT, KindTINYTEXT, KindMEDIUMTEXT, KindLONGTEXT:
@@ -1035,39 +1102,38 @@ func toCollation(coll string) *sqlgenerator.Collation {
 	}
 }
 
-// FNV64a hashes using fnv32a algorithm
-func FNV64a(text string) int {
-	algorithm := fnv.New64a()
-	algorithm.Write([]byte(text))
-	return int(algorithm.Sum64())
-}
-
 func (table *ddlTestTable) mapTableToRandTestTable() *sqlgenerator.Table {
 	tbl := &sqlgenerator.Table{
-		ID:   FNV64a(table.name),
+		ID:   globalAllocator.Alloc(),
 		Name: fmt.Sprintf("`%s`", table.name),
 	}
+
 	tbl.Collate = toCollation(table.collate)
-	for i := 0; i < table.columns.Size(); i++ {
+	for i := range table.columns.Size() {
 		col := getColumnFromArrayList(table.columns, i)
 		toCol := &sqlgenerator.Column{
-			ID:         FNV64a(table.name),
+			ID:         globalAllocator.Alloc(),
 			Name:       fmt.Sprintf("`%s`", col.name),
 			Tp:         kToType(col.k),
 			IsUnsigned: false,
-			Arg1:       col.filedTypeM,
-			Arg2:       col.filedTypeD,
+			Arg1:       col.flen,
+			Arg2:       col.decimal,
 			Args:       col.setValue,
 			DefaultVal: getDefaultValueString(col.k, col.defaultValue),
 			IsNotNull:  false,
+			// TODO(joechenrh): support more subtypes
+			SubType: "SIGNED",
 		}
-		if toCol.Tp == sqlgenerator.ColumnTypeBinary || toCol.Tp == sqlgenerator.ColumnTypeBlob || toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
+		if toCol.Tp == sqlgenerator.ColumnTypeBinary ||
+			toCol.Tp == sqlgenerator.ColumnTypeBlob ||
+			toCol.Tp == sqlgenerator.ColumnTypeVarBinary {
 			toCol.Collation = sqlgenerator.Collations[sqlgenerator.CollationBinary]
 		} else {
 			toCol.Collation = tbl.Collate
 		}
 		tbl.Columns = append(tbl.Columns, toCol)
 	}
+
 	for _, idx := range table.indexes {
 		toIdx := &sqlgenerator.Index{
 			Name: fmt.Sprintf("`%s`", idx.name),

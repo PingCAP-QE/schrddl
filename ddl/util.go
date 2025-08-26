@@ -17,10 +17,25 @@ import (
 	"database/sql"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 
 	"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/ngaut/log"
 )
+
+type allocator struct {
+	id atomic.Int64
+}
+
+func (a *allocator) Alloc() int {
+	return int(a.id.Add(1))
+}
+
+var globalAllocator = &allocator{}
+
+func percentChance(n int) bool {
+	return rand.Intn(100) < n
+}
 
 func PadLeft(str, pad string, length int) string {
 	if len(str) >= length {
@@ -101,16 +116,10 @@ func randNum(n int) []byte {
 	return b
 }
 
-func RandMD() (m int, d int) {
-	for m == 0 {
-		m = rand.Intn(MAXDECIMALM)
-	}
-	min := m
-	if min > MAXDECIMALN {
-		min = MAXDECIMALN
-	}
-	d = rand.Intn(min)
-	return
+func RandMD() (int, int) {
+	m := rand.Intn(MAXDECIMALM-1) + 1
+	d := rand.Intn(min(m, MAXDECIMALN))
+	return m, d
 }
 
 // RandMDN returns a filedTypeM and filedTypeD randomly which are not smaller
@@ -167,7 +176,7 @@ func RandDecimal(m, d int) string {
 
 const FieldNameLen = 8
 
-func RandFieldName(m map[string]interface{}) string {
+func RandFieldName(m map[string]any) string {
 	name := RandSeq(FieldNameLen)
 	_, ok := m[name]
 	for ok {
@@ -202,7 +211,7 @@ func getColumnFromArrayList(list *arraylist.List, i int) *ddlTestColumn {
 }
 
 // getRowFromArrayList is a helper for simply fetching a row from row arraylist.
-func getRowFromArrayList(list *arraylist.List, i int) interface{} {
+func getRowFromArrayList(list *arraylist.List, i int) any {
 	ele, _ := list.Get(i)
 	return ele
 }
