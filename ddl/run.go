@@ -212,6 +212,7 @@ var dmlIgnorePatterns = []string{
 	"cannot be pushed down",
 	"document root",
 	"Illegal Json text",
+	"Invalid JSON value",
 	"Invalid JSON text",
 	"Invalid data type for JSON",
 }
