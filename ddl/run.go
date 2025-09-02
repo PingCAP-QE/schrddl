@@ -239,6 +239,7 @@ var ddlIgnoreList = []string{
 	"cancelled by user",
 	"error msg: injected random error, caller: github.com/pingcap/tidb/pkg/disttask/framework/storage.(*TaskManager).WithNewSession",
 	"found index conflict records",
+	"so it cannot be altered",
 }
 
 func ddlIgnoreError(err error) bool {
