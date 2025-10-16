@@ -62,8 +62,8 @@ github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c h1:RGWPOewvK
 github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c/go.mod h1:X0CRv0ky0k6m906ixxpzmDRLvX58TFUKS2eePweuyxk=
 github.com/Masterminds/semver v1.5.0 h1:H65muMkzWKEuNDnfl9d70GUjFniHKHRbFPGBuZ3QEww=
 github.com/Masterminds/semver v1.5.0/go.mod h1:MB6lktGJrhw8PrUyiEoblNEGEQ+RzHPF078ddwwvV3Y=
-github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef h1:0PUBXw1qTAl9/N2UyCBkHuhajnWmn8diqPFXQgTU3LE=
-github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef/go.mod h1:W+LInfQBsKJhAbMfw5tEOHvlqt7STtZz8mk/eArZPrg=
+github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20251016103048-b9cc6231943c h1:zKLi+n82Lp2REckabC8z1o1rqeT6v0nth42RX/mXz3g=
+github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20251016103048-b9cc6231943c/go.mod h1:W+LInfQBsKJhAbMfw5tEOHvlqt7STtZz8mk/eArZPrg=
 github.com/VividCortex/ewma v1.1.1/go.mod h1:2Tkkvm3sRDVXaiyucHiACn4cqf7DpdyLvmxzcbUokwA=
 github.com/VividCortex/ewma v1.2.0 h1:f58SaIzcDXrSy3kWaHNvuJgJ3Nmz59Zji6XoJR/q1ow=
 github.com/VividCortex/ewma v1.2.0/go.mod h1:nz4BbCtbLyFDeC9SUHbtcT5644juEuWfUAUnGx7j5l4=

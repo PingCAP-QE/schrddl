@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.23.2
 
 require (
-	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20241012083416-306329b317ef
+	github.com/PingCAP-QE/schrddl/sqlgenerator v0.0.0-20251016103048-b9cc6231943c
 	github.com/emirpasic/gods v1.18.1
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/google/uuid v1.6.0
