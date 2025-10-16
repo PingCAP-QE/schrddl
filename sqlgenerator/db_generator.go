@@ -3,14 +3,15 @@ package sqlgenerator
 import (
 	"bytes"
 	"fmt"
-	"github.com/twinj/uuid"
-	"golang.org/x/exp/slices"
 	"log"
 	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/twinj/uuid"
+	"golang.org/x/exp/slices"
 
 	"github.com/cznic/mathutil"
 	"gonum.org/v1/gonum/stat/distuv"
@@ -458,12 +459,22 @@ var asciiRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012
 
 func RandStringRunes(n int, mixCNChar bool) string {
 	b := make([]rune, n)
-	for i := range b {
+
+	trailingSpace := 0
+	if rand.Intn(4) == 0 {
+		trailingSpace = max(n, 2)
+	}
+
+	for i := range n - trailingSpace {
 		b[i] = asciiRunes[rand.Intn(len(asciiRunes))]
 		if mixCNChar && rand.Intn(3) == 0 {
 			b[i] = rune(int('\u4e00') + rand.Intn(int('\u9fff')-int('\u4e00')))
 		}
 	}
+	for i := n - trailingSpace; i < n; i++ {
+		b[i] = ' '
+	}
+
 	return string(b)
 }
 
