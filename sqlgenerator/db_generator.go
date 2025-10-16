@@ -462,7 +462,7 @@ func RandStringRunes(n int, mixCNChar bool) string {
 
 	trailingSpace := 0
 	if rand.Intn(4) == 0 {
-		trailingSpace = max(n, 2)
+		trailingSpace = max(0, min(1, n-1))
 	}
 
 	for i := range n - trailingSpace {
@@ -472,7 +472,7 @@ func RandStringRunes(n int, mixCNChar bool) string {
 		}
 	}
 	for i := n - trailingSpace; i < n; i++ {
-		b[i] = ' '
+		b[i] = rune(' ')
 	}
 
 	return string(b)
