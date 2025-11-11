@@ -147,6 +147,9 @@ var dmlIgnoreList = []string{
 	"is ambiguous",
 	"generate timestamp failed",
 	"epoch_not_match",
+
+	// Next-gen
+	"is not supported in the next generation of TiDB",
 }
 
 var ddlIgnoreList = []string{
