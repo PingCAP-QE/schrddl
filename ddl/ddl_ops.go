@@ -1332,23 +1332,26 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		var condition string
 		colI := rand.Intn(len(index.columns))
 		colName := index.columns[colI].name
+
+		tables := table.mapTableToRandTestTable()
+		col := tables.Columns[colI]
 		switch rand.Intn(6) {
 		case 0:
 			condition = fmt.Sprintf("`%s` IS NOT NULL", colName)
 		case 1:
 			condition = fmt.Sprintf("`%s` IS NULL", colName)
 		case 2:
-			cond := index.columns[colI].randValue()
-			condition = fmt.Sprintf("`%s` > '%s'", colName, cond)
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` > %s", colName, cond)
 		case 3:
-			cond := index.columns[colI].randValue()
-			condition = fmt.Sprintf("`%s` < '%s'", colName, cond)
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` < %s", colName, cond)
 		case 4:
-			cond := index.columns[colI].randValue()
-			condition = fmt.Sprintf("`%s` = '%s'", colName, cond)
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` = %s", colName, cond)
 		case 5:
-			cond := index.columns[colI].randValue()
-			condition = fmt.Sprintf("`%s` != '%s'", colName, cond)
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` != %s", colName, cond)
 		}
 		index.condition = condition
 		sql += fmt.Sprintf(" WHERE %s", condition)
