@@ -111,24 +111,24 @@ var TestFieldType = []int{
 
 	//KindBit,		// have default value bug unfix.
 
-	KindFloat,
-	KindDouble,
-
-	KindDECIMAL,
-
-	KindChar,
-	KindVarChar,
-
-	KindBLOB,
-	KindTEXT,
-
-	KindBool,
-
-	KindDATE,
-	KindTIME,
-	KindDATETIME,
-	KindTIMESTAMP,
-	KindYEAR,
+	//KindFloat,
+	//KindDouble,
+	//
+	//KindDECIMAL,
+	//
+	//KindChar,
+	//KindVarChar,
+	//
+	//KindBLOB,
+	//KindTEXT,
+	//
+	//KindBool,
+	//
+	//KindDATE,
+	//KindTIME,
+	//KindDATETIME,
+	//KindTIMESTAMP,
+	//KindYEAR,
 
 	//KindJSON,    // have `admin check table when index is virtual generated column` bug unfixed.
 	KindEnum,

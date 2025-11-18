@@ -757,7 +757,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		columns := getRandDDLTestColumns()
 		for _, column := range columns {
 			tableColumns.Add(column)
-			if column.k <= KindBigInt && partitionColumn == nil {
+			if column.k <= KindBigInt && partitionColumn == nil && rand.Intn(3) == 0 {
 				partitionColumn = column
 			}
 		}
