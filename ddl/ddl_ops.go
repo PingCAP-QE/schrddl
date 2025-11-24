@@ -73,7 +73,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateAddColumn(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn(5); err != nil {
+	if err := c.generateModifyColumn(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateDropColumn(defaultTime); err != nil {
@@ -82,7 +82,7 @@ func (c *testCase) generateDDLOps() error {
 	if err := c.generateSetDefaultValue(defaultTime); err != nil {
 		return errors.Trace(err)
 	}
-	if err := c.generateModifyColumn2(5); err != nil {
+	if err := c.generateModifyColumn2(0); err != nil {
 		return errors.Trace(err)
 	}
 	if err := c.generateMultiSchemaChange(2); err != nil {
@@ -757,7 +757,7 @@ func (c *testCase) prepareAddTable(cfg interface{}, taskCh chan *ddlJobTask) err
 		columns := getRandDDLTestColumns()
 		for _, column := range columns {
 			tableColumns.Add(column)
-			if column.k <= KindBigInt && partitionColumn == nil {
+			if column.k <= KindBigInt && partitionColumn == nil && rand.Intn(3) == 0 {
 				partitionColumn = column
 			}
 		}
@@ -1325,6 +1325,36 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 
 	if needGlobal {
 		sql += " GLOBAL"
+	}
+
+	if rand.Intn(3) == 0 {
+		// Build partial index
+		var condition string
+		colI := rand.Intn(len(index.columns))
+		colName := index.columns[colI].name
+
+		tables := table.mapTableToRandTestTable()
+		col := tables.Columns[colI]
+		switch rand.Intn(6) {
+		case 0:
+			condition = fmt.Sprintf("`%s` IS NOT NULL", colName)
+		case 1:
+			condition = fmt.Sprintf("`%s` IS NULL", colName)
+		case 2:
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` > %s", colName, cond)
+		case 3:
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` < %s", colName, cond)
+		case 4:
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` = %s", colName, cond)
+		case 5:
+			cond := col.RandomValue()
+			condition = fmt.Sprintf("`%s` != %s", colName, cond)
+		}
+		index.condition = condition
+		sql += fmt.Sprintf(" WHERE %s", condition)
 	}
 
 	if isVector {

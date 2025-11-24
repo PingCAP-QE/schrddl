@@ -872,6 +872,7 @@ type ddlTestIndex struct {
 	signature string
 	columns   []*ddlTestColumn
 	uniques   bool
+	condition string
 }
 
 func (col *ddlTestColumn) normalizeDataType() string {
