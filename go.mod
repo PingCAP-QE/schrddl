@@ -10,7 +10,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/google/uuid v1.6.0
 	github.com/juju/errors v0.0.0-20200330140219-3fe23663418f
-	github.com/ngaut/log v0.0.0-20221012222132-f3329cba28a5
+	github.com/ngaut/log v0.0.0-20210830112240-0124ec040aeb
 	github.com/pingcap/errors v0.11.5-0.20240318064555-6bd07397691f
 	github.com/pingcap/tidb/parser v0.0.0-20220507103032-9339955f0d84
 	github.com/prometheus/client_golang v1.20.4
