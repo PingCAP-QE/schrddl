@@ -235,12 +235,19 @@ func main() {
 			log.Fatalf("Can't import table, err: %s", err.Error())
 		}
 
-		// 4. Pick an index to add
-		addIndexSQL := IndexList[i][rand.Intn(len(IndexList[i]))]
-		log.Infof("add index with sql: %s", addIndexSQL)
-		_, err = tidbC.ExecContext(context.Background(), addIndexSQL)
-		if err != nil {
-			log.Fatalf("Can't add index, err: %s", err.Error())
+		for i := 0; i < 100; i++ {
+			// 4. Pick an index to add
+			addIndexSQL := IndexList[i][rand.Intn(len(IndexList[i]))]
+			log.Infof("add index with sql: %s", addIndexSQL)
+			_, err = tidbC.ExecContext(context.Background(), addIndexSQL)
+			if err != nil {
+				log.Fatalf("Can't add index, err: %s", err.Error())
+			}
+
+			_, err = tidbC.ExecContext(context.Background(), "admin check table sbtest1")
+			if err != nil {
+				log.Fatalf("check table, err: %s", err.Error())
+			}
 		}
 
 		// 5. Drop the table
