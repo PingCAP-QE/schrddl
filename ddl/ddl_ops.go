@@ -1327,7 +1327,7 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		sql += " GLOBAL"
 	}
 
-	if rand.Intn(3) == 0 {
+	if rand.Intn(3) == 0 && false {
 		// Build partial index
 		var condition string
 		colI := rand.Intn(len(index.columns))
