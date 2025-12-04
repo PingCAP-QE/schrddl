@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -175,6 +176,21 @@ var IndexList = [][]string{
 	{"alter table sbtest1 add index idx_k(id, c, k)", "alter table sbtest1 add index idx_id(id, c)"},
 }
 
+func extractIndexName(addIndexSQL string) string {
+	re := regexp.MustCompile(`(?i)add\s+(?:unique\s+key|index)\s+([^\s(]+)`)
+	matches := re.FindStringSubmatch(addIndexSQL)
+	idxNmae := ""
+	if len(matches) >= 2 {
+		idxNmae = matches[1]
+	} else {
+		parts := strings.Fields(addIndexSQL)
+		if len(parts) > 4 {
+			idxNmae = strings.TrimSuffix(parts[4], "(")
+		}
+	}
+	return idxNmae
+}
+
 func main() {
 	flag.Parse()
 	if *output != "" {
@@ -247,6 +263,12 @@ func main() {
 			_, err = tidbC.ExecContext(context.Background(), "admin check table sbtest1")
 			if err != nil {
 				log.Fatalf("check table, err: %s", err.Error())
+			}
+
+			idxName := extractIndexName(addIndexSQL)
+			_, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("drop index %s on sbtest1", idxName))
+			if err != nil {
+				log.Fatalf("Can't drop index, err: %s", err.Error())
 			}
 		}
 
