@@ -14,7 +14,7 @@ import (
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
-	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/pkg/meta/model"
 )
 
 // The DDL test case is intended to test the correctness of DDL operations. It
@@ -596,7 +596,6 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 	})
 
 	if err != nil {
-		ddlFailedCounter.Inc()
 		return errors.Trace(err)
 	}
 
