@@ -120,6 +120,27 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("ord([%fn])", s1),
 		Strf("position([%fn] in [%fn])", s1, s2),
 		Strf("quote([%fn])", s1),
+		// regex-match patterns tuned to likely random ASCII/GBK strings
+		Strf("[%fn] rlike '.*'", s1),                   // match anything
+		Strf("[%fn] rlike '^[[:alnum:]_]{1,20}$'", s1), // common alnum/underscore
+		Strf("[%fn] rlike '^[A-Za-z].*'", s1),          // starts with letter
+		Strf("[%fn] rlike '^[0-9].*'", s1),             // starts with digit
+		Strf("[%fn] rlike '.*[A-Za-z].*'", s1),         // contains letter
+		Strf("[%fn] rlike '.*[0-9].*'", s1),            // contains digit
+		Strf("[%fn] rlike '^.{1,10}$'", s1),            // length up to 10
+		Strf("[%fn] rlike '[A-Za-z0-9_]{3,8}'", s1),    // mid-length token
+		Strf("[%fn] rlike '^[[:alpha:]]+$'", s1),       // pure alpha
+		Strf("[%fn] rlike '^[[:digit:]]{1,3}$'", s1),   // short digits
+		Strf("[%fn] rlike 'foo.*'", s1),                // prefix literal
+		Strf("[%fn] rlike '.*bar'", s1),                // suffix literal
+		// case-insensitive variants to match mixed-case random strings
+		Strf("[%fn] rlike '(?i)^foo.*'", s1),
+		Strf("[%fn] rlike '(?i).*bar$'", s1),
+		Strf("[%fn] rlike '(?i)^[a-z]{1,5}$'", s1),
+		Strf("[%fn] rlike '(?i)[a-z0-9]{2,6}'", s1),
+		Strf("lower([%fn]) rlike '^a.*'", s1),
+		// column-based pattern to keep variability; pattern from another string col
+		Strf("[%fn] rlike concat('^', [%fn], '.*')", s1, s2),
 		// TODO: fix OOM.
 		//Strf("repeat([%fn], [%fn])", s1, i1),
 		Strf("replace([%fn], [%fn], [%fn])", s1, s2, s1),

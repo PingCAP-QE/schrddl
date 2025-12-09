@@ -23,8 +23,150 @@ var Query = NewFn(func(state *State) Fn {
 		UnionSelect.W(4),
 		MultiSelectWithSubQuery.W(4),
 		MultiSelectWithIndexJoin.W(1),
+		InfoSchemaQuery.W(1),
 	)
 }).P(HasTables)
+
+// infoSchemaExcludes keeps system schemas we typically don't query together with user schemas.
+var infoSchemaExcludes = "('INFORMATION_SCHEMA','METRICS_SCHEMA','PERFORMANCE_SCHEMA','mysql')"
+
+var InfoSchemaQuery = NewFn(func(state *State) Fn {
+	return Or(
+		InfoSchemaTablesQuery,
+		InfoSchemaColumnsQuery,
+		InfoSchemaSchemataQuery,
+		InfoSchemaStatisticsQuery,
+	)
+})
+
+var InfoSchemaLikePattern = NewFn(func(state *State) Fn {
+	return Or(
+		Str("'t%'"),
+		Str("'test%'"),
+		Str("'%col%'"),
+		Str("'%a%'"),
+		Str("'%1%'"),
+	)
+})
+
+var InfoSchemaRlikePattern = NewFn(func(state *State) Fn {
+	return Or(
+		Str("'^t.*'"),
+		Str("(?i)'^test.*'"),
+		Str("(?i)'.*col.*'"),
+		Str("(?i)'.*idx.*'"),
+		Str("'.*[0-9].*'"),
+	)
+})
+
+// Prefer using existing generated table names to raise match probability.
+var InfoSchemaTableNameFromState = NewFn(func(state *State) Fn {
+	if len(state.Tables) == 0 {
+		return Empty
+	}
+	tbl := state.Tables.Rand()
+	if tbl == nil {
+		return Empty
+	}
+	// simple equals, like, rlike with case-insensitive variant
+	return Or(
+		Strs("and table_name =", fmt.Sprintf("'%s'", tbl.Name)),
+		Strs("and table_name like", fmt.Sprintf("'%s%%'", tbl.Name)),
+		Strs("and table_name rlike", fmt.Sprintf("(?i)'^%s.*'", tbl.Name)),
+	)
+})
+
+var InfoSchemaColumnNameFromState = NewFn(func(state *State) Fn {
+	if len(state.Tables) == 0 {
+		return Empty
+	}
+	tbl := state.Tables.Rand()
+	if tbl == nil || len(tbl.Columns) == 0 {
+		return Empty
+	}
+	col := tbl.Columns.Rand()
+	if col == nil {
+		return Empty
+	}
+	return Or(
+		Strs("and column_name =", fmt.Sprintf("'%s'", col.Name)),
+		Strs("and column_name rlike", fmt.Sprintf("(?i)'^%s.*'", col.Name)),
+	)
+})
+
+var infoSchemaTableNameFilter = NewFn(func(state *State) Fn {
+	return Or(
+		And(Str("and table_name like"), InfoSchemaLikePattern),
+		And(Str("and table_name rlike"), InfoSchemaRlikePattern),
+		InfoSchemaTableNameFromState,
+	)
+})
+
+var infoSchemaSchemaNameFilter = NewFn(func(state *State) Fn {
+	return Or(
+		And(Str("and schema_name like"), InfoSchemaLikePattern),
+		And(Str("and schema_name rlike"), InfoSchemaRlikePattern),
+	)
+})
+
+var InfoSchemaTablesQuery = NewFn(func(state *State) Fn {
+	return And(
+		Strs("select", "table_schema, table_name, table_type"),
+		Strs("from", "information_schema.tables"),
+		Str("where"),
+		Or(
+			Str("table_schema = database()"),
+			Str("table_schema not in "+infoSchemaExcludes),
+		),
+		Opt(infoSchemaTableNameFilter),
+		Strs("order by", "table_schema, table_name"),
+		Strs("limit", RandomNum(5, 50)),
+	)
+})
+
+var InfoSchemaColumnsQuery = NewFn(func(state *State) Fn {
+	return And(
+		Strs("select", "table_schema, table_name, column_name, data_type, ordinal_position"),
+		Strs("from", "information_schema.columns"),
+		Str("where"),
+		Or(
+			Str("table_schema = database()"),
+			Str("table_schema not in "+infoSchemaExcludes),
+		),
+		Opt(infoSchemaTableNameFilter),
+		Opt(InfoSchemaColumnNameFromState),
+		Opt(And(Str("and ordinal_position <="), Str(RandomNum(1, 5)))),
+		Strs("order by", "table_schema, table_name, ordinal_position"),
+		Strs("limit", RandomNum(5, 80)),
+	)
+})
+
+var InfoSchemaSchemataQuery = NewFn(func(state *State) Fn {
+	return And(
+		Strs("select", "schema_name, default_character_set_name, default_collation_name"),
+		Strs("from", "information_schema.schemata"),
+		Str("where schema_name not in "+infoSchemaExcludes),
+		Opt(infoSchemaSchemaNameFilter),
+		Strs("order by", "schema_name"),
+		Strs("limit", RandomNum(3, 30)),
+	)
+})
+
+var InfoSchemaStatisticsQuery = NewFn(func(state *State) Fn {
+	return And(
+		Strs("select", "table_schema, table_name, index_name, column_name, seq_in_index, non_unique"),
+		Strs("from", "information_schema.statistics"),
+		Str("where"),
+		Or(
+			Str("table_schema = database()"),
+			Str("table_schema not in "+infoSchemaExcludes),
+		),
+		Opt(infoSchemaTableNameFilter),
+		Opt(Str("and index_name != 'PRIMARY'")),
+		Strs("order by", "table_schema, table_name, index_name, seq_in_index"),
+		Strs("limit", RandomNum(5, 80)),
+	)
+})
 
 var QueryAll = NewFn(func(state *State) Fn {
 	tbl := state.Tables.Rand()
