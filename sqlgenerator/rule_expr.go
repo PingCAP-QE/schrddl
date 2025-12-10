@@ -139,8 +139,8 @@ var BuiltinFunction = NewFn(func(state *State) Fn {
 		Strf("[%fn] rlike '(?i)^[a-z]{1,5}$'", s1),
 		Strf("[%fn] rlike '(?i)[a-z0-9]{2,6}'", s1),
 		Strf("lower([%fn]) rlike '^a.*'", s1),
-		// column-based pattern to keep variability; pattern from another string col
-		Strf("[%fn] rlike concat('^', [%fn], '.*')", s1, s2),
+		// safe pattern without injecting raw regex meta from data
+		Strf("lower([%fn]) rlike '^[a-z0-9_]{0,32}$'", s1),
 		// TODO: fix OOM.
 		//Strf("repeat([%fn], [%fn])", s1, i1),
 		Strf("replace([%fn], [%fn], [%fn])", s1, s2, s1),

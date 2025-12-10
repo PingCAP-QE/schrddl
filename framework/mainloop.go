@@ -285,21 +285,40 @@ func (c *testCase) checkError(err error) error {
 	return nil
 }
 
-func (c *testCase) execSQL(sql string) error {
-	_, err := c.dbs[0].Exec(sql)
+func (c *testCase) execSQL(query string) error {
+	ctx := context.Background()
+	var err error
+	if c.systemConn != nil {
+		_, err = c.systemConn.ExecContext(ctx, query)
+	} else {
+		_, err = c.dbs[0].ExecContext(ctx, query)
+	}
 	if err != nil && dmlIgnoreError(err) || ddlIgnoreError(err) {
 		return nil
 	}
 	if strings.Contains(err.Error(), "plan not match") {
-		_, err = c.dbs[0].Exec(sql)
+		if c.systemConn != nil {
+			_, err = c.systemConn.ExecContext(ctx, query)
+		} else {
+			_, err = c.dbs[0].ExecContext(ctx, query)
+		}
 		return err
 	}
 	return errors.Trace(err)
 }
 
-func (c *testCase) execQueryForPlanEstCnt(sql string) (float64, error) {
-	sql = "explain format='brief' " + sql
-	rows, err := c.dbs[0].Query(sql)
+func (c *testCase) execQueryForPlanEstCnt(query string) (float64, error) {
+	query = "explain format='brief' " + query
+	ctx := context.Background()
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if c.systemConn != nil {
+		rows, err = c.systemConn.QueryContext(ctx, query)
+	} else {
+		rows, err = c.dbs[0].QueryContext(ctx, query)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -316,8 +335,17 @@ func (c *testCase) execQueryForPlanEstCnt(sql string) (float64, error) {
 	return estRows, err
 }
 
-func (c *testCase) execQueryForCnt(sql string) (int, error) {
-	rows, err := c.dbs[0].Query(sql)
+func (c *testCase) execQueryForCnt(query string) (int, error) {
+	ctx := context.Background()
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if c.systemConn != nil {
+		rows, err = c.systemConn.QueryContext(ctx, query)
+	} else {
+		rows, err = c.dbs[0].QueryContext(ctx, query)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -334,8 +362,17 @@ func (c *testCase) execQueryForCnt(sql string) (int, error) {
 	return rs, nil
 }
 
-func (c *testCase) execQueryAndCheckEmpty(sql string) bool {
-	rows, err := c.dbs[0].Query(sql)
+func (c *testCase) execQueryAndCheckEmpty(query string) bool {
+	ctx := context.Background()
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if c.systemConn != nil {
+		rows, err = c.systemConn.QueryContext(ctx, query)
+	} else {
+		rows, err = c.dbs[0].QueryContext(ctx, query)
+	}
 	if err != nil {
 		logutil.BgLogger().Error("unexpected error", zap.Error(err))
 		return false
@@ -368,11 +405,11 @@ func (c *testCase) execQueryAndCheckEmpty(sql string) bool {
 			c.outputWriter.WriteString(fmt.Sprintf("%s\n", string(r)))
 		}
 
-		cnt, _ := c.execQueryForCnt(sql)
+		cnt, _ := c.execQueryForCnt(query)
 
-		rs, _ := c.execQuery(sql)
+		rs, _ := c.execQuery(query)
 
-		c.outputWriter.WriteString(fmt.Sprintf("sql: %s, cnt: %d, cnt2: %d, cnt3: %d \n", sql, cnt, cnt2+1, len(rs)))
+		c.outputWriter.WriteString(fmt.Sprintf("sql: %s, cnt: %d, cnt2: %d, cnt3: %d \n", query, cnt, cnt2+1, len(rs)))
 		if rows.Err() != nil {
 			c.outputWriter.WriteString(fmt.Sprintf("err %s \n", rows.Err().Error()))
 		}
@@ -380,8 +417,17 @@ func (c *testCase) execQueryAndCheckEmpty(sql string) bool {
 	return result
 }
 
-func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
-	rows, err := c.dbs[0].Query(sql)
+func (c *testCase) execQueryForCRC32(query string) (map[uint32]struct{}, error) {
+	ctx := context.Background()
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if c.systemConn != nil {
+		rows, err = c.systemConn.QueryContext(ctx, query)
+	} else {
+		rows, err = c.dbs[0].QueryContext(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -448,8 +494,17 @@ func (c *testCase) execQueryForCRC32(sql string) (map[uint32]struct{}, error) {
 	return crc32s, nil
 }
 
-func (c *testCase) execQuery(sql string) ([][]string, error) {
-	rows, err := c.dbs[0].Query(sql)
+func (c *testCase) execQuery(query string) ([][]string, error) {
+	ctx := context.Background()
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if c.systemConn != nil {
+		rows, err = c.systemConn.QueryContext(ctx, query)
+	} else {
+		rows, err = c.dbs[0].QueryContext(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +667,6 @@ func (c *testCase) execute(ctx context.Context) error {
 	defer sqlgenerator.RemoveIndexJoinColumns(state)
 
 	cnt := 0
-
 	for {
 		cnt++
 		if cnt%100 == 0 {
@@ -688,6 +742,31 @@ func (c *testCase) execute(ctx context.Context) error {
 				return errors.Trace(err)
 			}
 
+			isSystemQuery := strings.Contains(strings.ToLower(querySQL), "information_schema.")
+			startedSystemTxn := false
+			if isSystemQuery {
+				conn, err := c.dbs[0].Conn(context.Background())
+				if err != nil {
+					return err
+				}
+				c.systemConn = conn
+				if _, err := conn.ExecContext(context.Background(), "begin"); err != nil {
+					_ = conn.Close()
+					c.systemConn = nil
+					return err
+				}
+				c.systemConn.ExecContext(context.Background(), "select sleep(1)")
+				startedSystemTxn = true
+			}
+			commitSystemTxn := func() {
+				if startedSystemTxn && c.systemConn != nil {
+					_, _ = c.systemConn.ExecContext(context.Background(), "commit")
+					_ = c.systemConn.Close()
+					c.systemConn = nil
+					startedSystemTxn = false
+				}
+			}
+
 			//println(fmt.Sprintf("%s;", querySQL))
 
 			found, err := ck.check(querySQL, false)
@@ -696,11 +775,14 @@ func (c *testCase) execute(ctx context.Context) error {
 					if strings.Contains(err.Error(), "plan not match") {
 						_, err = c.dbs[0].Exec(querySQL)
 						if err == nil {
+							commitSystemTxn()
 							continue
 						}
 					}
+					commitSystemTxn()
 					return errors.Trace(err)
 				} else {
+					commitSystemTxn()
 					continue
 				}
 			}
@@ -743,11 +825,14 @@ func (c *testCase) execute(ctx context.Context) error {
 				}
 				err = dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num), c.cfg.dbAddr)
 				if err != nil {
+					commitSystemTxn()
 					return err
 				}
 				TestFail = true
+				commitSystemTxn()
 				break
 			}
+			commitSystemTxn()
 		}
 	}
 

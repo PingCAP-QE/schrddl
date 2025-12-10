@@ -66,6 +66,9 @@ type testCase struct {
 	nQuery    string
 	nullQuery string
 	allQuery  string
+
+	// connection for system queries to keep them in one transaction/session
+	systemConn *sql.Conn
 }
 
 func (c *testCase) stopTest() {
