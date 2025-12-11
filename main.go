@@ -237,6 +237,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("Can't set variable, err: %s", err.Error())
 		}
+		if GlobalSortUri != "" {
+			_, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global tidb_cloud_storage_uri = '%s'", GlobalSortUri))
+			if err != nil {
+				log.Fatalf("Can't set global_sort_uri, err: %s", err.Error())
+			}
+		}
 
 		// 3. Pick a random data source to import data
 		dataSource := S3ImportIntoDataSource[rand.Intn(len(S3ImportIntoDataSource))]
@@ -251,7 +257,7 @@ func main() {
 			log.Fatalf("Can't import table, err: %s", err.Error())
 		}
 
-		for i := 0; i < 100; i++ {
+		for k := 0; k < 20; k++ {
 			// 4. Pick an index to add
 			addIndexSQL := IndexList[i][rand.Intn(len(IndexList[i]))]
 			log.Infof("add index with sql: %s", addIndexSQL)
