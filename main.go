@@ -66,7 +66,7 @@ func timeoutExitLoop(timeout time.Duration) {
 }
 
 var S3ImportIntoDataSource = []string{"s3://sql-data-service/csv/wide_table_1t/*/*"}
-var KS3ImportIntoDataSource = []string{"s3://qe-testing/kernel-testing/sql_data_service/csv/wide_table_1t/*/*.csv"}
+var KS3ImportIntoDataSource = []string{"ks3://qe-testing/kernel-testing/sql_data_service/csv/wide_table_1t/*/*.csv"}
 var schemaList = []string{
 	`CREATE TABLE sbtest1 (
     id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
