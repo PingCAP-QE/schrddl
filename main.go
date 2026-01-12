@@ -14,20 +14,15 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"flag"
-	"fmt"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
+	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 
-	"github.com/PingCAP-QE/schrddl/ddl"
-	"github.com/PingCAP-QE/schrddl/framework"
+	enginepkg "github.com/PingCAP-QE/schrddl/engine"
+	engineddl "github.com/PingCAP-QE/schrddl/engine/ddl"
+	engineframework "github.com/PingCAP-QE/schrddl/engine/framework"
 )
 
 var (
@@ -54,129 +49,77 @@ var (
 	eet  = flag.Bool("eet", false, "enable EET (framework engine)")
 )
 
-func prepareEnv(enableIndexJoinOnAggregation bool) {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", *dbAddr, *dbName)
-	tiDb, err := sql.Open("mysql", dbURL)
-	if err != nil {
-		log.Fatalf("Can't open database, err: %s", err.Error())
-	}
-	tidbC, err := tiDb.Conn(context.Background())
-	if err != nil {
-		log.Fatalf("Can't connect to database, err: %s", err.Error())
-	}
-	if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", ddl.Local.String())); err != nil {
-		if _, err = tidbC.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
-			if _, err = tidbC.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
-				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
-			}
-		}
-	}
-	if enableIndexJoinOnAggregation {
-		_, _ = tidbC.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
-	}
-	_ = tidbC.Close()
-
-	mysql.SetLogger(log.Logger())
-}
-
-func timeoutExitLoop(timeout time.Duration) {
-	time.Sleep(timeout + 20*time.Second)
-	os.Exit(0)
-}
-
 func main() {
 	flag.Parse()
 
 	if *output != "" {
 		log.SetOutputByName(*output)
-		framework.GlobalOutPut = *output
+	}
+
+	commonOpts := enginepkg.CommonOptions{
+		DBAddr: *dbAddr,
+		DBName: *dbName,
+
+		Mode: enginepkg.Mode(*mode),
+
+		Concurrency:     *concurrency,
+		TablesToCreate:  *tablesToCreate,
+		MySQLCompatible: *mysqlCompatible,
+		TestTime:        *testTime,
+
+		Output: *output,
+
+		Txn:                  *txn,
+		RC:                   *rc,
+		Prepare:              *prepare,
+		CheckDDLExtraTimeout: *checkDDLExtraTimeout,
 	}
 
 	switch *engine {
 	case "ddl":
-		if *txn {
-			ddl.EnableTransactionTest = true
-		}
-		if *rc {
-			ddl.RCIsolation = true
-		}
-		if *prepare {
-			ddl.Prepare = true
-		}
-		if *checkDDLExtraTimeout > 0 {
-			ddl.CheckDDLExtraTimeout = *checkDDLExtraTimeout
-		}
-		if *globalSortUri != "" {
-			ddl.GlobalSortUri = *globalSortUri
-		}
-
-		log.Infof("[%s-ddl] start ddl", *mode)
-		var testType ddl.DDLTestType
-		switch *mode {
-		case "serial":
-			testType = ddl.SerialDDLTest
-		case "parallel":
-			testType = ddl.ParallelDDLTest
-		default:
-			log.Fatalf("unknown test mode: %s", *mode)
-		}
-
-		prepareEnv(false)
-		go func() {
-			timeoutExitLoop(*testTime)
-		}()
-		ddl.Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
-
-	case "framework":
-		if *txn {
-			framework.EnableTransactionTest = true
-		}
-		if *rc {
-			framework.RCIsolation = true
-		}
-		if *prepare {
-			framework.Prepare = true
-		}
-		if *checkDDLExtraTimeout > 0 {
-			framework.CheckDDLExtraTimeout = *checkDDLExtraTimeout
+		ignored := make([]string, 0)
+		if *pprofAddr != "" {
+			ignored = append(ignored, "-pprof-addr")
 		}
 		if *aqs {
-			framework.EnableApproximateQuerySynthesis = true
+			ignored = append(ignored, "-aqs")
 		}
 		if *cert {
-			framework.EnableCERT = true
+			ignored = append(ignored, "-cert")
 		}
 		if *tlp {
-			framework.EnableTLP = true
+			ignored = append(ignored, "-tlp")
 		}
 		if *eet {
-			framework.EnableEET = true
+			ignored = append(ignored, "-eet")
+		}
+		if len(ignored) > 0 {
+			log.Warnf("ignored flags for -engine ddl: %s", strings.Join(ignored, ", "))
 		}
 
-		log.Infof("[%s-framework] start framework", *mode)
-		var testType framework.DDLTestType
-		switch *mode {
-		case "serial":
-			testType = framework.SerialDDLTest
-		case "parallel":
-			testType = framework.ParallelDDLTest
-		default:
-			log.Fatalf("unknown test mode: %s", *mode)
+		engineddl.Run(engineddl.Options{
+			CommonOptions: commonOpts,
+			GlobalSortURI: *globalSortUri,
+		})
+
+	case "framework":
+		ignored := make([]string, 0)
+		if *globalSortUri != "" {
+			ignored = append(ignored, "-global-sort-uri")
+		}
+		if len(ignored) > 0 {
+			log.Warnf("ignored flags for -engine framework: %s", strings.Join(ignored, ", "))
 		}
 
-		prepareEnv(true)
-		if *pprofAddr != "" {
-			go func() {
-				if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
-					log.Warnf("pprof server exited: %v", err)
-				}
-			}()
-		}
+		engineframework.Run(engineframework.Options{
+			CommonOptions: commonOpts,
+			PprofAddr:     *pprofAddr,
 
-		framework.Run(*dbAddr, *dbName, *concurrency, *tablesToCreate, *mysqlCompatible, testType, *testTime)
-		if framework.TestFail {
-			log.Fatalf("test failed")
-		}
+			EnableApproximateQuerySynthesis: *aqs,
+			EnableCERT:                      *cert,
+			EnableTLP:                       *tlp,
+			EnableEET:                       *eet,
+		})
 
 	default:
 		log.Fatalf("unknown engine: %s", *engine)
