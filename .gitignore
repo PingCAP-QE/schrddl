@@ -1,3 +1,5 @@
 .idea/
+result-*
+bug*
 schrddl
 .DS_Store

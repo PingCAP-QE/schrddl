@@ -8,6 +8,7 @@ Randomized concurrent DDL/DML correctness testing framework for TiDB.
 
 - `main.go`: CLI entry and flags.
 - `ddl/`: DDL/DML execution engine (parallel/serial/txn modes, metadata, validators).
+- `framework/`: unified SQL correctness framework (optional engine).
 - `sqlgenerator/`: probabilistic SQL generator (functional DSL + hooks).
 
 ## Requirements
@@ -36,6 +37,23 @@ go build -o schrddl
   -time 2h
 ```
 
+## Engines
+
+`schrddl` supports two engines:
+
+- `-engine ddl` (default): legacy randomized concurrent DDL/DML engine in `ddl/`.
+- `-engine framework`: unified SQL correctness framework in `framework/` (optional oracles such as NoREC/TLP/EET/CERT).
+
+Framework-specific flags:
+
+- `-aqs`: enable Approximate Query Synthesis
+- `-cert`: enable CERT
+- `-tlp`: enable TLP
+- `-eet`: enable EET
+- `-pprof-addr`: start pprof HTTP server (e.g. `127.0.0.1:6060`)
+
+Note: `-global-sort-uri` only applies to `-engine ddl`.
+
 ### Common Flags
 
 - `-addr`: TiDB address in `host:port` (default `127.0.0.1:4000`)
@@ -59,7 +77,7 @@ go build -o schrddl
 
 - Connection DSN is currently fixed as `root:@tcp(<addr>)/<db>` (no user/password flags).
 - The runner sets some TiDB globals (e.g. time zone, `max_execution_time`; and dist-task globals when `-global-sort-uri` is set).
-- The process has a hard exit loop after the configured duration (see `main.go:67`), so expect `os.Exit(0)` shortly after `-time`.
+- The process has a hard exit loop after the configured duration (see `main.go`), so expect `os.Exit(0)` shortly after `-time`.
 
 ## Development
 
