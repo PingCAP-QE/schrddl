@@ -120,7 +120,7 @@ var InfoSchemaTablesQuery = NewFn(func(state *State) Fn {
 		),
 		Opt(infoSchemaTableNameFilter),
 		Strs("order by", "table_schema, table_name"),
-		Strs("limit", RandomNum(5, 50)),
+		Limit,
 	)
 })
 
@@ -137,7 +137,7 @@ var InfoSchemaColumnsQuery = NewFn(func(state *State) Fn {
 		Opt(InfoSchemaColumnNameFromState),
 		Opt(And(Str("and ordinal_position <="), Str(RandomNum(1, 5)))),
 		Strs("order by", "table_schema, table_name, ordinal_position"),
-		Strs("limit", RandomNum(5, 80)),
+		Limit,
 	)
 })
 
@@ -148,7 +148,7 @@ var InfoSchemaSchemataQuery = NewFn(func(state *State) Fn {
 		Str("where schema_name not in "+infoSchemaExcludes),
 		Opt(infoSchemaSchemaNameFilter),
 		Strs("order by", "schema_name"),
-		Strs("limit", RandomNum(3, 30)),
+		Limit,
 	)
 })
 
@@ -164,7 +164,7 @@ var InfoSchemaStatisticsQuery = NewFn(func(state *State) Fn {
 		Opt(infoSchemaTableNameFilter),
 		Opt(Str("and index_name != 'PRIMARY'")),
 		Strs("order by", "table_schema, table_name, index_name, seq_in_index"),
-		Strs("limit", RandomNum(5, 80)),
+		Limit,
 	)
 })
 
