@@ -2294,7 +2294,7 @@ func (c *testCase) getSortTask(db *sql.DB, tasks []*ddlJobTask) ([]*ddlJobTask, 
 				str += fmt.Sprintf("%v\t%v\t%v\t%v\t%v\t%v\n", task.ddlID, c.initDB, task.viewInfo.name, mapOfDDLKindToString[task.k], "_", task.viewInfo.id)
 			}
 		}
-		return nil, fmt.Errorf(str)
+		return nil, errors.New(str)
 	}
 
 	sort.Sort(ddlJobTasks(sortTasks))

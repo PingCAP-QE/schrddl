@@ -187,7 +187,7 @@ var Empty = NewFn(func(state *State) Fn {
 })
 
 func None(msg string) Fn {
-	return NoneBecauseOf(fmt.Errorf(msg))
+	return NoneBecauseOf(fmt.Errorf("%s", msg))
 }
 
 func NoneBecauseOf(err error) Fn {

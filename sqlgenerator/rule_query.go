@@ -52,9 +52,9 @@ var InfoSchemaLikePattern = NewFn(func(state *State) Fn {
 var InfoSchemaRlikePattern = NewFn(func(state *State) Fn {
 	return Or(
 		Str("'^t.*'"),
-		Str("(?i)'^test.*'"),
-		Str("(?i)'.*col.*'"),
-		Str("(?i)'.*idx.*'"),
+		Str("'(?i)^test.*'"),
+		Str("'(?i).*col.*'"),
+		Str("'(?i).*idx.*'"),
 		Str("'.*[0-9].*'"),
 	)
 })
@@ -72,7 +72,7 @@ var InfoSchemaTableNameFromState = NewFn(func(state *State) Fn {
 	return Or(
 		Strs("and table_name =", fmt.Sprintf("'%s'", tbl.Name)),
 		Strs("and table_name like", fmt.Sprintf("'%s%%'", tbl.Name)),
-		Strs("and table_name rlike", fmt.Sprintf("(?i)'^%s.*'", tbl.Name)),
+		Strs("and table_name rlike", fmt.Sprintf("'(?i)^%s.*'", tbl.Name)),
 	)
 })
 
@@ -90,7 +90,7 @@ var InfoSchemaColumnNameFromState = NewFn(func(state *State) Fn {
 	}
 	return Or(
 		Strs("and column_name =", fmt.Sprintf("'%s'", col.Name)),
-		Strs("and column_name rlike", fmt.Sprintf("(?i)'^%s.*'", col.Name)),
+		Strs("and column_name rlike", fmt.Sprintf("'(?i)^%s.*'", col.Name)),
 	)
 })
 
@@ -306,7 +306,7 @@ var MultiSelect = NewFn(func(state *State) Fn {
 
 var NonAggSelect = NewFn(func(state *State) Fn {
 	return And(
-		Str("select"), HintTiFlash, Or(HintIndexMerge, HintUseIndex), HintJoin,
+		Str("select"), Or(Empty, HintTiFlash, HintIndexMerge, HintUseIndex, HintJoin),
 		SelectFields, Str("from"), TableReference,
 		WhereClause, Opt(OrderBy), Opt(Limit),
 	)
@@ -339,7 +339,7 @@ var AggSelect = NewFn(func(state *State) Fn {
 	state.env.QState.AggCols[tbl] = groupByCols
 
 	return And(
-		Str("select"), HintTiFlash, Or(HintIndexMerge, HintUseIndex), Opt(HintAggToCop), HintJoin,
+		Str("select"), Or(Empty, HintTiFlash, HintIndexMerge, HintUseIndex, HintAggToCop, HintJoin),
 		SelectFields, Str("from"), TableReference,
 		WhereClause, GroupByColumns, WindowClause, HavingOpt, Opt(OrderBy), Opt(Limit),
 	)
@@ -501,16 +501,16 @@ var HintJoin = NewFn(func(state *State) Fn {
 	}
 	t1, t2 := tbl[0], tbl[1]
 	return Or(
-		Strs("/*+  */"),
-		Strs("/*+ merge_join(", t1.Name, ",", t2.Name, "*/"),
-		Strs("/*+ NO_MERGE_JOIN(", t1.Name, ",", t2.Name, "*/"),
-		Strs("/*+ hash_join(", t1.Name, ",", t2.Name, "*/"),
+		Empty,
+		Strs("/*+ merge_join(", t1.Name, ",", t2.Name, ") */"),
+		Strs("/*+ NO_MERGE_JOIN(", t1.Name, ",", t2.Name, ") */"),
+		Strs("/*+ hash_join(", t1.Name, ",", t2.Name, ") */"),
 		Strs("/*+ inl_join(", t1.Name, ") */"),
 		Strs("/*+ inl_join(", t2.Name, ") */"),
 		Strs("/*+ inl_hash_join(", t1.Name, ",", t2.Name, ") */"),
 		Strs("/*+ HASH_JOIN_BUILD(", t1.Name, ") */"),
 		Strs("/*+ HASH_JOIN_PROBE(", t1.Name, ") */"),
-		Strs("/*+ NO_HASH_JOIN(", t1.Name, ",", t2.Name, "*/"),
+		Strs("/*+ NO_HASH_JOIN(", t1.Name, ",", t2.Name, ") */"),
 		//Strs("/*+ inl_merge_join(", t1.Name, ",", t2.Name, ") */"),
 	)
 })
@@ -849,7 +849,7 @@ var HintAggToCop = NewFn(func(state *State) Fn {
 	return And(
 		Str("/*+"),
 		Opt(Str("agg_to_cop()")),
-		Or(Empty, Str("hash_agg()"), Str("stream_agg()")),
+		Or(Str("hash_agg()"), Str("stream_agg()")),
 		Str("*/"),
 	)
 })
@@ -925,7 +925,7 @@ var TableSubQuery = NewFn(func(state *State) Fn {
 		return NoneBecauseOf(err)
 	}
 	var cts []ColumnType
-	cts, err = getTypeOfExpressions(def, "test", state.tableMeta)
+	cts, err = getTypeOfExpressions(def, "test", state)
 	if err != nil {
 		return NoneBecauseOf(err)
 	}

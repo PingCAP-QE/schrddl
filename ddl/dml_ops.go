@@ -49,7 +49,7 @@ func (c *testCase) sendDMLRequest(ctx context.Context, conn *sql.Conn, task *dml
 	task.err = err
 	//log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
 	if err != nil {
-		return errors.Annotatef(err, "Error when executing SQL: %s\n%s", task.sql)
+		return errors.Annotatef(err, "Error when executing SQL: %s", task.sql)
 	}
 	return nil
 }

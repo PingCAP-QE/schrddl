@@ -10,6 +10,7 @@ import (
 	"github.com/pingcap/tidb/pkg/meta/model"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/mysql"
 	_ "github.com/pingcap/tidb/pkg/planner/core"
 	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util/logutil"
@@ -239,12 +240,128 @@ func GetBuildOptions(dbName string, schemas []*model.TableInfo) (expression.Buil
 	return expression.WithInputSchemaAndNames(expression.NewSchema(cols...), names, nil), nil
 }
 
-func getTypeOfExpressions(sql string, dbName string, schemas []*model.TableInfo) ([]ColumnType, error) {
+func buildTableMetasFromState(state *State) []*model.TableInfo {
+	tableMetas := make([]*model.TableInfo, 0, len(state.Tables))
+	for _, tbl := range state.Tables {
+		if tbl == nil {
+			continue
+		}
+		tblMeta := &model.TableInfo{
+			ID:    int64(tbl.ID),
+			Name:  ast.NewCIStr(tbl.Name),
+			State: model.StatePublic,
+		}
+		tblMeta.Columns = make([]*model.ColumnInfo, 0, len(tbl.Columns))
+		for i, col := range tbl.Columns {
+			if col == nil {
+				continue
+			}
+			colMeta := &model.ColumnInfo{
+				ID:     int64(col.ID),
+				Name:   ast.NewCIStr(col.Name),
+				Offset: i,
+				State:  model.StatePublic,
+			}
+			colMeta.FieldType = buildFieldTypeFromColumn(col)
+			tblMeta.Columns = append(tblMeta.Columns, colMeta)
+		}
+		tableMetas = append(tableMetas, tblMeta)
+	}
+	return tableMetas
+}
+
+func buildFieldTypeFromColumn(col *Column) types.FieldType {
+	var tp byte
+	switch col.Tp {
+	case ColumnTypeInt:
+		tp = mysql.TypeLong
+	case ColumnTypeTinyInt, ColumnTypeBoolean:
+		tp = mysql.TypeTiny
+	case ColumnTypeSmallInt:
+		tp = mysql.TypeShort
+	case ColumnTypeMediumInt:
+		tp = mysql.TypeInt24
+	case ColumnTypeBigInt:
+		tp = mysql.TypeLonglong
+	case ColumnTypeFloat:
+		tp = mysql.TypeFloat
+	case ColumnTypeDouble:
+		tp = mysql.TypeDouble
+	case ColumnTypeDecimal:
+		tp = mysql.TypeNewDecimal
+	case ColumnTypeBit:
+		tp = mysql.TypeBit
+	case ColumnTypeChar, ColumnTypeBinary:
+		tp = mysql.TypeString
+	case ColumnTypeVarchar, ColumnTypeVarBinary:
+		tp = mysql.TypeVarchar
+	case ColumnTypeText, ColumnTypeBlob:
+		tp = mysql.TypeBlob
+	case ColumnTypeEnum:
+		tp = mysql.TypeEnum
+	case ColumnTypeSet:
+		tp = mysql.TypeSet
+	case ColumnTypeDate:
+		tp = mysql.TypeDate
+	case ColumnTypeTime:
+		tp = mysql.TypeDuration
+	case ColumnTypeDatetime:
+		tp = mysql.TypeDatetime
+	case ColumnTypeTimestamp:
+		tp = mysql.TypeTimestamp
+	case ColumnTypeYear:
+		tp = mysql.TypeYear
+	case ColumnTypeJSON:
+		tp = mysql.TypeJSON
+	case ColumnTypeVector:
+		tp = mysql.TypeTiDBVectorFloat32
+	default:
+		tp = mysql.TypeVarString
+	}
+
+	ft := types.NewFieldType(tp)
+	if col.IsUnsigned {
+		ft.AddFlag(mysql.UnsignedFlag)
+	}
+	if col.IsNotNull {
+		ft.AddFlag(mysql.NotNullFlag)
+	}
+
+	switch col.Tp {
+	case ColumnTypeChar, ColumnTypeVarchar, ColumnTypeBinary, ColumnTypeVarBinary, ColumnTypeText, ColumnTypeBlob, ColumnTypeBit:
+		if col.Arg1 > 0 {
+			ft.SetFlen(col.Arg1)
+		}
+	case ColumnTypeDecimal:
+		if col.Arg1 > 0 {
+			ft.SetFlen(col.Arg1)
+		}
+		if col.Arg2 > 0 {
+			ft.SetDecimal(col.Arg2)
+		}
+	}
+
+	if col.Tp == ColumnTypeEnum || col.Tp == ColumnTypeSet {
+		if len(col.Args) > 0 {
+			ft.SetElems(col.Args)
+		}
+	}
+	if col.Tp == ColumnTypeJSON && col.Array {
+		ft.SetArray(true)
+	}
+	return *ft
+}
+
+func getTypeOfExpressions(sql string, dbName string, state *State) ([]ColumnType, error) {
 	stmts, _, err := parser.New().ParseSQL(sql)
 	if err != nil {
 		return nil, err
 	}
 
+	schemas := state.tableMeta
+	if len(schemas) == 0 {
+		schemas = buildTableMetasFromState(state)
+	}
 	buildOptions, err := GetBuildOptions(dbName, schemas)
 	if err != nil {
 		return nil, err
@@ -278,7 +395,7 @@ var CTESeedPart = NewFn(func(state *State) Fn {
 		if err != nil {
 			continue
 		}
-		ts, err = getTypeOfExpressions(cteDef, "test", state.tableMeta)
+		ts, err = getTypeOfExpressions(cteDef, "test", state)
 		if err == nil {
 			break
 		}

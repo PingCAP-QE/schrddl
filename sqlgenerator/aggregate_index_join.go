@@ -164,7 +164,7 @@ var MultiSelectWithIndexJoin = NewFn(func(state *State) Fn {
 		return NoneBecauseOf(err)
 	}
 	var cts []ColumnType
-	cts, err = getTypeOfExpressions(def, "test", state.tableMeta)
+	cts, err = getTypeOfExpressions(def, "test", state)
 	if err != nil {
 		return NoneBecauseOf(err)
 	}

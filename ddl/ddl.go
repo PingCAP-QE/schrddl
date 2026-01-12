@@ -67,10 +67,11 @@ func (c *DDLCase) String() string {
 
 func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
 	tk := time.NewTicker(100 * time.Millisecond)
+	defer tk.Stop()
 	var jobmeta []byte
 	lastInternalJobId := int64(0)
 
-	rows, err := db.QueryContext(context.Background(), "select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' order by ddl_jobs.job_id desc limit 1;")
+	rows, err := db.QueryContext(ctx, "select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' order by ddl_jobs.job_id desc limit 1;")
 	if err != nil {
 		return
 	}
@@ -99,15 +100,17 @@ func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
 			return
 		case <-tk.C:
 		}
-		rows, err := db.QueryContext(context.Background(), fmt.Sprintf("select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' and ddl_jobs.job_id > %d order by ddl_jobs.job_id limit 1;", lastInternalJobId))
+		rows, err := db.QueryContext(ctx, "select job_meta from information_schema.ddl_jobs join mysql.tidb_ddl_history where ddl_jobs.job_id=tidb_ddl_history.job_id and JOB_TYPE = 'update tiflash replica status' and ddl_jobs.job_id > ? order by ddl_jobs.job_id limit 1;", lastInternalJobId)
 		if err != nil {
 			return
 		}
 		if !rows.Next() {
+			_ = rows.Close()
 			continue
 		}
 		err = rows.Scan(&jobmeta)
 		if err != nil {
+			_ = rows.Close()
 			return
 		}
 		err = rows.Close()
@@ -133,6 +136,7 @@ func backgroundUpdateSeq(ctx context.Context, db *sql.DB) {
 
 func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) {
 	tk := time.NewTicker(time.Duration(120+rand.Intn(20)*concurrency) * time.Second)
+	defer tk.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -150,20 +154,10 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 		startTime := time.Now()
 		preJobCnt := 0
 		for {
-			row, err := db.Query("select count(*) from mysql.tidb_ddl_job")
-			if err != nil {
-				log.Warnf("read tidb_ddl_job failed", err)
-				break
-			}
-			row.Next()
 			var jobCnt int
-			err = row.Scan(&jobCnt)
+			err := db.QueryRowContext(ctx, "select count(*) from mysql.tidb_ddl_job").Scan(&jobCnt)
 			if err != nil {
-				log.Fatal("read job cnt from row failed")
-			}
-			err = row.Close()
-			if err != nil {
-				log.Warnf("close query failed", err)
+				log.Warnf("read tidb_ddl_job failed: %v", err)
 				break
 			}
 			if jobCnt == 0 {
@@ -182,16 +176,22 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 
 func backgroundSetVariables(ctx context.Context, db *sql.DB) {
 	tk := time.NewTicker(50 * time.Millisecond)
+	defer tk.Stop()
+	state := sqlgenerator.NewState()
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("Time is up, exit schrddl")
 			return
 		case <-tk.C:
-			state := sqlgenerator.NewState()
 			setVar, err := sqlgenerator.SetVariable.Eval(state)
 			if err != nil {
-				db.Exec(setVar)
+				log.Warnf("[ddl] generate set variable SQL failed: %v", err)
+				continue
+			}
+			_, err = db.ExecContext(ctx, setVar)
+			if err != nil {
+				log.Warnf("[ddl] execute set variable failed: %v, sql: %s", err, setVar)
 			}
 		}
 	}
@@ -204,18 +204,18 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 		log.Infof("[%s] test end...", c)
 	}()
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(3)
 	go func() {
+		defer wg.Done()
 		backgroundCheckDDLFinish(ctx, c.cases[0].dbs[0], c.cfg.Concurrency)
-		wg.Done()
 	}()
 	go func() {
+		defer wg.Done()
 		backgroundUpdateSeq(ctx, c.cases[0].dbs[0])
-		wg.Done()
 	}()
 	go func() {
+		defer wg.Done()
 		backgroundSetVariables(ctx, c.cases[0].dbs[0])
-		wg.Done()
 	}()
 
 	for i := 0; i < c.cfg.Concurrency; i++ {
@@ -362,16 +362,22 @@ func (c *testCase) initialize(dbs []*sql.DB) error {
 	if err = c.generateDMLOps(); err != nil {
 		return errors.Trace(err)
 	}
-	// Create 2 table before executes DDL & DML
-	taskCh := make(chan *ddlJobTask, 2)
-	c.prepareAddTable(nil, taskCh)
-	c.prepareAddTable(nil, taskCh)
+	// Create initial tables before executing DDL & DML.
+	tableCnt := c.cfg.TablesToCreate
+	if tableCnt < 2 {
+		tableCnt = 2
+	}
+	taskCh := make(chan *ddlJobTask, tableCnt)
+	for i := 0; i < tableCnt; i++ {
+		c.prepareAddTable(nil, taskCh)
+	}
 	if c.cfg.TestTp == SerialDDLTest {
-		err = c.execSerialDDLSQL(taskCh)
-		if err != nil {
-			return errors.Trace(err)
+		for i := 0; i < tableCnt; i++ {
+			err = c.execSerialDDLSQL(taskCh)
+			if err != nil {
+				return errors.Trace(err)
+			}
 		}
-		err = c.execSerialDDLSQL(taskCh)
 	} else {
 		err = c.execParaDDLSQL(taskCh, len(taskCh))
 	}
@@ -526,38 +532,43 @@ func (c *testCase) execute(ctx context.Context, executeDDL ExecuteDDLFunc, exeDM
 		var err1 error
 		for {
 			go func() {
-				tk := time.Tick(5 * time.Second)
+				timer := time.NewTimer(5 * time.Second)
+				defer timer.Stop()
 				select {
 				case <-ctx.Done():
 					return
-				case <-tk:
-					rs, err := c.dbs[0].Query("select `job_id` from information_schema.ddl_jobs limit 1")
-					if err == nil {
-						jobID := 0
-						rs.Next()
+				case <-timer.C:
+				}
+				rs, err := c.dbs[0].QueryContext(ctx, "select `job_id` from information_schema.ddl_jobs limit 1")
+				if err == nil {
+					jobID := 0
+					if rs.Next() {
 						err = rs.Scan(&jobID)
 						if err != nil {
-							log.Errorf("unexpected error when scan", err)
-							return
-						}
-						err = rs.Close()
-						if err != nil {
-							log.Errorf("unexpected error when close", err)
-							return
-						}
-						globalCancelMu.Lock()
-						_, err := c.dbs[0].Exec(fmt.Sprintf("admin cancel ddl jobs %d", jobID))
-						globalCancelMu.Unlock()
-						if err != nil {
-							log.Errorf("unexpected error when execute cancel ddl", err)
+							_ = rs.Close()
+							log.Errorf("unexpected error when scan: %v", err)
 							return
 						}
 					}
-					_, err = c.dbs[0].Exec("admin show ddl jobs")
+					err = rs.Close()
 					if err != nil {
-						log.Errorf("unexpected error when execute admin show ddl jobs", err)
+						log.Errorf("unexpected error when close: %v", err)
 						return
 					}
+					if jobID != 0 {
+						globalCancelMu.Lock()
+						_, err = c.dbs[0].ExecContext(ctx, fmt.Sprintf("admin cancel ddl jobs %d", jobID))
+						globalCancelMu.Unlock()
+						if err != nil {
+							log.Errorf("unexpected error when execute cancel ddl: %v", err)
+							return
+						}
+					}
+				}
+				_, err = c.dbs[0].ExecContext(ctx, "admin show ddl jobs")
+				if err != nil {
+					log.Errorf("unexpected error when execute admin show ddl jobs: %v", err)
+					return
 				}
 			}()
 			c.schemasLock.Lock()
@@ -632,9 +643,6 @@ func (c *testCase) readDataFromTiDB() error {
 		if err != nil {
 			return err
 		}
-		defer func() {
-			rows.Close()
-		}()
 		metaCols := make([]*ddlTestColumn, 0)
 		for ite := table.columns.Iterator(); ite.Next(); {
 			metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
@@ -644,7 +652,8 @@ func (c *testCase) readDataFromTiDB() error {
 		for rows.Next() {
 			cols, err1 := rows.Columns()
 			if err1 != nil {
-				return errors.Trace(err)
+				_ = rows.Close()
+				return errors.Trace(err1)
 			}
 
 			//log.Infof("[ddl] [instance %d] rows.Columns():%v, len(cols):%v", c.caseIndex, cols, len(cols))
@@ -659,7 +668,8 @@ func (c *testCase) readDataFromTiDB() error {
 
 			err1 = rows.Scan(dest...)
 			if err1 != nil {
-				return errors.Trace(err)
+				_ = rows.Close()
+				return errors.Trace(err1)
 			}
 
 			for i, raw := range rawResult {
@@ -676,6 +686,13 @@ func (c *testCase) readDataFromTiDB() error {
 
 			actualRows = append(actualRows, result)
 		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return errors.Trace(err)
+		}
+		if err := rows.Close(); err != nil {
+			return errors.Trace(err)
+		}
 		c.tableMap[table.name].Values = actualRows
 	}
 
@@ -685,11 +702,9 @@ func (c *testCase) readDataFromTiDB() error {
 func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, error) {
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Error when executing SQL: %s\n%s", query)
+		return nil, errors.Annotatef(err, "Error when executing SQL: %s", query)
 	}
-	defer func() {
-		rows.Close()
-	}()
+	defer rows.Close()
 	//metaCols := make([]*ddlTestColumn, 0)
 	//for ite := table.columns.Iterator(); ite.Next(); {
 	//	metaCols = append(metaCols, ite.Value().(*ddlTestColumn))
@@ -699,7 +714,7 @@ func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, er
 	for rows.Next() {
 		cols, err1 := rows.Columns()
 		if err1 != nil {
-			return nil, errors.Trace(err)
+			return nil, errors.Trace(err1)
 		}
 
 		// See https://stackoverflow.com/questions/14477941/read-select-columns-into-string-in-go
@@ -712,7 +727,7 @@ func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, er
 
 		err1 = rows.Scan(dest...)
 		if err1 != nil {
-			return nil, errors.Trace(err)
+			return nil, errors.Trace(err1)
 		}
 
 		for i, raw := range rawResult {
@@ -729,7 +744,10 @@ func readData(ctx context.Context, conn *sql.Conn, query string) ([][]string, er
 
 		actualRows = append(actualRows, result)
 	}
-	return actualRows, err
+	if err := rows.Err(); err != nil {
+		return nil, errors.Trace(err)
+	}
+	return actualRows, nil
 }
 
 func trimValue(tp int, val []byte) string {
