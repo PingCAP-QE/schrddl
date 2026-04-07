@@ -338,17 +338,20 @@ const (
 	dmlUpdate
 	dmlDelete
 	dmlSelect
+	dmlSelectPartialIndex
 )
 
 type dmlJobArg unsafe.Pointer
 
 type dmlJobTask struct {
-	k            DMLKind
-	tblInfo      *ddlTestTable
-	sql          string
-	assigns      []*ddlTestColumnDescriptor
-	whereColumns []*ddlTestColumnDescriptor
-	err          error
+	k                 DMLKind
+	tblInfo           *ddlTestTable
+	sql               string
+	baselineSQL       string
+	expectedIndexName string
+	assigns           []*ddlTestColumnDescriptor
+	whereColumns      []*ddlTestColumnDescriptor
+	err               error
 }
 
 // initialize generates possible DDL and DML operations for one `testCase`.

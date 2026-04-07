@@ -1327,14 +1327,25 @@ func (c *testCase) prepareAddIndex(ctx interface{}, taskCh chan *ddlJobTask) err
 		sql += " GLOBAL"
 	}
 
-	if rand.Intn(3) == 0 && false {
+	if !isVector && rand.Intn(3) == 0 {
 		// Build partial index
 		var condition string
 		colI := rand.Intn(len(index.columns))
 		colName := index.columns[colI].name
 
 		tables := table.mapTableToRandTestTable()
-		col := tables.Columns[colI]
+		col := tables.Columns[0]
+		found := false
+		for _, c := range tables.Columns {
+			if c.Name == fmt.Sprintf("`%s`", colName) {
+				col = c
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil
+		}
 		switch rand.Intn(6) {
 		case 0:
 			condition = fmt.Sprintf("`%s` IS NOT NULL", colName)

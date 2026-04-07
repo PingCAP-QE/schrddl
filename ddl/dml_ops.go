@@ -3,11 +3,13 @@ package ddl
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"math/rand"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
 	"github.com/juju/errors"
@@ -24,9 +26,11 @@ func (c *testCase) generateDMLOps() error {
 	if err := c.generateDelete(); err != nil {
 		return errors.Trace(err)
 	}
-	//if err := c.generateSelect(); err != nil {
-	//	return errors.Trace(err)
-	//}
+	if !EnableTransactionTest {
+		if err := c.generateSelectPartialIndex(); err != nil {
+			return errors.Trace(err)
+		}
+	}
 	return nil
 }
 
@@ -68,6 +72,9 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 	}
 	defer conn.Close()
 	task := <-taskCh
+	if task.k == dmlSelectPartialIndex {
+		return c.execSelectPartialIndex(ctx, conn, task)
+	}
 	// disable compare for now since it's not stable.
 	if task.k == dmlSelect && false {
 		if rand.Intn(5) == 0 {
@@ -133,6 +140,92 @@ func (c *testCase) execSerialDMLSQL(taskCh chan *dmlJobTask) error {
 		return nil
 	}
 	return nil
+}
+
+func explainUsesIndex(ctx context.Context, conn *sql.Conn, query string, indexName string) (bool, error) {
+	rows, err := readData(ctx, conn, "explain "+query)
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		for _, cell := range row {
+			if strings.Contains(cell, indexName) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (c *testCase) execSelectPartialIndex(ctx context.Context, conn *sql.Conn, task *dmlJobTask) error {
+	if task.baselineSQL == "" || task.expectedIndexName == "" {
+		return nil
+	}
+	// Make sure both statements read the same snapshot.
+	_, _ = conn.ExecContext(ctx, "set session transaction_isolation='REPEATABLE-READ'")
+	_, err := conn.ExecContext(ctx, "begin")
+	if err != nil {
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Annotatef(err, "Error when executing SQL: %s", "begin")
+	}
+	defer func() {
+		_, _ = conn.ExecContext(ctx, "rollback")
+	}()
+
+	used, err := explainUsesIndex(ctx, conn, task.sql, task.expectedIndexName)
+	if err != nil {
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Trace(err)
+	}
+	if !used {
+		return nil
+	}
+
+	rowsWithIndex, err := sendQueryRequest(ctx, conn, task)
+	if err != nil {
+		log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.sql, err)
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Trace(err)
+	}
+
+	rowsBaseline, err := readData(ctx, conn, task.baselineSQL)
+	if err != nil {
+		log.Infof("[dml] [instance %d] %s, err: %v", c.caseIndex, task.baselineSQL, err)
+		if dmlIgnoreError(err) {
+			return nil
+		}
+		return errors.Trace(err)
+	}
+
+	err = compareTwoRows(rowsWithIndex, rowsBaseline)
+	if err == nil {
+		return nil
+	}
+
+	// Make sure the query is stable itself.
+	rowsWithIndexToCheck, err2 := sendQueryRequest(ctx, conn, task)
+	if err2 != nil {
+		return nil
+	}
+	err2 = compareTwoRows(rowsWithIndex, rowsWithIndexToCheck)
+	if err2 != nil {
+		// The query is not stable.
+		return nil
+	}
+
+	tsRows, _ := readData(ctx, conn, "select @@tidb_current_ts")
+	ts := ""
+	if len(tsRows) > 0 && len(tsRows[0]) > 0 {
+		ts = tsRows[0][0]
+	}
+	return errors.Errorf("[dml] [instance %d] found inconsistent data for partial index, sql-with-index %s, sql-baseline %s, %s, err: %v",
+		c.caseIndex, task.sql, task.baselineSQL, ts, err)
 }
 
 func compareTwoRows(rows1 [][]string, rows2 [][]string) error {
@@ -232,6 +325,59 @@ const dmlSizeEachRound = 100
 func (c *testCase) generateInsert() error {
 	for i := 0; i < dmlSizeEachRound; i++ {
 		c.dmlOps = append(c.dmlOps, dmlTestOpExecutor{c.prepareInsert, nil})
+	}
+	return nil
+}
+
+const dmlPartialIndexChecksEachRound = 5
+
+func (c *testCase) generateSelectPartialIndex() error {
+	for i := 0; i < dmlPartialIndexChecksEachRound; i++ {
+		c.dmlOps = append(c.dmlOps, dmlTestOpExecutor{c.prepareSelectPartialIndex, nil})
+	}
+	return nil
+}
+
+func (c *testCase) prepareSelectPartialIndex(cfg interface{}, taskCh chan *dmlJobTask) error {
+	c.tablesLock.Lock()
+	defer c.tablesLock.Unlock()
+
+	type candidate struct {
+		table *ddlTestTable
+		index *ddlTestIndex
+	}
+	candidates := make([]candidate, 0)
+	for _, table := range c.tables {
+		if table.isDeleted() {
+			continue
+		}
+		for _, idx := range table.indexes {
+			if idx == nil || idx.condition == "" {
+				continue
+			}
+			// Skip vector indexes.
+			if len(idx.columns) == 1 && idx.columns[0] != nil && idx.columns[0].k == KindVector {
+				continue
+			}
+			candidates = append(candidates, candidate{table: table, index: idx})
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	cand := candidates[rand.Intn(len(candidates))]
+	idxName := cand.index.name
+	condition := cand.index.condition
+
+	sqlWithIndex := fmt.Sprintf("SELECT /*+ USE_INDEX(t, `%s`) */ COUNT(*) FROM `%s` t WHERE %s", idxName, cand.table.name, condition)
+	sqlBaseline := fmt.Sprintf("SELECT /*+ IGNORE_INDEX(t, `%s`) */ COUNT(*) FROM `%s` t WHERE %s", idxName, cand.table.name, condition)
+
+	taskCh <- &dmlJobTask{
+		k:                 dmlSelectPartialIndex,
+		tblInfo:           cand.table,
+		sql:               sqlWithIndex,
+		baselineSQL:       sqlBaseline,
+		expectedIndexName: idxName,
 	}
 	return nil
 }
