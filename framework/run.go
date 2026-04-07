@@ -307,6 +307,9 @@ func ddlIgnoreError(err error) bool {
 		// eg: For v"BLOB/TEXT column '319de167-6d2e-4778-966c-60b95103a02c' used in key specification without a key length"
 		strings.Contains(errStr, "used in key specification without a key length") ||
 		strings.Contains(errStr, "Specified key was too long; max key length is ") ||
+		(strings.Contains(errStr, "unsupported add column") &&
+			strings.Contains(errStr, "with TiFlash replicas") &&
+			strings.Contains(errStr, "gb18030 encoding")) ||
 		strings.Contains(errStr, "should be less than the total tiflash server count") ||
 		strings.Contains(errStr, "Unsupported ALTER TiFlash settings") {
 		fmt.Println(errStr)

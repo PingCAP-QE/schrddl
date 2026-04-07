@@ -14,4 +14,5 @@ func TestDDLIgnoreError(t *testing.T) {
 	assert.False(t, ddlIgnoreError(err))
 	assert.True(t, ddlIgnoreError(errors.New("cause next global auto ID 92738 overflow error")))
 	assert.True(t, ddlIgnoreError(errors.New("cause next global auto ID overflow error")))
+	assert.True(t, ddlIgnoreError(errors.New("[ddl:8200]unsupported add column 'col6aea' when altering 'te0cc4b9d' with TiFlash replicas and gb18030 encoding")))
 }
