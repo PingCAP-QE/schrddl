@@ -13,6 +13,12 @@ Randomized concurrent DDL/DML correctness testing framework for TiDB.
 
 ## Requirements
 
+Profiling is disabled by default. To enable it for the framework engine, bind an explicit
+loopback IP (for example `-pprof-addr 127.0.0.1:6060`) and pass `-pprof-token-file /path/to/token`.
+The token file must be owner-only (mode `0600`) and contain a random token of at least 32
+characters. Clients must send `Authorization: Bearer TOKEN`; keep the token out of command-line
+arguments and shared logs. The server has HTTP timeouts and never exposes the cmdline endpoint.
+
 - Go `1.24+` (see `go.mod`)
 - A TiDB instance reachable via MySQL protocol
 - A dedicated database/schema for testing (the tool creates/drops/renames tables, indexes, schemas, etc.)
@@ -50,7 +56,8 @@ Framework-specific flags:
 - `-cert`: enable CERT
 - `-tlp`: enable TLP
 - `-eet`: enable EET
-- `-pprof-addr`: start pprof HTTP server (e.g. `127.0.0.1:6060`)
+- `-pprof-addr`: start authenticated pprof on an explicit loopback address (e.g. `127.0.0.1:6060`)
+- `-pprof-token-file`: required owner-only token file when profiling is enabled
 
 Note: `-global-sort-uri` only applies to `-engine ddl`.
 

@@ -41,7 +41,8 @@ var (
 	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
 	globalSortUri        = flag.String("global-sort-uri", "", "global sort uri")
 
-	pprofAddr = flag.String("pprof-addr", "", "enable pprof on address (framework engine), e.g. 127.0.0.1:6060")
+	pprofAddr      = flag.String("pprof-addr", "", "enable pprof on address (framework engine), e.g. 127.0.0.1:6060")
+	pprofTokenFile = flag.String("pprof-token-file", "", "owner-only file containing the pprof bearer token (at least 32 characters)")
 
 	aqs  = flag.Bool("aqs", false, "enable Approximate Query Synthesis (framework engine)")
 	cert = flag.Bool("cert", false, "enable CERT (framework engine)")
@@ -112,8 +113,9 @@ func main() {
 		}
 
 		engineframework.Run(engineframework.Options{
-			CommonOptions: commonOpts,
-			PprofAddr:     *pprofAddr,
+			CommonOptions:  commonOpts,
+			PprofAddr:      *pprofAddr,
+			PprofTokenFile: *pprofTokenFile,
 
 			EnableApproximateQuerySynthesis: *aqs,
 			EnableCERT:                      *cert,

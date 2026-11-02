@@ -1,9 +1,6 @@
 package framework
 
 import (
-	"net/http"
-	_ "net/http/pprof"
-
 	"github.com/ngaut/log"
 
 	"github.com/PingCAP-QE/schrddl/engine"
@@ -13,7 +10,8 @@ import (
 type Options struct {
 	engine.CommonOptions
 
-	PprofAddr string
+	PprofAddr      string
+	PprofTokenFile string
 
 	EnableApproximateQuerySynthesis bool
 	EnableCERT                      bool
@@ -22,6 +20,13 @@ type Options struct {
 }
 
 func Run(opts Options) {
+	if opts.PprofAddr != "" {
+		server, err := startPprof(opts.PprofAddr, opts.PprofTokenFile)
+		if err != nil {
+			log.Fatalf("cannot start pprof: %v", err)
+		}
+		defer server.Close()
+	}
 	if opts.Output != "" {
 		legacyframework.GlobalOutPut = opts.Output
 	}
@@ -64,14 +69,6 @@ func Run(opts Options) {
 	}
 
 	engine.PrepareEnv(opts.DBAddr, opts.DBName, true)
-	if opts.PprofAddr != "" {
-		go func() {
-			if err := http.ListenAndServe(opts.PprofAddr, nil); err != nil {
-				log.Warnf("pprof server exited: %v", err)
-			}
-		}()
-	}
-
 	legacyframework.Run(opts.DBAddr, opts.DBName, opts.Concurrency, opts.TablesToCreate, opts.MySQLCompatible, testType, opts.TestTime)
 	if legacyframework.TestFail {
 		log.Fatalf("test failed")

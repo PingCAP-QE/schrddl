@@ -3,14 +3,11 @@ package dump
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/pingcap/tidb/dumpling/export"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
-	"os"
-	"os/exec"
-	"path"
-	"runtime"
-	"strings"
 )
 
 func DumpToFile(dbName string, tblName []string, fileName string, host string) error {
@@ -33,6 +30,7 @@ func DumpToFile(dbName string, tblName []string, fileName string, host string) e
 	dumper, err := export.NewDumper(context.Background(), conf)
 	if err != nil {
 		logutil.BgLogger().Warn("create dumper failed", zap.Error(err))
+		return err
 	}
 	err = dumper.Dump()
 	_ = dumper.Close()
@@ -42,45 +40,6 @@ func DumpToFile(dbName string, tblName []string, fileName string, host string) e
 		return err
 	}
 
-	pt := fileName[8:]
-	fs, err := os.ReadDir(pt)
-	if err != nil {
-		return err
-	}
-	for _, f := range fs {
-		name := f.Name()
-		pathFileName := path.Join(pt, name)
-
-		if strings.Contains(name, "schema") {
-			if runtime.GOOS == "linux" {
-				err = exec.Command("sed", "-i", "1,2d", pathFileName).Run()
-			} else {
-				err = exec.Command("sed", "-i", "", "1,2d", pathFileName).Run()
-			}
-			if err != nil {
-				logutil.BgLogger().Warn("sed failed", zap.Error(err))
-				return err
-			}
-		} else if strings.Contains(name, "000000") {
-			cmd1 := exec.Command("sed", "-i", "", "1,2d", pathFileName)
-			if runtime.GOOS == "linux" {
-				cmd1 = exec.Command("sed", "-i", "1,2d", pathFileName)
-			}
-			if err := cmd1.Run(); err != nil {
-				return err
-			}
-
-			newFileName := strings.Replace(pathFileName, ".000000000", "", 1)
-
-			cmd2 := exec.Command("sh", "-c", fmt.Sprintf("tr -d '\n' < %s > %s", pathFileName, newFileName))
-			cmd2.Stdout = os.Stdout
-			cmd2.Stderr = os.Stderr
-			if err := cmd2.Run(); err != nil {
-				return err
-			}
-			os.Remove(pathFileName)
-		}
-	}
-
-	return nil
+	pt := strings.TrimPrefix(strings.TrimPrefix(fileName, "local://"), "file://")
+	return postProcessDump(pt)
 }
