@@ -58,6 +58,7 @@ type CaseConfig struct {
 	TablesToCreate  int
 	TestTp          DDLTestType
 	dbAddr          string
+	dbName          string
 }
 
 var globalBugSeqNum int64 = 0
@@ -823,7 +824,7 @@ func (c *testCase) execute(ctx context.Context) error {
 				if GlobalOutPut != "" {
 					pwd = filepath.Dir(GlobalOutPut)
 				}
-				err = dump.DumpToFile("test", tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num), c.cfg.dbAddr)
+				err = dump.DumpToFile(c.cfg.dbName, tblNames, fmt.Sprintf("local://%s/bug-%s-%d", pwd, time.Now().Format("2006-01-02-15-04-05"), num), c.cfg.dbAddr)
 				if err != nil {
 					commitSystemTxn()
 					return err

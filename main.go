@@ -20,6 +20,7 @@ import (
 
 	"github.com/ngaut/log"
 
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 	enginepkg "github.com/PingCAP-QE/schrddl/engine"
 	engineddl "github.com/PingCAP-QE/schrddl/engine/ddl"
 	engineframework "github.com/PingCAP-QE/schrddl/engine/framework"
@@ -39,7 +40,7 @@ var (
 	rc                   = flag.Bool("rc-txn", false, "read-committed isolation")
 	prepare              = flag.Bool("prepare", false, "use prepare statement")
 	checkDDLExtraTimeout = flag.Duration("check-ddl-extra-timeout", 0, "check ddl extra timeout")
-	globalSortUri        = flag.String("global-sort-uri", "", "global sort uri")
+	globalSortUri        = flag.String("global-sort-uri", "", "credential-free global sort URI (use workload identity)")
 
 	pprofAddr      = flag.String("pprof-addr", "", "enable pprof on address (framework engine), e.g. 127.0.0.1:6060")
 	pprofTokenFile = flag.String("pprof-token-file", "", "owner-only file containing the pprof bearer token (at least 32 characters)")
@@ -52,6 +53,14 @@ var (
 
 func main() {
 	flag.Parse()
+	if _, err := dbconfig.FromEnv(*dbAddr, *dbName); err != nil {
+		log.Fatal(err)
+	}
+	if *globalSortUri != "" {
+		if err := dbconfig.ValidateStorageURI(*globalSortUri); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	if *output != "" {
 		log.SetOutputByName(*output)

@@ -3,14 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/google/go-github/v57/github"
+
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 )
 
 func main() {
-	var token string
-	fmt.Print("Enter GitHub token: ")
-	fmt.Scanf("%s", &token)
+	token, err := dbconfig.ReadSecret(os.Getenv("GITHUB_TOKEN_FILE"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "GITHUB_TOKEN_FILE must reference an owner-only token file")
+		os.Exit(1)
+	}
 
 	client := github.NewClient(nil).WithAuthToken(token)
 
@@ -21,7 +26,7 @@ func main() {
 		Body:   github.String(temp),
 		Labels: &[]string{"bug"},
 	}
-	_, _, err := client.Issues.Create(context.Background(), "name", "tidb", ir)
+	_, _, err = client.Issues.Create(context.Background(), "name", "tidb", ir)
 	if err != nil {
 		fmt.Println(err)
 	}

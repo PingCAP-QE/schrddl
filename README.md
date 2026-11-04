@@ -33,7 +33,14 @@ go build -o schrddl
 
 ## Run (Requires TiDB)
 
+Database authentication and TLS are configured through the environment. Mount the
+password as an owner-only (`0600`) file; do not put secrets in command-line arguments.
+Use a dedicated workload user with the privileges required by the selected tests.
+
 ```bash
+export SCHRDDL_DB_USER=ddl_test
+export SCHRDDL_DB_PASSWORD_FILE=/run/secrets/db-password
+export SCHRDDL_TLS_CA=/run/secrets/db-ca.pem
 ./schrddl \
   -addr "127.0.0.1:4000" \
   -db "test" \
@@ -82,7 +89,16 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
 
 ## Notes / Behavior
 
-- Connection DSN is currently fixed as `root:@tcp(<addr>)/<db>` (no user/password flags).
+- Every database connection, including setup, workers and diagnostic dumps, uses
+  `SCHRDDL_DB_USER` and `SCHRDDL_DB_PASSWORD_FILE`. There is no default user.
+- TLS 1.2+ with certificate and hostname verification is required by default. System
+  roots are used unless `SCHRDDL_TLS_CA` selects a PEM CA bundle. Optional mutual TLS
+  uses `SCHRDDL_TLS_CERT` and `SCHRDDL_TLS_KEY` together.
+- Only isolated disposable test clusters should use `SCHRDDL_ALLOW_INSECURE=true`;
+  this explicitly permits plaintext and an omitted password file. The user must
+  still be configured explicitly.
+- Diagnostic dumps are local SQL files with owner-only permissions. They use a
+  read-only repeatable-read transaction and the same verified connector as workers.
 - The runner sets some TiDB globals (e.g. time zone, `max_execution_time`; and dist-task globals when `-global-sort-uri` is set).
 - The process has a hard exit loop after the configured duration (see `main.go`), so expect `os.Exit(0)` shortly after `-time`.
 
@@ -105,3 +121,25 @@ go test -v -run TestReadMeExample ./sqlgenerator/
 ```bash
 docker build -t hub.pingcap.net/qa/schrddl-master .
 ```
+
+## Credentials and rotation
+
+`-global-sort-uri` accepts only credential-free `s3://`, `gs://`, `gcs://` or
+`azblob://` storage locations. The only query options allowed are `region`,
+`force-path-style` and `storage-class`. Configure workload identity / instance roles
+on the TiDB storage workers; credentials are never accepted in the URI, arguments,
+or `tidb_cloud_storage_uri`. The URI is bound as a SQL parameter.
+
+The issue-creation helper reads `GITHUB_TOKEN_FILE` (an owner-only mounted secret)
+and never prompts for or echoes a PAT. Use a fine-grained, expiring token scoped to
+the target repository. Do not commit secret files or include their contents in logs.
+
+For database passwords and PATs: issue a replacement, atomically replace the mounted
+secret file, restart clients to discard pooled connections / cached credentials,
+verify the replacement, then revoke the old credential at its provider. Password
+files are read when each new pool is created; replacing a file does not invalidate
+existing sessions. Use the same restart procedure for CA/client-certificate changes.
+If credentials were previously passed in argv or a cloud-storage URI, revoke them,
+clear the old TiDB global value, and remove exposed copies from logs/artifacts under
+the applicable retention policy. Cloud workload identities use provider-managed
+short-lived credentials and avoid persisting long-lived keys in TiDB metadata.

@@ -12,6 +12,8 @@ import (
 
 	"github.com/ngaut/log"
 	"golang.org/x/net/context"
+
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 )
 
 var GlobalOutPut = ""
@@ -25,8 +27,8 @@ var EnableTLP = false
 var TestFail = false
 var EnableEET = false
 
-func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+func OpenDB(address, database string, maxIdleConns int) (*sql.DB, error) {
+	db, err := dbconfig.Open(address, database)
 	if err != nil {
 		return nil, err
 	}
@@ -45,15 +47,14 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
 	for i := 0; i < concurrency; i++ {
 		dbs := make([]*sql.DB, 0, 2)
 		// Parallel send DDL request need more connection to send DDL request concurrently
-		db0, err := OpenDB(dbDSN, 20)
+		db0, err := OpenDB(dbAddr, dbName, 20)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
-		db1, err := OpenDB(dbDSN, 1)
+		db1, err := OpenDB(dbAddr, dbName, 1)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
@@ -61,7 +62,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		dbs = append(dbs, db1)
 		dbss = append(dbss, dbs)
 	}
-	globalDbs, err := OpenDB(dbDSN, 20)
+	globalDbs, err := OpenDB(dbAddr, dbName, 20)
 	if err != nil {
 		log.Fatalf("[ddl] create db client error %v", err)
 	}
@@ -85,6 +86,7 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		MySQLCompatible: mysqlCompatible,
 		TestTp:          testTp,
 		dbAddr:          dbAddr,
+		dbName:          dbName,
 	}
 	ddl := NewDDLCase(&cfg)
 	if RCIsolation {

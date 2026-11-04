@@ -12,6 +12,8 @@ import (
 
 	"github.com/ngaut/log"
 	"golang.org/x/net/context"
+
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 )
 
 var EnableTransactionTest = false
@@ -20,8 +22,8 @@ var Prepare = false
 var CheckDDLExtraTimeout = 0 * time.Second
 var GlobalSortUri = ""
 
-func OpenDB(dsn string, maxIdleConns int) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+func OpenDB(address, database string, maxIdleConns int) (*sql.DB, error) {
+	db, err := dbconfig.Open(address, database)
 	if err != nil {
 		return nil, err
 	}
@@ -40,15 +42,14 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ctx, cancel := wrapCtx(context.Background())
 	dbss := make([][]*sql.DB, 0, concurrency)
-	dbDSN := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
 	for i := 0; i < concurrency; i++ {
 		dbs := make([]*sql.DB, 0, 2)
 		// Parallel send DDL request need more connection to send DDL request concurrently
-		db0, err := OpenDB(dbDSN, 20)
+		db0, err := OpenDB(dbAddr, dbName, 20)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
-		db1, err := OpenDB(dbDSN, 1)
+		db1, err := OpenDB(dbAddr, dbName, 1)
 		if err != nil {
 			log.Fatalf("[ddl] create db client error %v", err)
 		}
@@ -87,8 +88,15 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	var err error
 	if GlobalSortUri != "" {
-		dbss[0][0].Exec("set global tidb_enable_dist_task=1")
-		dbss[0][0].Exec(fmt.Sprintf("set global tidb_cloud_storage_uri='%s'", GlobalSortUri))
+		if err := dbconfig.ValidateStorageURI(GlobalSortUri); err != nil {
+			log.Fatal(err)
+		}
+		if _, err := dbss[0][0].Exec("set global tidb_cloud_storage_uri=?", GlobalSortUri); err != nil {
+			log.Fatal("[ddl] cannot configure cloud storage URI")
+		}
+		if _, err := dbss[0][0].Exec("set global tidb_enable_dist_task=1"); err != nil {
+			log.Fatal("[ddl] cannot enable distributed tasks")
+		}
 	} else {
 		version := ""
 		err := dbss[0][0].QueryRow("select tidb_version()").Scan(&version)

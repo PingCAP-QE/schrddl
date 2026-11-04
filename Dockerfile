@@ -9,7 +9,7 @@ RUN go build -o /schrddl
 
 FROM registry-mirror.pingcap.net/library/debian:bookworm
 
-RUN apt -y update && apt -y install wget curl \
+RUN apt -y update && apt -y install ca-certificates wget curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /schrddl /usr/local/bin/schrddl

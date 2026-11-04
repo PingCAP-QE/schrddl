@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"time"
@@ -10,12 +9,12 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/ngaut/log"
 
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 	"github.com/PingCAP-QE/schrddl/ddl"
 )
 
 func PrepareEnv(dbAddr string, dbName string, enableIndexJoinOnAggregation bool) {
-	dbURL := fmt.Sprintf("root:@tcp(%s)/%s", dbAddr, dbName)
-	tiDB, err := sql.Open("mysql", dbURL)
+	tiDB, err := dbconfig.Open(dbAddr, dbName)
 	if err != nil {
 		log.Fatalf("Can't open database, err: %s", err.Error())
 	}
