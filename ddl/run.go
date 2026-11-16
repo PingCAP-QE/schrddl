@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/PingCAP-QE/schrddl/dbconfig"
+	"github.com/PingCAP-QE/schrddl/util"
 )
 
 var EnableTransactionTest = false
@@ -91,6 +92,8 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		if err := dbconfig.ValidateStorageURI(GlobalSortUri); err != nil {
 			log.Fatal(err)
 		}
+		// Passing -global-sort-uri explicitly authorizes the two dist task
+		// globals the feature cannot run without.
 		if _, err := dbss[0][0].Exec("set global tidb_cloud_storage_uri=?", GlobalSortUri); err != nil {
 			log.Fatal("[ddl] cannot configure cloud storage URI")
 		}
@@ -104,17 +107,17 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 			log.Fatalf("[ddl] get tidb version error %v", err)
 		}
 		if !strings.Contains(version, "Generation") {
-			dbss[0][0].Exec("set global tidb_cloud_storage_uri=''")
+			util.ApplyGlobalTuning(dbss[0][0], "set global tidb_cloud_storage_uri=''", "tidb_cloud_storage_uri")
 		}
 	}
-	dbss[0][0].Exec("set global max_execution_time=5000")
+	util.ApplyGlobalTuning(dbss[0][0], "set global max_execution_time=5000", "max_execution_time")
 
 	globalDDLSeqNum, err = getStartDDLSeqNum(dbss[0][0])
 	if err != nil {
 		log.Fatalf("[ddl] get start ddl seq num error %v", err)
 	}
 	if RCIsolation {
-		dbss[0][0].Exec("set global transaction_isolation='read-committed'")
+		util.ApplyGlobalTuning(dbss[0][0], "set global transaction_isolation='read-committed'", "transaction_isolation")
 	}
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)

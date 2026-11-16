@@ -82,7 +82,8 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
 ### Advanced Flags
 
 - `-txn`: enable transactional DML executor
-- `-rc-txn`: use read-committed isolation (also sets TiDB global `transaction_isolation`)
+- `-rc-txn`: use read-committed isolation (the cluster-wide `transaction_isolation`
+  global is only set with `SCHRDDL_ALLOW_GLOBAL_TUNING=true`)
 - `-prepare`: use prepared statements for DML
 - `-check-ddl-extra-timeout`: extra timeout for background “DDL queue drained” checks
 - `-global-sort-uri`: enable dist task and set `tidb_cloud_storage_uri` (for features that require global sort storage)
@@ -94,12 +95,30 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
 - TLS 1.2+ with certificate and hostname verification is required by default. System
   roots are used unless `SCHRDDL_TLS_CA` selects a PEM CA bundle. Optional mutual TLS
   uses `SCHRDDL_TLS_CERT` and `SCHRDDL_TLS_KEY` together.
+- Schema metadata for the framework engine is fetched from the TiDB status API over
+  the same authenticated TLS policy (no cleartext HTTP, no `curl`): the request uses
+  the workload account as basic authentication, responses are validated (status,
+  content type, JSON, size bound) before being trusted, and the status address is
+  derived from `-addr` (SQL port + 6080, e.g. 4000 → 10080) or set explicitly with
+  `SCHRDDL_STATUS_ADDR`.
 - Only isolated disposable test clusters should use `SCHRDDL_ALLOW_INSECURE=true`;
   this explicitly permits plaintext and an omitted password file. The user must
   still be configured explicitly.
 - Diagnostic dumps are local SQL files with owner-only permissions. They use a
   read-only repeatable-read transaction and the same verified connector as workers.
-- The runner sets some TiDB globals (e.g. time zone, `max_execution_time`; and dist-task globals when `-global-sort-uri` is set).
+- The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. The runner
+  only issues cluster-wide `SET GLOBAL` statements when
+  `SCHRDDL_ALLOW_GLOBAL_TUNING=true` is set for a privileged account (e.g.
+  `max_execution_time`, `transaction_isolation` under `-rc-txn`,
+  `tidb_enable_global_index`, and resetting `tidb_cloud_storage_uri`); without the
+  opt-in each change is skipped with a warning. The dist-task globals required by
+  `-global-sort-uri` are the exception: that flag explicitly authorizes them and
+  the run fails if they cannot be applied.
+- After a fatal worker error the runner best-effort freezes cluster GC to preserve
+  the failure scene. The freeze is bounded (`SCHRDDL_GC_FREEZE_WINDOW`, default
+  `72h`, capped at `720h`, `0` disables it), logs the previous value and an exact
+  restore statement, applies at most once, and self-restores when the window
+  elapses; GC is never disabled indefinitely and a missing privilege is only logged.
 - The process has a hard exit loop after the configured duration (see `main.go`), so expect `os.Exit(0)` shortly after `-time`.
 
 ## Development

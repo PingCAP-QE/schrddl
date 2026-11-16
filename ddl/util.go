@@ -14,7 +14,6 @@
 package ddl
 
 import (
-	"database/sql"
 	"math/rand"
 	"strings"
 
@@ -38,22 +37,6 @@ func PadRight(str, pad string, length int) string {
 	padding := strings.Repeat(pad, length)
 	str = str + padding
 	return str[:length]
-}
-
-func enableTiKVGC(db *sql.DB) {
-	sql := "update mysql.tidb set VARIABLE_VALUE = '10m' where VARIABLE_NAME = 'tikv_gc_life_time';"
-	_, err := db.Exec(sql)
-	if err != nil {
-		log.Warnf("Failed to enable TiKV GC")
-	}
-}
-
-func disableTiKVGC(db *sql.DB) {
-	sql := "update mysql.tidb set VARIABLE_VALUE = '500h' where VARIABLE_NAME = 'tikv_gc_life_time';"
-	_, err := db.Exec(sql)
-	if err != nil {
-		log.Warnf("Failed to disable TiKV GC")
-	}
 }
 
 // parallel run functions in parallel and wait until all of them are completed.

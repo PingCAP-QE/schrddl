@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/PingCAP-QE/schrddl/sqlgenerator"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/pingcap/tidb/pkg/meta/model"
@@ -225,11 +226,9 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB, exeDDLFunc Exec
 			for {
 				err := c.cases[i].execute(ctx, exeDDLFunc, exeDMLFunc)
 				if err != nil {
-					for _, dbs := range dbss {
-						for _, db := range dbs {
-							disableTiKVGC(db)
-						}
-					}
+					// Best-effort, bounded and logged freeze that preserves
+					// the failure scene without demanding elevated privileges.
+					util.FreezeTiKVGC(dbss[0][0], util.GCFreezeWindow())
 					// os.Exit(-1)
 					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
 				}

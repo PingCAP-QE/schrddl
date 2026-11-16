@@ -8,7 +8,6 @@ import (
 	crc322 "hash/crc32"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,9 +15,11 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/PingCAP-QE/schrddl/dbconfig"
 	"github.com/PingCAP-QE/schrddl/dump"
 	"github.com/PingCAP-QE/schrddl/norec"
 	"github.com/PingCAP-QE/schrddl/reduce"
+	"github.com/PingCAP-QE/schrddl/util"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"go.uber.org/zap"
@@ -135,11 +136,9 @@ func (c *DDLCase) Execute(ctx context.Context, dbss [][]*sql.DB) error {
 			for {
 				err := c.cases[i].execute(ctx)
 				if err != nil {
-					for _, dbs := range dbss {
-						for _, db := range dbs {
-							disableTiKVGC(db)
-						}
-					}
+					// Best-effort, bounded and logged freeze that preserves
+					// the failure scene without demanding elevated privileges.
+					util.FreezeTiKVGC(dbss[0][0], util.GCFreezeWindow())
 					// os.Exit(-1)
 					log.Fatalf("[error] [instance %d] ERROR: %s", i, errors.ErrorStack(err))
 				}
@@ -641,12 +640,12 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	tableMetas := make([]*model.TableInfo, 0)
 	for i := 0; i < len(state.Tables); i++ {
-		addr := c.cfg.dbAddr
-		stateAddr := strings.Replace(addr, "4000", "10080", -1)
-		path := fmt.Sprintf("%s/schema/%s/%s", stateAddr, c.initDB, state.Tables[i].Name)
-		rawMeta, err := exec.Command("curl", path).Output()
+		// Schema metadata comes from the status API through the shared
+		// authenticated TLS client, never from cleartext HTTP or curl.
+		path := dbconfig.StatusPath("schema", c.initDB, state.Tables[i].Name)
+		rawMeta, err := dbconfig.GetStatusJSON(c.cfg.dbAddr, path)
 		if err != nil {
-			log.Infof("curl error %s", err.Error())
+			log.Warnf("[ddl] cannot fetch schema for table %s over the authenticated status API: %v", state.Tables[i].Name, err)
 			continue
 		}
 		var meta model.TableInfo

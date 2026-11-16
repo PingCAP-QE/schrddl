@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/PingCAP-QE/schrddl/dbconfig"
+	"github.com/PingCAP-QE/schrddl/util"
 )
 
 var GlobalOutPut = ""
@@ -90,12 +91,9 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 	}
 	ddl := NewDDLCase(&cfg)
 	if RCIsolation {
-		globalDbs.Exec("set global transaction_isolation='read-committed'")
+		util.ApplyGlobalTuning(globalDbs, "set global transaction_isolation='read-committed'", "transaction_isolation")
 	}
-	_, err = globalDbs.Exec("set global tidb_enable_global_index=true")
-	if err != nil {
-		log.Fatalf("[ddl] set global tidb_enable_global_index=true error %v", err)
-	}
+	util.ApplyGlobalTuning(globalDbs, "set global tidb_enable_global_index=true", "tidb_enable_global_index")
 	if err := ddl.Initialize(ctx, dbss, dbName); err != nil {
 		log.Fatalf("[ddl] initialze error %v", err)
 	}
