@@ -95,15 +95,18 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
 - TLS 1.2+ with certificate and hostname verification is required by default. System
   roots are used unless `SCHRDDL_TLS_CA` selects a PEM CA bundle. Optional mutual TLS
   uses `SCHRDDL_TLS_CERT` and `SCHRDDL_TLS_KEY` together.
-- Schema metadata for the framework engine is fetched from the TiDB status API over
-  the same authenticated TLS policy (no cleartext HTTP, no `curl`): the request uses
-  the workload account as basic authentication, responses are validated (status,
-  content type, JSON, size bound) before being trusted, and the status address is
-  derived from `-addr` (SQL port + 6080, e.g. 4000 → 10080) or set explicitly with
-  `SCHRDDL_STATUS_ADDR`.
+- Schema metadata for the framework engine is fetched from the TiDB status API through
+  the shared client in `dbconfig` (no `curl`): over verified TLS, with the workload
+  account as basic authentication. Responses are validated (status, content type, JSON,
+  size bound) before being trusted, and redirects are never followed. The status address
+  is derived from `-addr` (SQL port + 6080, e.g. 4000 → 10080) or set explicitly with
+  `SCHRDDL_STATUS_ADDR`, whose host must be the `-addr` host, so an override can only
+  select a different port.
 - Only isolated disposable test clusters should use `SCHRDDL_ALLOW_INSECURE=true`;
-  this explicitly permits plaintext and an omitted password file. The user must
-  still be configured explicitly.
+  this explicitly permits plaintext and an omitted password file, is reported with a
+  warning, and the user must still be configured explicitly. It never sends the
+  database password over plaintext: status API requests carry no credentials in this
+  mode.
 - Diagnostic dumps are local SQL files with owner-only permissions. They use a
   read-only repeatable-read transaction and the same verified connector as workers.
 - The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. The runner

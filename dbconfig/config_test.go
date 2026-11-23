@@ -1,6 +1,7 @@
 package dbconfig
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,10 +17,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/ngaut/log"
 )
 
 func setup(t *testing.T) string {
@@ -63,6 +66,35 @@ func TestCredentialsAndTLSFailClosed(t *testing.T) {
 	t.Setenv("SCHRDDL_DB_USER", "")
 	if _, err := FromEnv("localhost:4000", "test"); err == nil {
 		t.Fatal("silently defaulted user")
+	}
+}
+
+func TestInsecureOptInWarnsOnceWithoutLeakingThePassword(t *testing.T) {
+	setup(t)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	insecureWarningOnce = sync.Once{}
+
+	if _, err := FromEnv("localhost:4000", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("secure configuration logged a warning: %s", output.String())
+	}
+
+	t.Setenv("SCHRDDL_ALLOW_INSECURE", "true")
+	for i := 0; i < 3; i++ {
+		if _, err := FromEnv("localhost:4000", "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	warnings := strings.Count(output.String(), "SCHRDDL_ALLOW_INSECURE=true")
+	if warnings != 1 {
+		t.Fatalf("insecure opt-in logged %d warnings, want exactly one: %s", warnings, output.String())
+	}
+	if strings.Contains(output.String(), "synthetic") {
+		t.Fatalf("warning leaked the password: %s", output.String())
 	}
 }
 

@@ -640,12 +640,13 @@ func (c *testCase) execute(ctx context.Context) error {
 
 	tableMetas := make([]*model.TableInfo, 0)
 	for i := 0; i < len(state.Tables); i++ {
-		// Schema metadata comes from the status API through the shared
-		// authenticated TLS client, never from cleartext HTTP or curl.
+		// Schema metadata comes from the status API through the shared client
+		// in dbconfig, never through curl. Credentials are attached only over
+		// verified TLS.
 		path := dbconfig.StatusPath("schema", c.initDB, state.Tables[i].Name)
 		rawMeta, err := dbconfig.GetStatusJSON(c.cfg.dbAddr, path)
 		if err != nil {
-			log.Warnf("[ddl] cannot fetch schema for table %s over the authenticated status API: %v", state.Tables[i].Name, err)
+			log.Warnf("[ddl] cannot fetch schema for table %s from the status API: %v", state.Tables[i].Name, err)
 			continue
 		}
 		var meta model.TableInfo

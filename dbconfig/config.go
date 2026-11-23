@@ -11,10 +11,16 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/ngaut/log"
 )
+
+// FromEnv is consulted for every connection, so the insecure opt-in is
+// reported once per process rather than for each of them.
+var insecureWarningOnce sync.Once
 
 // ReadSecret reads a mounted secret without exposing its contents in errors.
 func ReadSecret(path string) (string, error) {
@@ -64,6 +70,11 @@ func FromEnv(address, database string) (*mysql.Config, error) {
 		return nil, fmt.Errorf("SCHRDDL_DB_PASSWORD_FILE is required")
 	}
 	if insecure == "true" {
+		insecureWarningOnce.Do(func() {
+			log.Warnf("[db] SCHRDDL_ALLOW_INSECURE=true permits plaintext database connections; " +
+				"use it only on isolated disposable clusters. " +
+				"Status API requests carry no credentials in this mode.")
+		})
 		return cfg, nil
 	}
 	cfg.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}

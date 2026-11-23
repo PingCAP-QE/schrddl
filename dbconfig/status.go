@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // maxStatusResponse bounds status API payloads so a hostile or broken
@@ -21,9 +23,21 @@ const maxStatusResponse = 64 << 20 // 64 MiB
 // statusPortOffset maps the SQL port to the status API port (4000 -> 10080).
 const statusPortOffset = 6080
 
+// sameHost reports whether two hosts name the same endpoint, comparing names
+// and IP literals the way TLS hostname verification does.
+func sameHost(a, b string) bool {
+	a, b = strings.TrimSuffix(a, "."), strings.TrimSuffix(b, ".")
+	if ipA, ipB := net.ParseIP(a), net.ParseIP(b); ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	return strings.EqualFold(a, b)
+}
+
 // StatusAddress returns the TiDB status API address for a SQL address. The
 // status port is derived from the SQL port (plus 6080) unless
-// SCHRDDL_STATUS_ADDR provides an explicit host:port override.
+// SCHRDDL_STATUS_ADDR provides an explicit host:port override. An override
+// may only select another port: its host must be the SQL host, the one
+// endpoint already trusted with the workload credentials.
 func StatusAddress(address string) (string, error) {
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil || host == "" {
@@ -31,8 +45,11 @@ func StatusAddress(address string) (string, error) {
 	}
 	if override := os.Getenv("SCHRDDL_STATUS_ADDR"); override != "" {
 		overrideHost, overridePort, err := net.SplitHostPort(override)
-		if err != nil || overrideHost == "" || strings.ContainsAny(override, "/?#") {
+		if err != nil || overrideHost == "" || strings.ContainsAny(override, "/?#@") {
 			return "", fmt.Errorf("SCHRDDL_STATUS_ADDR must be an explicit host:port")
+		}
+		if !sameHost(overrideHost, host) {
+			return "", fmt.Errorf("SCHRDDL_STATUS_ADDR must use the database host %q", host)
 		}
 		if port, err := strconv.Atoi(overridePort); err != nil || port <= 0 || port > 65535 {
 			return "", fmt.Errorf("SCHRDDL_STATUS_ADDR must be an explicit host:port")
@@ -47,10 +64,12 @@ func StatusAddress(address string) (string, error) {
 }
 
 // GetStatusJSON fetches path from the TiDB status API and returns its body
-// only after the response passes validation. The request carries the same
-// workload credentials (basic authentication) and TLS policy (verified
-// TLS 1.2+, plaintext only with SCHRDDL_ALLOW_INSECURE=true) as SQL
-// connections; cleartext HTTP and shell helpers such as curl are never used.
+// only after the response passes validation. Under the default TLS policy the
+// request is protected by verified TLS 1.2+ and carries the workload
+// credentials as basic authentication. SCHRDDL_ALLOW_INSECURE=true permits
+// plaintext HTTP for isolated disposable clusters; such requests carry no
+// credentials, because HTTP Basic would transmit the database password
+// verbatim. Shell helpers such as curl are never used.
 func GetStatusJSON(address, path string) ([]byte, error) {
 	cfg, err := FromEnv(address, "")
 	if err != nil {
@@ -66,23 +85,22 @@ func GetStatusJSON(address, path string) ([]byte, error) {
 		Proxy:           nil,
 	}
 	if cfg.TLS == nil {
-		// Only reachable with SCHRDDL_ALLOW_INSECURE=true, which is meant
-		// for isolated disposable test clusters.
 		scheme = "http"
 	}
+	defer transport.CloseIdleConnections()
 	client := &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: transport,
+		// Never follow a redirect: credentials must only reach the host
+		// that was validated for this request.
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	request, err := http.NewRequest(http.MethodGet, scheme+"://"+statusAddr+path, nil)
+	request, err := newStatusRequest(cfg, scheme, statusAddr, path)
 	if err != nil {
-		return nil, fmt.Errorf("invalid status API request")
+		return nil, err
 	}
-	request.SetBasicAuth(cfg.User, cfg.Passwd)
-	request.Header.Set("Accept", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("status API request to %s failed", statusAddr)
@@ -103,6 +121,22 @@ func GetStatusJSON(address, path string) ([]byte, error) {
 		return nil, fmt.Errorf("status API response is not valid JSON")
 	}
 	return body, nil
+}
+
+// newStatusRequest builds a status API GET. The workload credentials are
+// attached only to a request protected by verified TLS: HTTP Basic would
+// transmit the database password verbatim, which SCHRDDL_ALLOW_INSECURE does
+// not permit.
+func newStatusRequest(cfg *mysql.Config, scheme, address, path string) (*http.Request, error) {
+	request, err := http.NewRequest(http.MethodGet, scheme+"://"+address+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid status API request")
+	}
+	if scheme == "https" && cfg.TLS != nil && !cfg.TLS.InsecureSkipVerify {
+		request.SetBasicAuth(cfg.User, cfg.Passwd)
+	}
+	request.Header.Set("Accept", "application/json")
+	return request, nil
 }
 
 // StatusPath escapes database and table names into a status API path.
