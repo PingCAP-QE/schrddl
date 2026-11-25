@@ -92,13 +92,13 @@ func Run(dbAddr string, dbName string, concurrency int, tablesToCreate int, mysq
 		if err := dbconfig.ValidateStorageURI(GlobalSortUri); err != nil {
 			log.Fatal(err)
 		}
-		// Passing -global-sort-uri explicitly authorizes the two dist task
-		// globals the feature cannot run without.
-		if _, err := dbss[0][0].Exec("set global tidb_cloud_storage_uri=?", GlobalSortUri); err != nil {
-			log.Fatal("[ddl] cannot configure cloud storage URI")
-		}
-		if _, err := dbss[0][0].Exec("set global tidb_enable_dist_task=1"); err != nil {
-			log.Fatal("[ddl] cannot enable distributed tasks")
+		// The flag requests the dist task globals the feature cannot run
+		// without; SCHRDDL_ALLOW_GLOBAL_TUNING authorizes them like any other
+		// cluster-wide change.
+		if !util.ApplyGlobalTuning(dbss[0][0], "set global tidb_cloud_storage_uri=?", "tidb_cloud_storage_uri", GlobalSortUri) ||
+			!util.ApplyGlobalTuning(dbss[0][0], "set global tidb_enable_dist_task=1", "tidb_enable_dist_task") {
+			log.Fatal("[ddl] cannot configure cloud storage URI and enable distributed tasks; " +
+				"-global-sort-uri requires SCHRDDL_ALLOW_GLOBAL_TUNING=true and a privileged account")
 		}
 	} else {
 		version := ""

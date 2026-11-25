@@ -86,7 +86,9 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
   global is only set with `SCHRDDL_ALLOW_GLOBAL_TUNING=true`)
 - `-prepare`: use prepared statements for DML
 - `-check-ddl-extra-timeout`: extra timeout for background “DDL queue drained” checks
-- `-global-sort-uri`: enable dist task and set `tidb_cloud_storage_uri` (for features that require global sort storage)
+- `-global-sort-uri`: enable dist task and set `tidb_cloud_storage_uri` (for features that require global sort storage).
+  The two globals are cluster-wide changes, so the flag also needs
+  `SCHRDDL_ALLOW_GLOBAL_TUNING=true` and a privileged account; the run fails without them.
 
 ## Notes / Behavior
 
@@ -109,16 +111,24 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
   mode.
 - Diagnostic dumps are local SQL files with owner-only permissions. They use a
   read-only repeatable-read transaction and the same verified connector as workers.
-- The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. The runner
-  only issues cluster-wide `SET GLOBAL` statements when
-  `SCHRDDL_ALLOW_GLOBAL_TUNING=true` is set for a privileged account (e.g.
-  `max_execution_time`, `transaction_isolation` under `-rc-txn`,
-  `tidb_enable_global_index`, and resetting `tidb_cloud_storage_uri`); without the
-  opt-in each change is skipped with a warning. The dist-task globals required by
-  `-global-sort-uri` are the exception: that flag explicitly authorizes them and
-  the run fails if they cannot be applied.
+- The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. Every
+  cluster-wide `SET GLOBAL` statement in the runner is issued through one guard
+  (`util.ApplyGlobalTuning`) and only when `SCHRDDL_ALLOW_GLOBAL_TUNING=true`
+  is set for a privileged account. Without exception, that covers runner setup
+  (`max_execution_time`, `transaction_isolation` under `-rc-txn`,
+  `tidb_enable_global_index`, resetting `tidb_cloud_storage_uri`), the cluster
+  time zone, the dist-task globals required by `-global-sort-uri`, the
+  failure-scene GC freeze, and the cluster-wide settings the random SQL generator
+  produces (`tidb_ddl_enable_fast_reorg`, `tidb_enable_dist_task`,
+  `tidb_row_format_version`, `tidb_enable_clustered_index`). Generated
+  statements are classified before they are executed: session-scoped `SET`
+  statements always run, a cluster-wide one is skipped with one warning per
+  setting and never fails the worker. `-global-sort-uri` cannot run without its
+  globals, so that run fails early instead.
 - After a fatal worker error the runner best-effort freezes cluster GC to preserve
-  the failure scene. The freeze is bounded (`SCHRDDL_GC_FREEZE_WINDOW`, default
+  the failure scene. The freeze is a cluster-wide change and needs
+  `SCHRDDL_ALLOW_GLOBAL_TUNING=true`; without it GC keeps running and that is
+  logged. The freeze is bounded (`SCHRDDL_GC_FREEZE_WINDOW`, default
   `72h`, capped at `720h`, `0` disables it), logs the previous value and an exact
   restore statement, applies at most once, and self-restores when the window
   elapses; GC is never disabled indefinitely and a missing privilege is only logged.

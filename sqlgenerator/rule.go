@@ -67,6 +67,9 @@ var AlterTableChangeSingle = NewFn(func(state *State) Fn {
 	)
 })
 
+// SetSystemVars yields cluster-wide settings. This is generated text only: at
+// execution util.GlobalSetting recognizes them and they are issued solely
+// through util.ApplyGlobalTuning, guarded by SCHRDDL_ALLOW_GLOBAL_TUNING.
 var SetSystemVars = NewFn(func(state *State) Fn {
 	return Or(
 		SwitchRowFormatVer,

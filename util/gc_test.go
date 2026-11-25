@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"testing"
@@ -12,7 +13,7 @@ type fakeExecutor struct {
 	err        error
 }
 
-func (f *fakeExecutor) Exec(query string, _ ...interface{}) (sql.Result, error) {
+func (f *fakeExecutor) ExecContext(_ context.Context, query string, _ ...interface{}) (sql.Result, error) {
 	f.statements = append(f.statements, query)
 	return nil, f.err
 }

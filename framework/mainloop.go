@@ -285,7 +285,21 @@ func (c *testCase) checkError(err error) error {
 	return nil
 }
 
+// executor is the connection this case runs its generated statements on.
+func (c *testCase) executor() util.Executor {
+	if c.systemConn != nil {
+		return c.systemConn
+	}
+	return c.dbs[0]
+}
+
 func (c *testCase) execSQL(query string) error {
+	// A generated SET GLOBAL is a cluster-wide change: it only reaches the
+	// database through the guard SCHRDDL_ALLOW_GLOBAL_TUNING controls.
+	if setting, global := util.GlobalSetting(query); global {
+		util.ApplyGlobalTuning(c.executor(), query, setting)
+		return nil
+	}
 	ctx := context.Background()
 	var err error
 	if c.systemConn != nil {

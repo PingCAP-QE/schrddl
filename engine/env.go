@@ -11,6 +11,7 @@ import (
 
 	"github.com/PingCAP-QE/schrddl/dbconfig"
 	"github.com/PingCAP-QE/schrddl/ddl"
+	"github.com/PingCAP-QE/schrddl/util"
 )
 
 func PrepareEnv(dbAddr string, dbName string, enableIndexJoinOnAggregation bool) {
@@ -30,19 +31,36 @@ func PrepareEnv(dbAddr string, dbName string, enableIndexJoinOnAggregation bool)
 		_ = tiDBConn.Close()
 	}()
 
-	if _, err = tiDBConn.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", ddl.Local.String())); err != nil {
-		if _, err = tiDBConn.ExecContext(context.Background(), fmt.Sprintf("set global time_zone='%s'", time.Local.String())); err != nil {
-			if _, err = tiDBConn.ExecContext(context.Background(), "set global time_zone='+8:00'"); err != nil {
-				log.Fatalf("Can't set time_zone for tidb, please check tidb env")
-			}
-		}
-	}
-
+	// Cluster-wide settings are privileged changes: each is applied only
+	// through the guard SCHRDDL_ALLOW_GLOBAL_TUNING controls.
+	setClusterTimeZone(tiDBConn)
 	if enableIndexJoinOnAggregation {
-		_, _ = tiDBConn.ExecContext(context.Background(), "set GLOBAL tidb_enable_inl_join_inner_multi_pattern='ON'")
+		util.ApplyGlobalTuning(tiDBConn, "set global tidb_enable_inl_join_inner_multi_pattern='ON'",
+			"tidb_enable_inl_join_inner_multi_pattern")
 	}
 
 	mysql.SetLogger(log.Logger())
+}
+
+// setClusterTimeZone tries the runner's own time zone names before falling
+// back to a fixed offset. Without the opt-in, or when none can be applied,
+// timestamp-related statements use the cluster default.
+func setClusterTimeZone(db util.Executor) {
+	for _, zone := range clusterTimeZones() {
+		if util.ApplyGlobalTuning(db, fmt.Sprintf("set global time_zone='%s'", zone), "time_zone") {
+			return
+		}
+	}
+	log.Warnf("Can't set time_zone for tidb, please check tidb env")
+}
+
+// clusterTimeZones lists the time zones to try, the runner's own first.
+func clusterTimeZones() []string {
+	zones := []string{ddl.Local.String()}
+	if local := time.Local.String(); local != zones[0] {
+		zones = append(zones, local)
+	}
+	return append(zones, "+8:00")
 }
 
 func TimeoutExitLoop(timeout time.Duration) {

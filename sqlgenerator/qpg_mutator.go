@@ -25,6 +25,9 @@ var SetVariable = NewFn(func(state *State) Fn {
 		And(Str("set"), Str("tidb_index_lookup_size"), Str("="), Or(Str("16"), Str("64"), Str("20000"))),
 		And(Str("set"), Str("tidb_init_chunk_size"), Str("="), Or(Str("2"), Str("32"))),
 		And(Str("set"), Str("tidb_partition_prune_mode"), Str("="), Or(Str("'dynamic'"), Str("'static'"))),
+		// Cluster-wide settings. This is generated text only: at execution
+		// util.GlobalSetting recognizes them and they are issued solely
+		// through util.ApplyGlobalTuning, guarded by SCHRDDL_ALLOW_GLOBAL_TUNING.
 		And(Str("set global "), Str("tidb_ddl_enable_fast_reorg"), Str("="), Or(Str("'0'"), Str("'1'"))),
 		And(Str("set global "), Str("tidb_enable_dist_task"), Str("="), Or(Str("'0'"), Str("'1'"))),
 	)

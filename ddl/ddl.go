@@ -175,8 +175,12 @@ func backgroundCheckDDLFinish(ctx context.Context, db *sql.DB, concurrency int) 
 	}
 }
 
+// setVariableInterval paces the randomized variable switches. It is a
+// variable so that tests can exercise them quickly.
+var setVariableInterval = 50 * time.Millisecond
+
 func backgroundSetVariables(ctx context.Context, db *sql.DB) {
-	tk := time.NewTicker(50 * time.Millisecond)
+	tk := time.NewTicker(setVariableInterval)
 	defer tk.Stop()
 	state := sqlgenerator.NewState()
 	for {
@@ -190,8 +194,9 @@ func backgroundSetVariables(ctx context.Context, db *sql.DB) {
 				log.Warnf("[ddl] generate set variable SQL failed: %v", err)
 				continue
 			}
-			_, err = db.ExecContext(ctx, setVar)
-			if err != nil {
+			// Session settings run as generated. A cluster-wide one only
+			// reaches the database through the SCHRDDL_ALLOW_GLOBAL_TUNING guard.
+			if err := util.ExecSetting(ctx, db, setVar); err != nil {
 				log.Warnf("[ddl] execute set variable failed: %v, sql: %s", err, setVar)
 			}
 		}
