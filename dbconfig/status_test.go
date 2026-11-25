@@ -80,6 +80,7 @@ func tlsStatusServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 		t.Fatal(err)
 	}
 	t.Setenv("SCHRDDL_TLS_CA", caFile)
+	t.Setenv("SCHRDDL_TLS_CA_SHA256", sha256Hex(pemBytes))
 	return server
 }
 

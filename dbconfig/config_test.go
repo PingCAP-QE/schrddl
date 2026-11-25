@@ -27,7 +27,7 @@ import (
 
 func setup(t *testing.T) string {
 	t.Helper()
-	for _, key := range []string{"SCHRDDL_DB_USER", "SCHRDDL_DB_PASSWORD_FILE", "SCHRDDL_ALLOW_INSECURE", "SCHRDDL_TLS_CA", "SCHRDDL_TLS_CERT", "SCHRDDL_TLS_KEY"} {
+	for _, key := range []string{"SCHRDDL_DB_USER", "SCHRDDL_DB_PASSWORD_FILE", "SCHRDDL_ALLOW_INSECURE", "SCHRDDL_TLS_CA", "SCHRDDL_TLS_CA_SHA256", "SCHRDDL_TLS_CERT", "SCHRDDL_TLS_KEY"} {
 		t.Setenv(key, "")
 	}
 	t.Setenv("SCHRDDL_DB_USER", "workload")
@@ -197,6 +197,7 @@ func TestConnectionDoesNotAuthenticateWithoutVerifiedTLS(t *testing.T) {
 			t.Setenv("SCHRDDL_TLS_CA", "")
 			if mode == "wrong-host" || mode == "trusted" {
 				t.Setenv("SCHRDDL_TLS_CA", ca)
+				t.Setenv("SCHRDDL_TLS_CA_SHA256", sha256Hex(pemCert))
 			}
 			cfg, err := FromEnv(listener.Addr().String(), "test")
 			if err != nil {

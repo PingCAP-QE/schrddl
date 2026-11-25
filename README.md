@@ -41,6 +41,7 @@ Use a dedicated workload user with the privileges required by the selected tests
 export SCHRDDL_DB_USER=ddl_test
 export SCHRDDL_DB_PASSWORD_FILE=/run/secrets/db-password
 export SCHRDDL_TLS_CA=/run/secrets/db-ca.pem
+export SCHRDDL_TLS_CA_SHA256=$(sha256sum /run/secrets/db-ca.pem | cut -d' ' -f1)
 ./schrddl \
   -addr "127.0.0.1:4000" \
   -db "test" \
@@ -97,6 +98,15 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
 - TLS 1.2+ with certificate and hostname verification is required by default. System
   roots are used unless `SCHRDDL_TLS_CA` selects a PEM CA bundle. Optional mutual TLS
   uses `SCHRDDL_TLS_CERT` and `SCHRDDL_TLS_KEY` together.
+- `SCHRDDL_TLS_CA` is the trust anchor every database connection and status API request
+  sends its credentials to, so it is validated and pinned. The file must be a regular
+  file of at most 1 MiB, owned by root or the process user, and not writable by group
+  or others. `SCHRDDL_TLS_CA_SHA256`, the SHA-256 of the PEM file
+  (`sha256sum db-ca.pem`), is required whenever `SCHRDDL_TLS_CA` is set: another file
+  in its place is rejected before any connection is opened, even when it has safe
+  ownership and permissions. Symlinks are followed, as secret volumes mount them; the
+  file they lead to is what is checked. The bundle is re-read and re-verified for every
+  new connection, so rotate the CA and its pin together and restart.
 - Schema metadata for the framework engine is fetched from the TiDB status API through
   the shared client in `dbconfig` (no `curl`): over verified TLS, with the workload
   account as basic authentication. Responses are validated (status, content type, JSON,

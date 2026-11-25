@@ -3,7 +3,6 @@ package dbconfig
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"database/sql"
 	"fmt"
 	"io"
@@ -79,15 +78,14 @@ func FromEnv(address, database string) (*mysql.Config, error) {
 	}
 	cfg.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
 	if path := os.Getenv("SCHRDDL_TLS_CA"); path != "" {
-		data, err := os.ReadFile(path)
+		// The bundle is the trust anchor every connection sends its
+		// credentials to: it is validated and must match the pinned digest.
+		cfg.TLS.RootCAs, err = trustPool(path, os.Getenv("SCHRDDL_TLS_CA_SHA256"))
 		if err != nil {
-			return nil, fmt.Errorf("cannot read TLS CA file")
+			return nil, err
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(data) {
-			return nil, fmt.Errorf("invalid TLS CA file")
-		}
-		cfg.TLS.RootCAs = pool
+	} else if os.Getenv("SCHRDDL_TLS_CA_SHA256") != "" {
+		return nil, fmt.Errorf("SCHRDDL_TLS_CA_SHA256 is set but SCHRDDL_TLS_CA is not")
 	}
 	cert, key := os.Getenv("SCHRDDL_TLS_CERT"), os.Getenv("SCHRDDL_TLS_KEY")
 	if (cert == "") != (key == "") {
