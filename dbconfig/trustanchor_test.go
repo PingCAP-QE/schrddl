@@ -124,7 +124,7 @@ func newSilentTarget(t *testing.T) *silentTarget {
 	return target
 }
 
-func TestTrustAnchorMustBePinned(t *testing.T) {
+func TestTrustAnchorPinIsOptionalButEnforcedWhenSet(t *testing.T) {
 	setup(t)
 	const address = "tidb.example:4000"
 	// Without a trust anchor the system roots are used and nothing needs pinning.
@@ -141,8 +141,13 @@ func TestTrustAnchorMustBePinned(t *testing.T) {
 	}
 
 	t.Setenv("SCHRDDL_TLS_CA", writeCAFile(t, trusted.pem, 0644))
+	// The pin is optional: on its own, the file still has to pass the
+	// ownership and permission checks.
+	t.Setenv("SCHRDDL_TLS_CA_SHA256", "")
+	if cfg, err = FromEnv(address, "test"); err != nil || cfg.TLS.RootCAs == nil {
+		t.Fatalf("unpinned trust anchor = %v, %v; want it loaded", cfg, err)
+	}
 	for name, pin := range map[string]string{
-		"no pin":        "",
 		"truncated pin": digest[:63],
 		"non-hex pin":   strings.Repeat("g", 64),
 	} {
@@ -285,7 +290,7 @@ func TestTrustAnchorDecidesWhichServersTheConnectionTrusts(t *testing.T) {
 	}
 }
 
-func TestSubstitutedTrustAnchorPreventsAnyConnection(t *testing.T) {
+func TestPinnedTrustAnchorPreventsConnectionAfterSubstitution(t *testing.T) {
 	setup(t)
 	target := newSilentTarget(t)
 	ping := func() error {

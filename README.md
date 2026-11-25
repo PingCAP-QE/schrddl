@@ -41,7 +41,6 @@ Use a dedicated workload user with the privileges required by the selected tests
 export SCHRDDL_DB_USER=ddl_test
 export SCHRDDL_DB_PASSWORD_FILE=/run/secrets/db-password
 export SCHRDDL_TLS_CA=/run/secrets/db-ca.pem
-export SCHRDDL_TLS_CA_SHA256=$(sha256sum /run/secrets/db-ca.pem | cut -d' ' -f1)
 ./schrddl \
   -addr "127.0.0.1:4000" \
   -db "test" \
@@ -87,9 +86,7 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
   global is only set with `SCHRDDL_ALLOW_GLOBAL_TUNING=true`)
 - `-prepare`: use prepared statements for DML
 - `-check-ddl-extra-timeout`: extra timeout for background “DDL queue drained” checks
-- `-global-sort-uri`: enable dist task and set `tidb_cloud_storage_uri` (for features that require global sort storage).
-  The two globals are cluster-wide changes, so the flag also needs
-  `SCHRDDL_ALLOW_GLOBAL_TUNING=true` and a privileged account; the run fails without them.
+- `-global-sort-uri`: enable dist task and set `tidb_cloud_storage_uri` (for features that require global sort storage)
 
 ## Notes / Behavior
 
@@ -99,14 +96,13 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
   roots are used unless `SCHRDDL_TLS_CA` selects a PEM CA bundle. Optional mutual TLS
   uses `SCHRDDL_TLS_CERT` and `SCHRDDL_TLS_KEY` together.
 - `SCHRDDL_TLS_CA` is the trust anchor every database connection and status API request
-  sends its credentials to, so it is validated and pinned. The file must be a regular
-  file of at most 1 MiB, owned by root or the process user, and not writable by group
-  or others. `SCHRDDL_TLS_CA_SHA256`, the SHA-256 of the PEM file
-  (`sha256sum db-ca.pem`), is required whenever `SCHRDDL_TLS_CA` is set: another file
-  in its place is rejected before any connection is opened, even when it has safe
-  ownership and permissions. Symlinks are followed, as secret volumes mount them; the
-  file they lead to is what is checked. The bundle is re-read and re-verified for every
-  new connection, so rotate the CA and its pin together and restart.
+  sends its credentials to, so the file is validated: a regular file of at most
+  1 MiB, owned by root or the process user, and not writable by group or others.
+  Symlinks are followed, as secret volumes mount them; the file they lead to is
+  what is checked. To also detect a substituted CA that has safe ownership and
+  permissions, optionally set `SCHRDDL_TLS_CA_SHA256` to the SHA-256 of the PEM
+  file (`sha256sum db-ca.pem`); the bundle is re-read and re-verified for every
+  new connection, so rotate the CA and its pin together.
 - Schema metadata for the framework engine is fetched from the TiDB status API through
   the shared client in `dbconfig` (no `curl`): over verified TLS, with the workload
   account as basic authentication. Responses are validated (status, content type, JSON,
@@ -121,24 +117,22 @@ Note: `-global-sort-uri` only applies to `-engine ddl`.
   mode.
 - Diagnostic dumps are local SQL files with owner-only permissions. They use a
   read-only repeatable-read transaction and the same verified connector as workers.
-- The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. Every
-  cluster-wide `SET GLOBAL` statement in the runner is issued through one guard
+- The workload account does not need `SUPER`/`SYSTEM_VARIABLES_ADMIN`. The runner
+  issues cluster-wide `SET GLOBAL` statements through one guard
   (`util.ApplyGlobalTuning`) and only when `SCHRDDL_ALLOW_GLOBAL_TUNING=true`
-  is set for a privileged account. Without exception, that covers runner setup
+  is set for a privileged account. That covers runner setup
   (`max_execution_time`, `transaction_isolation` under `-rc-txn`,
   `tidb_enable_global_index`, resetting `tidb_cloud_storage_uri`), the cluster
-  time zone, the dist-task globals required by `-global-sort-uri`, the
-  failure-scene GC freeze, and the cluster-wide settings the random SQL generator
-  produces (`tidb_ddl_enable_fast_reorg`, `tidb_enable_dist_task`,
+  time zone, and the cluster-wide settings the random SQL generator produces
+  (`tidb_ddl_enable_fast_reorg`, `tidb_enable_dist_task`,
   `tidb_row_format_version`, `tidb_enable_clustered_index`). Generated
   statements are classified before they are executed: session-scoped `SET`
   statements always run, a cluster-wide one is skipped with one warning per
-  setting and never fails the worker. `-global-sort-uri` cannot run without its
-  globals, so that run fails early instead.
+  setting and never fails the worker. The dist-task globals required by
+  `-global-sort-uri` are the exception: that flag explicitly authorizes them and
+  the run fails if they cannot be applied.
 - After a fatal worker error the runner best-effort freezes cluster GC to preserve
-  the failure scene. The freeze is a cluster-wide change and needs
-  `SCHRDDL_ALLOW_GLOBAL_TUNING=true`; without it GC keeps running and that is
-  logged. The freeze is bounded (`SCHRDDL_GC_FREEZE_WINDOW`, default
+  the failure scene. The freeze is bounded (`SCHRDDL_GC_FREEZE_WINDOW`, default
   `72h`, capped at `720h`, `0` disables it), logs the previous value and an exact
   restore statement, applies at most once, and self-restores when the window
   elapses; GC is never disabled indefinitely and a missing privilege is only logged.

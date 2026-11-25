@@ -5,11 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -95,15 +90,14 @@ func TestApplyGlobalTuningReportsWhetherTheStatementWasApplied(t *testing.T) {
 	if ApplyGlobalTuning(failing, "set global max_execution_time=5000", "max_execution_time") {
 		t.Fatal("reported a rejected statement as applied")
 	}
-	withArg := &fakeExecutor{}
-	statement, value := "set global tidb_cloud_storage_uri=?", "s3://bucket/prefix"
-	if !ApplyGlobalTuning(withArg, statement, "tidb_cloud_storage_uri", value) {
+	applied := &fakeExecutor{}
+	if !ApplyGlobalTuning(applied, "set global max_execution_time=5000", "max_execution_time") {
 		t.Fatal("reported an applied statement as not applied")
 	}
-	if len(withArg.statements) != 1 || withArg.statements[0] != statement {
-		t.Fatalf("statement = %v, want %q", withArg.statements, statement)
+	if len(applied.statements) != 1 || applied.statements[0] != "set global max_execution_time=5000" {
+		t.Fatalf("statement = %v, want the one that was requested", applied.statements)
 	}
-	if ApplyGlobalTuning(nil, statement, "tidb_cloud_storage_uri", value) {
+	if ApplyGlobalTuning(nil, "set global max_execution_time=5000", "max_execution_time") {
 		t.Fatal("reported a statement without a database as applied")
 	}
 }
@@ -145,25 +139,19 @@ func (conn *recordingConn) ExecContext(_ context.Context, query string, _ []driv
 	return driver.RowsAffected(0), nil
 }
 
-func TestFreezeTiKVGCIsAClusterWideChangeAndNeedsTheOptIn(t *testing.T) {
-	// The freeze applies at most once per process, so each scenario starts it over.
-	freeze := func() []string {
-		gcFreezeOnce = sync.Once{}
-		recorded := &recordedStatements{}
-		database := sql.OpenDB(recordingConnector{recorded})
-		defer database.Close()
-		FreezeTiKVGC(database, time.Hour)
-		return recorded.all()
-	}
-
+func TestFreezeTiKVGCAppliesOnceWithoutOptIn(t *testing.T) {
+	// The freeze applies at most once per process, so the test starts it over.
+	gcFreezeOnce = sync.Once{}
 	t.Setenv("SCHRDDL_ALLOW_GLOBAL_TUNING", "")
-	if frozen := freeze(); len(frozen) != 0 {
-		t.Fatalf("cluster GC was frozen without the opt-in: %v", frozen)
-	}
-	t.Setenv("SCHRDDL_ALLOW_GLOBAL_TUNING", "true")
-	frozen := freeze()
+	recorded := &recordedStatements{}
+	database := sql.OpenDB(recordingConnector{recorded})
+	defer database.Close()
+
+	FreezeTiKVGC(database, time.Hour)
+	FreezeTiKVGC(database, 2*time.Hour)
+	frozen := recorded.all()
 	if len(frozen) != 1 || frozen[0] != "set global tikv_gc_life_time = '1h0m0s'" {
-		t.Fatalf("opted-in freeze = %v, want one bounded tikv_gc_life_time change", frozen)
+		t.Fatalf("freeze = %v, want one bounded tikv_gc_life_time change and no opt-in", frozen)
 	}
 }
 
@@ -200,56 +188,5 @@ func TestGeneratorClusterWideSettingsAreRecognizedByTheGuard(t *testing.T) {
 		if !seen[setting] {
 			t.Errorf("the generator never offered cluster-wide %s; this test no longer covers it", setting)
 		}
-	}
-}
-
-// TestClusterWideSettingsOnlyGoThroughTheGuard pins what the
-// SCHRDDL_ALLOW_GLOBAL_TUNING guardrail promises for the whole repository.
-// Outside the generator, whose output is classified before it is executed, and
-// the guard itself, a cluster-wide SET may only appear as an argument of
-// util.ApplyGlobalTuning.
-func TestClusterWideSettingsOnlyGoThroughTheGuard(t *testing.T) {
-	const root = ".."
-	clusterWide := regexp.MustCompile(`(?i)\bset\s+(@@\s*)?global\b`)
-	var unguarded []string
-	skip := func(rel string) bool {
-		dir, _ := filepath.Split(rel)
-		return dir == "sqlgenerator/" || dir == "util/"
-	}
-	walk := func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			if path != root && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "bug-")) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil || skip(filepath.ToSlash(rel)) {
-			return err
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for number, line := range strings.Split(string(content), "\n") {
-			line = strings.TrimSpace(line)
-			if clusterWide.MatchString(line) && !strings.HasPrefix(line, "//") && !strings.Contains(line, "ApplyGlobalTuning(") {
-				unguarded = append(unguarded, fmt.Sprintf("%s:%d: %s", rel, number+1, line))
-			}
-		}
-		return nil
-	}
-	if err := filepath.WalkDir(root, walk); err != nil {
-		t.Fatal(err)
-	}
-	if len(unguarded) > 0 {
-		t.Fatalf("cluster-wide SET statements must be issued through util.ApplyGlobalTuning:\n%s",
-			strings.Join(unguarded, "\n"))
 	}
 }

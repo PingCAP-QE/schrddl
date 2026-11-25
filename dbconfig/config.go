@@ -79,7 +79,8 @@ func FromEnv(address, database string) (*mysql.Config, error) {
 	cfg.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
 	if path := os.Getenv("SCHRDDL_TLS_CA"); path != "" {
 		// The bundle is the trust anchor every connection sends its
-		// credentials to: it is validated and must match the pinned digest.
+		// credentials to: it is validated and, when a digest is pinned, must
+		// match it.
 		cfg.TLS.RootCAs, err = trustPool(path, os.Getenv("SCHRDDL_TLS_CA_SHA256"))
 		if err != nil {
 			return nil, err
